@@ -1,0 +1,23 @@
+{
+  "name": "unified-hifi-control",
+  "version": "0.1.0",
+  "description": "Source-agnostic hi-fi control bridge for hardware surfaces and Home Assistant",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/muness/unified-hifi-control.git"
+  },
+  "author": "Muness Castle",
+  "license": "ISC",
+  "dependencies": {},
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.0"
+  }
+}

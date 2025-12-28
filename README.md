@@ -1,0 +1,42 @@
+# Unified Hi-Fi Control
+
+A source-agnostic hi-fi control bridge that connects music sources and audio pipeline control to any surface — hardware knobs, web UIs, or Home Assistant.
+
+## Vision
+
+Hi-fi software assumes you're at a computer or using vendor-specific apps. This bridge fills the gap:
+
+- **Music Sources:** Roon (now), Music Assistant, Tidal Connect, Qobuz Connect (future)
+- **Audio Pipeline:** HQPlayer profiles + DSP settings, receiver control (future)
+- **Surfaces:** ESP32 hardware (roon-knob), Web UI, Home Assistant via MQTT
+
+## Status
+
+🚧 **In Development** — Consolidating [roon-knob](https://github.com/muness/roon-knob) bridge and [hqp-profile-switcher](https://github.com/muness/roon-extension-hqp-profile-switcher) into a unified platform.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│            Unified Hi-Fi Control Bridge              │
+│  ┌──────────┐  ┌──────────────┐                     │
+│  │   Roon   │  │  HQPlayer    │   (+ future sources)│
+│  └──────────┘  └──────────────┘                     │
+│                                                      │
+│  HTTP API + optional MQTT                            │
+└─────────────────────────────────────────────────────┘
+              │
+    ┌─────────┼─────────┐
+    ▼         ▼         ▼
+  ESP32     Web UI    Home Assistant
+  Knob
+```
+
+## Related
+
+- [Open Horizons Endeavor](https://app.openhorizons.me/endeavor/80222d6d-63ab-45d8-a262-ee00303f18c9) — Strategic context and planning
+- [roon-knob](https://github.com/muness/roon-knob) — ESP32-S3 hardware controller (firmware)
+
+## License
+
+ISC
