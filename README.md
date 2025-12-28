@@ -8,7 +8,7 @@ Hi-fi software assumes you're at a computer or using vendor-specific apps. This 
 
 - **Music Sources:** Roon (now), Music Assistant, Tidal Connect, Qobuz Connect (future)
 - **Audio Pipeline:** HQPlayer Embedded (web UI control), receiver control (future)
-- **Surfaces:** ESP32 hardware (roon-knob), Web UI, Home Assistant via MQTT
+- **Surfaces:** Anything that speaks HTTP or MQTT — ESP32 hardware, web UIs, Home Assistant, etc.
 
 ## Status
 
@@ -27,10 +27,9 @@ Hi-fi software assumes you're at a computer or using vendor-specific apps. This 
 │  HTTP API + optional MQTT                            │
 └─────────────────────────────────────────────────────┘
               │
-    ┌─────────┼─────────┐
-    ▼         ▼         ▼
-  ESP32     Web UI    Home Assistant
-  Knob
+              ▼
+      Any HTTP/MQTT client
+    (ESP32, Web UI, HA, ...)
 ```
 
 ## Related
