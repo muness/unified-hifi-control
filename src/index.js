@@ -1,8 +1,10 @@
+const os = require('os');
 const { createRoonClient } = require('./roon/client');
 const { HQPClient } = require('./hqplayer/client');
 const { createMqttService } = require('./mqtt');
 const { createApp } = require('./server/app');
 const { createLogger } = require('./lib/logger');
+const { advertise } = require('./lib/mdns');
 
 const PORT = process.env.PORT || 8088;
 const log = createLogger('Main');
@@ -47,14 +49,37 @@ const app = createApp({
 roon.start();
 mqttService.connect();
 
+// Get local IP for mDNS advertisement
+function getLocalIp() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+let mdnsService;
+
 app.listen(PORT, () => {
   log.info(`HTTP server listening on port ${PORT}`);
   log.info('Waiting for Roon Core authorization...');
+
+  // Advertise via mDNS for knob discovery
+  const localIp = getLocalIp();
+  mdnsService = advertise(PORT, {
+    name: 'Unified Hi-Fi Control',
+    base: `http://${localIp}:${PORT}`,
+  }, createLogger('mDNS'));
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   log.info('Shutting down...');
+  if (mdnsService) mdnsService.stop();
   mqttService.disconnect();
   process.exit(0);
 });
