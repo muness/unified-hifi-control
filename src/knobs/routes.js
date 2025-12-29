@@ -291,7 +291,7 @@ function createKnobRoutes({ roon, knobs, logger }) {
     .config-form { margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; }
     .zone-card { border: 1px solid #ddd; border-radius: 8px; padding: 1em; margin-bottom: 1em; display: flex; gap: 1em; align-items: center; }
     .zone-card.selected { border-color: #4CAF50; background: #f8fff8; }
-    .zone-card img.art-lg { width: 120px; height: 120px; border-radius: 6px; }
+    img.art-lg { width: 120px; height: 120px; border-radius: 6px; object-fit: cover; }
     .zone-info { flex: 1; }
     .zone-info h3 { margin: 0 0 0.3em 0; }
     .zone-controls { display: flex; gap: 0.3em; margin-top: 0.8em; }
@@ -383,12 +383,16 @@ async function loadZones() {
           '<p>' + artist + (album ? ' • ' + album : '') + '</p>' +
           '<p class="muted">Volume: ' + vol + '</p>' +
           profileSelect +
-          '<div class="zone-controls">' +
-            '<button class="ctrl" data-action="vol_rel" data-value="-1">−</button>' +
-            '<button class="ctrl" data-action="play_pause">' + playIcon + '</button>' +
-            '<button class="ctrl" data-action="vol_rel" data-value="1">+</button>' +
-            '<button class="ctrl" data-action="previous">⏮</button>' +
-            '<button class="ctrl" data-action="next">⏭</button>' +
+          '<div style="display:flex;gap:1em;align-items:center;">' +
+            '<div class="zone-controls">' +
+              '<button class="ctrl" data-action="previous">⏮</button>' +
+              '<button class="ctrl" data-action="play_pause">' + playIcon + '</button>' +
+              '<button class="ctrl" data-action="next">⏭</button>' +
+            '</div>' +
+            '<div style="display:flex;flex-direction:column;gap:0.2em;">' +
+              '<button class="ctrl" data-action="vol_rel" data-value="1">+</button>' +
+              '<button class="ctrl" data-action="vol_rel" data-value="-1">−</button>' +
+            '</div>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -408,7 +412,7 @@ async function ctrl(zoneId, action, value) {
 }
 
 async function loadProfile(profile) {
-  await fetch('/hqp/profile', {
+  await fetch('/hqp/profiles/load', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profile })
@@ -463,12 +467,16 @@ ${navHtml('critical')}
       <h3 id="zone-name"></h3>
       <p id="zone-status"></p>
       <p class="muted">Volume: <span id="zone-vol">—</span></p>
-      <div class="zone-controls">
-        <button class="ctrl" onclick="ctrl('vol_rel',-2)">−</button>
-        <button class="ctrl" id="play-btn" onclick="ctrl('play_pause')">▶</button>
-        <button class="ctrl" onclick="ctrl('vol_rel',2)">+</button>
-        <button class="ctrl" onclick="ctrl('previous')">⏮</button>
-        <button class="ctrl" onclick="ctrl('next')">⏭</button>
+      <div style="display:flex;gap:1em;align-items:center;">
+        <div class="zone-controls">
+          <button class="ctrl" onclick="ctrl('previous')">⏮</button>
+          <button class="ctrl" id="play-btn" onclick="ctrl('play_pause')">▶</button>
+          <button class="ctrl" onclick="ctrl('next')">⏭</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.2em;">
+          <button class="ctrl" onclick="ctrl('vol_rel',2)">+</button>
+          <button class="ctrl" onclick="ctrl('vol_rel',-2)">−</button>
+        </div>
       </div>
     </div>
   </div>
@@ -482,6 +490,8 @@ ${navHtml('critical')}
   <div id="hqp-configured" class="hidden">
     <p>Status: <span id="hqp-status">checking...</span></p>
     <div class="form-row"><label>Profile:</label><select id="hqp-profile" onchange="loadProfile(this.value)"></select></div>
+    <div class="form-row"><label>Mode:</label><select id="hqp-mode" onchange="setPipeline('mode',this.value)"></select></div>
+    <div class="form-row"><label>Sample Rate:</label><select id="hqp-samplerate" onchange="setPipeline('samplerate',this.value)"></select></div>
     <div class="form-row"><label>Filter (1x):</label><select id="hqp-filter1x" onchange="setPipeline('filter1x',this.value)"></select></div>
     <div class="form-row"><label>Filter (Nx):</label><select id="hqp-filterNx" onchange="setPipeline('filterNx',this.value)"></select></div>
     <div class="form-row"><label>Shaper:</label><select id="hqp-shaper" onchange="setPipeline('shaper',this.value)"></select></div>
@@ -603,6 +613,8 @@ async function loadHqpPipeline() {
   const data = await res.json();
   if (!data.settings) return;
   const s = data.settings;
+  popSel('hqp-mode', s.mode?.options, s.mode?.selected?.value);
+  popSel('hqp-samplerate', s.samplerate?.options, s.samplerate?.selected?.value);
   popSel('hqp-filter1x', s.filter1x?.options, s.filter1x?.selected?.value);
   popSel('hqp-filterNx', s.filterNx?.options, s.filterNx?.selected?.value);
   popSel('hqp-shaper', s.shaper?.options, s.shaper?.selected?.value);
