@@ -329,6 +329,22 @@ ${navHtml('control')}
 ${versionScript}
 ${escapeScript}
 
+let hqpProfiles = [];
+let hqpCurrentProfile = null;
+
+async function loadHqpProfiles() {
+  try {
+    const [statusRes, profilesRes] = await Promise.all([
+      fetch('/hqp/status'),
+      fetch('/hqp/profiles')
+    ]);
+    const status = await statusRes.json();
+    const profiles = await profilesRes.json();
+    hqpProfiles = profiles.profiles || [];
+    hqpCurrentProfile = status.configName || null;
+  } catch (e) { /* HQPlayer not configured */ }
+}
+
 async function loadZones() {
   try {
     const res = await fetch('/admin/status.json');
@@ -352,6 +368,14 @@ async function loadZones() {
       const step = np.volume_step || 2;
       const playIcon = np.is_playing ? '⏸' : '▶';
       const deviceInfo = zone.device_name ? ' <span class="muted">(' + esc(zone.device_name) + ')</span>' : '';
+      const isHqp = (zone.output_name || '').toLowerCase().includes('hqplayer');
+      const profileSelect = isHqp && hqpProfiles.length > 0 ?
+        '<p class="muted" style="margin-top:0.5em;">Profile: <select class="hqp-profile-select" style="padding:0.2em;">' +
+        '<option value="">—</option>' +
+        hqpProfiles.map(p => '<option value="' + escAttr(p.value) + '"' +
+          ((hqpCurrentProfile && p.title.toLowerCase() === hqpCurrentProfile.toLowerCase()) ? ' selected' : '') + '>' +
+          esc(p.title) + '</option>').join('') +
+        '</select></p>' : '';
       return '<div class="zone-card" data-zone-id="' + escAttr(zone.zone_id) + '" data-step="' + step + '">' +
         '<img class="art-lg" src="/now_playing/image?zone_id=' + encodeURIComponent(zone.zone_id) + '&width=120&height=120" alt="">' +
         '<div class="zone-info">' +
@@ -359,6 +383,7 @@ async function loadZones() {
           '<p><strong>' + track + '</strong></p>' +
           '<p>' + artist + (album ? ' • ' + album : '') + '</p>' +
           '<p class="muted">Volume: ' + vol + '</p>' +
+          profileSelect +
           '<div class="zone-controls">' +
             '<button class="ctrl" data-action="vol_rel" data-value="-1">−</button>' +
             '<button class="ctrl" data-action="play_pause">' + playIcon + '</button>' +
@@ -383,6 +408,16 @@ async function ctrl(zoneId, action, value) {
   setTimeout(loadZones, 300);
 }
 
+async function loadProfile(profile) {
+  await fetch('/hqp/profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile })
+  });
+  await loadHqpProfiles();
+  loadZones();
+}
+
 // Event delegation for zone control buttons
 document.getElementById('zones').addEventListener('click', function(e) {
   const btn = e.target.closest('.ctrl');
@@ -395,7 +430,15 @@ document.getElementById('zones').addEventListener('click', function(e) {
   ctrl(zoneId, action, value);
 });
 
-loadZones();
+// Event delegation for HQPlayer profile selection
+document.getElementById('zones').addEventListener('change', function(e) {
+  const sel = e.target.closest('.hqp-profile-select');
+  if (!sel || !sel.value) return;
+  loadProfile(sel.value);
+});
+
+// Initialize
+loadHqpProfiles().then(loadZones);
 setInterval(loadZones, 4000);
 </script></body></html>`);
   });
