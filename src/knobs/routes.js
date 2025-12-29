@@ -389,8 +389,8 @@ async function loadHqpProfiles() {
     if (data.profiles) {
       data.profiles.forEach(p => {
         const opt = document.createElement('option');
-        opt.value = p;
-        opt.textContent = p;
+        opt.value = p.value || p;
+        opt.textContent = p.title || p.value || p;
         select.appendChild(opt);
       });
     }
@@ -403,25 +403,26 @@ async function loadHqpPipeline() {
   try {
     const res = await fetch('/hqp/pipeline');
     const data = await res.json();
-    if (!data.enabled) return;
+    if (!data.enabled || !data.settings) return;
 
-    // Populate filter/shaper dropdowns
-    populateSelect('hqp-filter1x', data.filters1x || [], data.filter1x);
-    populateSelect('hqp-filterNx', data.filtersNx || [], data.filterNx);
-    populateSelect('hqp-shaper', data.shapers || [], data.shaper);
+    // Populate filter/shaper dropdowns from settings object
+    const s = data.settings;
+    populateSelect('hqp-filter1x', s.filter1x?.options || [], s.filter1x?.selected?.value);
+    populateSelect('hqp-filterNx', s.filterNx?.options || [], s.filterNx?.selected?.value);
+    populateSelect('hqp-shaper', s.shaper?.options || [], s.shaper?.selected?.value);
   } catch (e) {
     console.error('Failed to load pipeline', e);
   }
 }
 
-function populateSelect(id, options, current) {
+function populateSelect(id, options, currentValue) {
   const select = document.getElementById(id);
   select.innerHTML = '';
   options.forEach(opt => {
     const o = document.createElement('option');
-    o.value = opt;
-    o.textContent = opt;
-    if (opt === current) o.selected = true;
+    o.value = opt.value || opt;
+    o.textContent = opt.label || opt.value || opt;
+    if ((opt.value || opt) === currentValue) o.selected = true;
     select.appendChild(o);
   });
 }
