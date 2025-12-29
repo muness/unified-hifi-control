@@ -214,6 +214,11 @@ function createRoonClient(opts = {}) {
         output_count: zone.outputs?.length || 0,
         output_name: output?.display_name || null,
         device_name: sourceControl?.display_name || null,
+        source_control: sourceControl ? {
+          status: sourceControl.status,
+          supports_standby: sourceControl.supports_standby || false,
+          control_key: sourceControl.control_key,
+        } : null,
         volume_control: vol ? {
           type: vol.type,
           min: vol.min,
