@@ -23,10 +23,10 @@ RUN mkdir -p /data
 
 # Environment
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=8088
 ENV CONFIG_DIR=/data
 
-EXPOSE 3000
+EXPOSE 8088
 
 # Run as non-root user
 RUN useradd -r -s /bin/false appuser && chown -R appuser:appuser /app /data
