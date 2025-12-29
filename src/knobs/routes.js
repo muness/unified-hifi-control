@@ -310,6 +310,15 @@ function createKnobRoutes({ roon, knobs, logger }) {
 
   const versionScript = `fetch('/status').then(r=>r.json()).then(d=>{document.getElementById('app-version').textContent='v'+d.version;});`;
 
+  // HTML escape helper to prevent XSS
+  const escapeScript = `
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function escAttr(s) { return esc(s); }
+`;
+
   // GET /control - Normal listening: all zones, basic controls
   router.get(['/control', '/admin/control'], (req, res) => {
     res.send(`<!DOCTYPE html><html><head><title>Control - Hi-Fi</title><style>${baseStyles}</style></head><body>
@@ -318,6 +327,7 @@ ${navHtml('control')}
 <div id="zones">Loading...</div>
 <script>
 ${versionScript}
+${escapeScript}
 
 async function loadZones() {
   try {
@@ -334,33 +344,33 @@ async function loadZones() {
 
     document.getElementById('zones').innerHTML = zones.map(zone => {
       const np = nowPlaying[zone.zone_id] || {};
-      const track = np.line1 || 'Stopped';
-      const artist = np.line2 || '';
-      const album = np.line3 || '';
+      const track = esc(np.line1 || 'Stopped');
+      const artist = esc(np.line2 || '');
+      const album = esc(np.line3 || '');
       const volUnit = np.volume_type === 'db' ? ' dB' : (np.volume_type === 'number' ? '' : '');
       const vol = typeof np.volume === 'number' ? np.volume + volUnit : '—';
       const step = np.volume_step || 2;
       const playIcon = np.is_playing ? '⏸' : '▶';
-      const deviceInfo = zone.device_name ? \` <span class="muted">(\${zone.device_name})</span>\` : '';
-      return \`<div class="zone-card">
-        <img class="art-lg" src="/now_playing/image?zone_id=\${encodeURIComponent(zone.zone_id)}&width=120&height=120" alt="">
-        <div class="zone-info">
-          <h3>\${zone.zone_name}\${deviceInfo}</h3>
-          <p><strong>\${track}</strong></p>
-          <p>\${artist}\${album ? ' • ' + album : ''}</p>
-          <p class="muted">Volume: \${vol}</p>
-          <div class="zone-controls">
-            <button class="ctrl" onclick="ctrl('\${zone.zone_id}','vol_rel',\${-step})">−</button>
-            <button class="ctrl" onclick="ctrl('\${zone.zone_id}','play_pause')">\${playIcon}</button>
-            <button class="ctrl" onclick="ctrl('\${zone.zone_id}','vol_rel',\${step})">+</button>
-            <button class="ctrl" onclick="ctrl('\${zone.zone_id}','previous')">⏮</button>
-            <button class="ctrl" onclick="ctrl('\${zone.zone_id}','next')">⏭</button>
-          </div>
-        </div>
-      </div>\`;
+      const deviceInfo = zone.device_name ? ' <span class="muted">(' + esc(zone.device_name) + ')</span>' : '';
+      return '<div class="zone-card" data-zone-id="' + escAttr(zone.zone_id) + '" data-step="' + step + '">' +
+        '<img class="art-lg" src="/now_playing/image?zone_id=' + encodeURIComponent(zone.zone_id) + '&width=120&height=120" alt="">' +
+        '<div class="zone-info">' +
+          '<h3>' + esc(zone.zone_name) + deviceInfo + '</h3>' +
+          '<p><strong>' + track + '</strong></p>' +
+          '<p>' + artist + (album ? ' • ' + album : '') + '</p>' +
+          '<p class="muted">Volume: ' + vol + '</p>' +
+          '<div class="zone-controls">' +
+            '<button class="ctrl" data-action="vol_rel" data-value="-1">−</button>' +
+            '<button class="ctrl" data-action="play_pause">' + playIcon + '</button>' +
+            '<button class="ctrl" data-action="vol_rel" data-value="1">+</button>' +
+            '<button class="ctrl" data-action="previous">⏮</button>' +
+            '<button class="ctrl" data-action="next">⏭</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
     }).join('');
   } catch (e) {
-    document.getElementById('zones').innerHTML = '<p class="error">Error: ' + e.message + '</p>';
+    document.getElementById('zones').innerHTML = '<p class="error">Error: ' + esc(e.message) + '</p>';
   }
 }
 
@@ -372,6 +382,18 @@ async function ctrl(zoneId, action, value) {
   });
   setTimeout(loadZones, 300);
 }
+
+// Event delegation for zone control buttons
+document.getElementById('zones').addEventListener('click', function(e) {
+  const btn = e.target.closest('.ctrl');
+  if (!btn) return;
+  const card = btn.closest('.zone-card');
+  const zoneId = card.dataset.zoneId;
+  const action = btn.dataset.action;
+  const step = parseInt(card.dataset.step) || 2;
+  let value = btn.dataset.value ? parseInt(btn.dataset.value) * step : undefined;
+  ctrl(zoneId, action, value);
+});
 
 loadZones();
 setInterval(loadZones, 4000);
@@ -427,6 +449,7 @@ ${navHtml('critical')}
 
 <script>
 ${versionScript}
+${escapeScript}
 let selectedZone = null;
 let zonesData = [];
 
@@ -440,7 +463,7 @@ async function loadZones() {
   const sel = document.getElementById('zone-select');
   const current = sel.value;
   sel.innerHTML = '<option value="">-- Select Zone --</option>' + zonesData.map(z =>
-    '<option value="' + z.zone_id + '"' + (z.zone_id === current ? ' selected' : '') + '>' + z.zone_name + '</option>'
+    '<option value="' + escAttr(z.zone_id) + '"' + (z.zone_id === current ? ' selected' : '') + '>' + esc(z.zone_name) + '</option>'
   ).join('');
 
   if (selectedZone) updateZoneDisplay(nowPlaying[selectedZone]);
@@ -461,9 +484,9 @@ function updateZoneDisplay(np) {
   const zone = zonesData.find(z => z.zone_id === selectedZone);
   const deviceInfo = zone?.device_name ? ' (' + zone.device_name + ')' : '';
   document.getElementById('zone-name').textContent = (zone?.zone_name || '') + deviceInfo;
-  const track = np.line1 || 'Stopped';
-  const artist = np.line2 || '';
-  const album = np.line3 || '';
+  const track = esc(np.line1 || 'Stopped');
+  const artist = esc(np.line2 || '');
+  const album = esc(np.line3 || '');
   document.getElementById('zone-status').innerHTML = '<strong>' + track + '</strong>' + (artist ? '<br>' + artist + (album ? ' • ' + album : '') : '');
   const volUnit = np.volume_type === 'db' ? ' dB' : '';
   document.getElementById('zone-vol').textContent = typeof np.volume === 'number' ? np.volume + volUnit : '—';
@@ -578,6 +601,7 @@ ${navHtml('knobs')}
 
 <script>
 ${versionScript}
+${escapeScript}
 let zonesData = [];
 
 function ago(ts) {
@@ -607,19 +631,28 @@ async function loadKnobs() {
   tbody.innerHTML = knobs.map(k => {
     const st = k.status || {};
     const bat = st.battery_level != null ? st.battery_level + '%' + (st.battery_charging ? ' ⚡' : '') : '—';
-    const zone = st.zone_id ? (zonesData.find(z => z.zone_id === st.zone_id)?.zone_name || st.zone_id) : '—';
-    return '<tr><td><code>' + (k.knob_id || '') + '</code></td><td>' + (k.name || '<span class="muted">unnamed</span>') + '</td><td>' + (k.version || '—') + '</td><td>' + zone + '</td><td>' + bat + '</td><td>' + ago(k.last_seen) + '</td><td><button class="config-btn" onclick="openConfig(\\'' + k.knob_id + '\\')">Config</button></td></tr>';
+    const zone = st.zone_id ? esc(zonesData.find(z => z.zone_id === st.zone_id)?.zone_name || st.zone_id) : '—';
+    return '<tr><td><code>' + esc(k.knob_id || '') + '</code></td><td>' + (k.name ? esc(k.name) : '<span class="muted">unnamed</span>') + '</td><td>' + esc(k.version || '—') + '</td><td>' + zone + '</td><td>' + bat + '</td><td>' + ago(k.last_seen) + '</td><td><button class="config-btn" data-knob-id="' + escAttr(k.knob_id) + '">Config</button></td></tr>';
   }).join('');
 }
+
+// Event delegation for config buttons
+document.getElementById('knobs-body').addEventListener('click', function(e) {
+  const btn = e.target.closest('.config-btn');
+  if (btn) openConfig(btn.dataset.knobId);
+});
 
 function openModal() { document.getElementById('configModal').classList.add('open'); }
 function closeModal() { document.getElementById('configModal').classList.remove('open'); }
 
+let currentKnobId = null;
+
 async function openConfig(knobId) {
+  currentKnobId = knobId;
   openModal();
   document.getElementById('configForm').innerHTML = 'Loading...';
 
-  const res = await fetch('/config/' + knobId);
+  const res = await fetch('/config/' + encodeURIComponent(knobId));
   const data = await res.json();
   const c = data.config || {};
 
@@ -631,12 +664,15 @@ async function openConfig(knobId) {
   const slpChg = c.sleep_charging || { enabled: false, timeout_sec: 0 };
   const slpBat = c.sleep_battery || { enabled: true, timeout_sec: 60 };
 
-  document.getElementById('configForm').innerHTML = '<form onsubmit="saveConfig(event,\\'' + knobId + '\\')"><div class="form-row"><label>Name:</label><input type="text" name="name" value="' + (c.name || '') + '" placeholder="Living Room Knob"></div><div class="form-section"><h3>Display Rotation</h3><div class="form-row"><label>Charging:</label>' + rotSel('rotation_charging', c.rotation_charging ?? 180) + ' <label style="margin-left:1em;">Battery:</label>' + rotSel('rotation_not_charging', c.rotation_not_charging ?? 0) + '</div></div><div class="form-section"><h3>Power Timers (sec, 0=skip)</h3><table style="font-size:0.9em;"><tr><th></th><th>Charging</th><th>Battery</th></tr><tr><td>Art Mode</td><td><input type="number" name="art_chg_sec" value="' + artChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_chg_on"' + (artChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="art_bat_sec" value="' + artBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_bat_on"' + (artBat.enabled ? ' checked' : '') + '> On</label></td></tr><tr><td>Dim</td><td><input type="number" name="dim_chg_sec" value="' + dimChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_chg_on"' + (dimChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="dim_bat_sec" value="' + dimBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_bat_on"' + (dimBat.enabled ? ' checked' : '') + '> On</label></td></tr><tr><td>Sleep</td><td><input type="number" name="slp_chg_sec" value="' + slpChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_chg_on"' + (slpChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="slp_bat_sec" value="' + slpBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_bat_on"' + (slpBat.enabled ? ' checked' : '') + '> On</label></td></tr></table></div><div class="form-section"><h3>Power Mgmt</h3><div class="form-row"><label><input type="checkbox" name="wifi_ps"' + (c.wifi_power_save_enabled ? ' checked' : '') + '> WiFi Sleep</label> <label style="margin-left:1em;"><input type="checkbox" name="cpu_scale"' + (c.cpu_freq_scaling_enabled ? ' checked' : '') + '> CPU Scaling</label></div><div class="form-row"><label>Sleep poll (stopped):</label><input type="number" name="sleep_poll_stopped" value="' + (c.sleep_poll_stopped_sec ?? 60) + '" style="width:50px;"> sec</div></div><div class="form-actions"><button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button><button type="submit" class="btn-primary">Save</button></div></form>';
+  document.getElementById('configForm').innerHTML = '<form id="knobConfigForm"><div class="form-row"><label>Name:</label><input type="text" name="name" value="' + escAttr(c.name || '') + '" placeholder="Living Room Knob"></div><div class="form-section"><h3>Display Rotation</h3><div class="form-row"><label>Charging:</label>' + rotSel('rotation_charging', c.rotation_charging ?? 180) + ' <label style="margin-left:1em;">Battery:</label>' + rotSel('rotation_not_charging', c.rotation_not_charging ?? 0) + '</div></div><div class="form-section"><h3>Power Timers (sec, 0=skip)</h3><table style="font-size:0.9em;"><tr><th></th><th>Charging</th><th>Battery</th></tr><tr><td>Art Mode</td><td><input type="number" name="art_chg_sec" value="' + artChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_chg_on"' + (artChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="art_bat_sec" value="' + artBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_bat_on"' + (artBat.enabled ? ' checked' : '') + '> On</label></td></tr><tr><td>Dim</td><td><input type="number" name="dim_chg_sec" value="' + dimChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_chg_on"' + (dimChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="dim_bat_sec" value="' + dimBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_bat_on"' + (dimBat.enabled ? ' checked' : '') + '> On</label></td></tr><tr><td>Sleep</td><td><input type="number" name="slp_chg_sec" value="' + slpChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_chg_on"' + (slpChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="slp_bat_sec" value="' + slpBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_bat_on"' + (slpBat.enabled ? ' checked' : '') + '> On</label></td></tr></table></div><div class="form-section"><h3>Power Mgmt</h3><div class="form-row"><label><input type="checkbox" name="wifi_ps"' + (c.wifi_power_save_enabled ? ' checked' : '') + '> WiFi Sleep</label> <label style="margin-left:1em;"><input type="checkbox" name="cpu_scale"' + (c.cpu_freq_scaling_enabled ? ' checked' : '') + '> CPU Scaling</label></div><div class="form-row"><label>Sleep poll (stopped):</label><input type="number" name="sleep_poll_stopped" value="' + (c.sleep_poll_stopped_sec ?? 60) + '" style="width:50px;"> sec</div></div><div class="form-actions"><button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button><button type="submit" class="btn-primary">Save</button></div></form>';
+
+  document.getElementById('knobConfigForm').addEventListener('submit', saveConfig);
 }
 
-async function saveConfig(e, knobId) {
+async function saveConfig(e) {
   e.preventDefault();
   const f = e.target;
+  const knobId = currentKnobId;
   const v = n => f.querySelector('[name="' + n + '"]')?.value || '';
   const num = n => parseInt(v(n)) || 0;
   const chk = n => f.querySelector('[name="' + n + '"]')?.checked || false;
@@ -656,7 +692,7 @@ async function saveConfig(e, knobId) {
     sleep_poll_stopped_sec: num('sleep_poll_stopped'),
   };
 
-  const res = await fetch('/config/' + knobId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+  const res = await fetch('/config/' + encodeURIComponent(knobId), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
   if (res.ok) { closeModal(); loadKnobs(); } else { alert('Save failed'); }
 }
 
