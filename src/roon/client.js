@@ -181,6 +181,7 @@ function createRoonClient(opts = {}) {
       line3: three.line3 || '',
       is_playing: zone.state === 'playing',
       volume: vol?.value ?? null,
+      volume_type: vol?.type || null,
       volume_min: vol?.min ?? -80,
       volume_max: vol?.max ?? 0,
       volume_step: vol?.step ?? 2,

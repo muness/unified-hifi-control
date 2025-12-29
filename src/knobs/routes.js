@@ -337,7 +337,8 @@ async function loadZones() {
       const track = np.line1 || 'Stopped';
       const artist = np.line2 || '';
       const album = np.line3 || '';
-      const vol = typeof np.volume === 'number' ? np.volume : '—';
+      const volUnit = np.volume_type === 'db' ? ' dB' : (np.volume_type === 'number' ? '' : '');
+      const vol = typeof np.volume === 'number' ? np.volume + volUnit : '—';
       const step = np.volume_step || 2;
       const playIcon = np.is_playing ? '⏸' : '▶';
       const deviceInfo = zone.device_name ? \` <span class="muted">(\${zone.device_name})</span>\` : '';
@@ -464,7 +465,8 @@ function updateZoneDisplay(np) {
   const artist = np.line2 || '';
   const album = np.line3 || '';
   document.getElementById('zone-status').innerHTML = '<strong>' + track + '</strong>' + (artist ? '<br>' + artist + (album ? ' • ' + album : '') : '');
-  document.getElementById('zone-vol').textContent = typeof np.volume === 'number' ? np.volume : '—';
+  const volUnit = np.volume_type === 'db' ? ' dB' : '';
+  document.getElementById('zone-vol').textContent = typeof np.volume === 'number' ? np.volume + volUnit : '—';
   document.getElementById('zone-art').src = '/now_playing/image?zone_id=' + encodeURIComponent(selectedZone) + '&width=120&height=120&t=' + Date.now();
   document.getElementById('play-btn').textContent = np.is_playing ? '⏸' : '▶';
 
