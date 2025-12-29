@@ -1,4 +1,4 @@
-const bonjour = require('bonjour')();
+const bonjourInstance = require('bonjour')();
 
 function advertise(port, props = {}, log = console) {
   const serviceConfig = {
@@ -20,7 +20,7 @@ function advertise(port, props = {}, log = console) {
     txt: serviceConfig.txt
   });
 
-  const service = bonjour.publish(serviceConfig);
+  const service = bonjourInstance.publish(serviceConfig);
 
   service.on('up', () => {
     log.info('mDNS: Service published successfully', { name: serviceConfig.name });

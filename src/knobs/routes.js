@@ -252,21 +252,88 @@ function createKnobRoutes({ roon, knobs, logger }) {
 <head><title>Unified Hi-Fi Control</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
-  button { padding: 0.5em 1em; cursor: pointer; }
+  button { padding: 0.5em 1em; cursor: pointer; margin-right: 0.5em; }
   .section { margin: 1.5em 0; padding: 1em; border: 1px solid #ddd; border-radius: 4px; }
-  #firmware-status { margin-top: 0.5em; }
+  .status-msg { margin-top: 0.5em; }
   .success { color: green; }
   .error { color: red; }
+  .muted { color: #666; }
+  select { padding: 0.4em; min-width: 200px; }
+  label { display: inline-block; min-width: 100px; margin-right: 0.5em; }
+  .form-row { margin: 0.8em 0; }
+  input[type="text"] { padding: 0.4em; width: 200px; }
+  .hidden { display: none; }
+  .config-form { margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; }
 </style>
 </head>
 <body>
 <h1>Unified Hi-Fi Control</h1>
 
 <div class="section">
-  <h2>Firmware</h2>
+  <h2>HQPlayer</h2>
+  <div id="hqp-not-configured">
+    <p class="muted">Not configured</p>
+    <button onclick="toggleHqpConfig()">Configure HQPlayer</button>
+  </div>
+  <div id="hqp-configured" class="hidden">
+    <p>Status: <span id="hqp-status">checking...</span></p>
+
+    <div class="form-row">
+      <label>Profile:</label>
+      <select id="hqp-profile" onchange="loadProfile(this.value)">
+        <option value="">Loading...</option>
+      </select>
+      <div class="muted" style="font-size: 0.85em; margin-top: 0.3em;">Current profile detected by matching config title to profile name</div>
+    </div>
+
+    <div class="form-row">
+      <label>Filter (1x):</label>
+      <select id="hqp-filter1x" onchange="setPipeline('filter1x', this.value)"></select>
+    </div>
+
+    <div class="form-row">
+      <label>Filter (Nx):</label>
+      <select id="hqp-filterNx" onchange="setPipeline('filterNx', this.value)"></select>
+    </div>
+
+    <div class="form-row">
+      <label>Shaper:</label>
+      <select id="hqp-shaper" onchange="setPipeline('shaper', this.value)"></select>
+    </div>
+
+    <div id="hqp-status-msg" class="status-msg"></div>
+    <button onclick="toggleHqpConfig()">Reconfigure</button>
+  </div>
+
+  <div id="hqp-config-form" class="config-form hidden">
+    <h3>HQPlayer Configuration</h3>
+    <div class="form-row">
+      <label>Host:</label>
+      <input type="text" id="hqp-host" placeholder="">
+    </div>
+    <div class="form-row">
+      <label>Port (Web UI):</label>
+      <input type="text" id="hqp-port" value="8088" placeholder="8088">
+    </div>
+    <div class="form-row">
+      <label>Username:</label>
+      <input type="text" id="hqp-username" placeholder="(required for profiles)">
+    </div>
+    <div class="form-row">
+      <label>Password:</label>
+      <input type="password" id="hqp-password" placeholder="(required for profiles)">
+    </div>
+    <button onclick="saveHqpConfig()">Save</button>
+    <button onclick="toggleHqpConfig()">Cancel</button>
+    <div id="hqp-config-status" class="status-msg"></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>S3 Knob Firmware</h2>
   <p>Current: <span id="fw-version">checking...</span></p>
   <button id="fetch-btn" onclick="fetchFirmware()">Fetch Latest from GitHub</button>
-  <div id="firmware-status"></div>
+  <div id="firmware-status" class="status-msg"></div>
 </div>
 
 <div class="section">
@@ -275,6 +342,227 @@ function createKnobRoutes({ roon, knobs, logger }) {
 </div>
 
 <script>
+// ===== HQPlayer Functions =====
+let hqpConfigured = false;
+
+async function loadHqpStatus() {
+  try {
+    const res = await fetch('/hqp/status');
+    const data = await res.json();
+
+    if (data.enabled) {
+      hqpConfigured = true;
+      document.getElementById('hqp-not-configured').classList.add('hidden');
+      document.getElementById('hqp-configured').classList.remove('hidden');
+      document.getElementById('hqp-status').textContent = data.connected ? 'Connected' : 'Disconnected';
+      document.getElementById('hqp-status').className = data.connected ? 'success' : 'error';
+
+      // Load profiles and pipeline
+      loadHqpProfiles();
+      loadHqpPipeline();
+    } else {
+      hqpConfigured = false;
+      document.getElementById('hqp-not-configured').classList.remove('hidden');
+      document.getElementById('hqp-configured').classList.add('hidden');
+    }
+  } catch (e) {
+    document.getElementById('hqp-status').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function loadHqpProfiles() {
+  try {
+    // Get current config name from status
+    const statusRes = await fetch('/hqp/status');
+    const statusData = await statusRes.json();
+    const currentConfigName = statusData.configName || '';
+
+    const res = await fetch('/hqp/profiles');
+    const data = await res.json();
+    const select = document.getElementById('hqp-profile');
+    select.innerHTML = '<option value="">-- Select Profile --</option>';
+    if (data.profiles) {
+      data.profiles.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.value || p;
+        const title = p.title || p.value || p;
+        opt.textContent = title;
+        // Auto-select if title matches current config name
+        // Note: This only works if your HQPlayer config title matches the profile name exactly
+        if (currentConfigName && title.toLowerCase() === currentConfigName.toLowerCase()) {
+          opt.selected = true;
+        }
+        select.appendChild(opt);
+      });
+    }
+  } catch (e) {
+    console.error('Failed to load profiles', e);
+  }
+}
+
+async function loadHqpPipeline() {
+  try {
+    const res = await fetch('/hqp/pipeline');
+    const data = await res.json();
+    if (!data.enabled || !data.settings) return;
+
+    // Populate filter/shaper dropdowns from settings object
+    const s = data.settings;
+    populateSelect('hqp-filter1x', s.filter1x?.options || [], s.filter1x?.selected?.value);
+    populateSelect('hqp-filterNx', s.filterNx?.options || [], s.filterNx?.selected?.value);
+    populateSelect('hqp-shaper', s.shaper?.options || [], s.shaper?.selected?.value);
+  } catch (e) {
+    console.error('Failed to load pipeline', e);
+  }
+}
+
+function populateSelect(id, options, currentValue) {
+  const select = document.getElementById(id);
+  select.innerHTML = '';
+  options.forEach(opt => {
+    const o = document.createElement('option');
+    o.value = opt.value || opt;
+    o.textContent = opt.label || opt.value || opt;
+    if ((opt.value || opt) === currentValue) o.selected = true;
+    select.appendChild(o);
+  });
+}
+
+async function loadProfile(profile) {
+  if (!profile) return;
+  const status = document.getElementById('hqp-status-msg');
+  status.textContent = 'Loading profile...';
+  status.className = 'status-msg';
+
+  try {
+    const res = await fetch('/hqp/profiles/load', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      status.textContent = 'Profile loaded (HQPlayer restarting)';
+      status.className = 'status-msg success';
+      setTimeout(loadHqpPipeline, 3000);
+    } else {
+      status.textContent = 'Error: ' + data.error;
+      status.className = 'status-msg error';
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.className = 'status-msg error';
+  }
+}
+
+async function setPipeline(setting, value) {
+  const status = document.getElementById('hqp-status-msg');
+  try {
+    const res = await fetch('/hqp/pipeline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ setting, value })
+    });
+    if (res.ok) {
+      status.textContent = setting + ' updated';
+      status.className = 'status-msg success';
+    } else {
+      const data = await res.json();
+      status.textContent = 'Error: ' + data.error;
+      status.className = 'status-msg error';
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.className = 'status-msg error';
+  }
+}
+
+function toggleHqpConfig() {
+  const form = document.getElementById('hqp-config-form');
+  form.classList.toggle('hidden');
+}
+
+async function saveHqpConfig() {
+  const host = document.getElementById('hqp-host').value;
+  const port = document.getElementById('hqp-port').value || '8088';
+  const username = document.getElementById('hqp-username').value;
+  const password = document.getElementById('hqp-password').value;
+  const status = document.getElementById('hqp-config-status');
+
+  if (!host) {
+    status.textContent = 'Host is required';
+    status.className = 'status-msg error';
+    return;
+  }
+
+  const config = { host, port: parseInt(port) };
+  if (username) config.username = username;
+  if (password) config.password = password;
+
+  try {
+    const res = await fetch('/hqp/configure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+    if (res.ok) {
+      status.textContent = 'Configured!';
+      status.className = 'status-msg success';
+      document.getElementById('hqp-config-form').classList.add('hidden');
+      loadHqpStatus();
+    } else {
+      const data = await res.json();
+      status.textContent = 'Error: ' + data.error;
+      status.className = 'status-msg error';
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.className = 'status-msg error';
+  }
+}
+
+// ===== Firmware Functions =====
+function fetchFirmware() {
+  const btn = document.getElementById('fetch-btn');
+  const status = document.getElementById('firmware-status');
+  btn.disabled = true;
+  status.textContent = 'Fetching...';
+  status.className = 'status-msg';
+
+  fetch('/admin/fetch-firmware', { method: 'POST' })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (ok) {
+        status.textContent = 'Downloaded v' + data.version;
+        status.className = 'status-msg success';
+        document.getElementById('fw-version').textContent = 'v' + data.version;
+      } else {
+        status.textContent = 'Error: ' + data.error;
+        status.className = 'status-msg error';
+      }
+    })
+    .catch(e => {
+      status.textContent = 'Error: ' + e.message;
+      status.className = 'status-msg error';
+    })
+    .finally(() => btn.disabled = false);
+}
+
+// ===== Init =====
+// Set subnet placeholder for HQPlayer host
+(function setSubnetPlaceholder() {
+  const host = window.location.hostname;
+  const match = host.match(/^(\\d+\\.\\d+\\.\\d+)\\./);
+  if (match) {
+    document.getElementById('hqp-host').placeholder = match[1] + '.x';
+  } else {
+    document.getElementById('hqp-host').placeholder = '192.168.1.x';
+  }
+})();
+
+// Load HQPlayer status
+loadHqpStatus();
+
 // Load current firmware version
 fetch('/firmware/version')
   .then(r => r.ok ? r.json() : Promise.reject('No firmware'))
@@ -285,33 +573,6 @@ fetch('/firmware/version')
 fetch('/admin/status.json').then(r => r.json()).then(d => {
   document.getElementById('status').textContent = JSON.stringify(d, null, 2);
 });
-
-// Fetch latest firmware
-function fetchFirmware() {
-  const btn = document.getElementById('fetch-btn');
-  const status = document.getElementById('firmware-status');
-  btn.disabled = true;
-  status.textContent = 'Fetching...';
-  status.className = '';
-
-  fetch('/admin/fetch-firmware', { method: 'POST' })
-    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
-    .then(({ ok, data }) => {
-      if (ok) {
-        status.textContent = 'Downloaded v' + data.version;
-        status.className = 'success';
-        document.getElementById('fw-version').textContent = 'v' + data.version;
-      } else {
-        status.textContent = 'Error: ' + data.error;
-        status.className = 'error';
-      }
-    })
-    .catch(e => {
-      status.textContent = 'Error: ' + e.message;
-      status.className = 'error';
-    })
-    .finally(() => btn.disabled = false);
-}
 </script>
 </body>
 </html>`);
