@@ -347,14 +347,12 @@ async function loadZones() {
       const track = esc(np.line1 || 'Stopped');
       const artist = esc(np.line2 || '');
       const album = esc(np.line3 || '');
-      const vc = zone.volume_control;
-      const volUnit = vc?.type === 'db' ? ' dB' : '';
-      const vol = typeof np.volume === 'number' ? np.volume + volUnit : (vc ? '—' : 'fixed');
+      const volUnit = np.volume_type === 'db' ? ' dB' : '';
+      const vol = typeof np.volume === 'number' ? np.volume + volUnit : '—';
       const step = np.volume_step || 2;
-      const hasVol = !!vc;
       const playIcon = np.is_playing ? '⏸' : '▶';
       const deviceInfo = zone.device_name ? ' <span class="muted">(' + esc(zone.device_name) + ')</span>' : '';
-      return '<div class="zone-card" data-zone-id="' + escAttr(zone.zone_id) + '" data-step="' + step + '" data-has-vol="' + hasVol + '">' +
+      return '<div class="zone-card" data-zone-id="' + escAttr(zone.zone_id) + '" data-step="' + step + '">' +
         '<img class="art-lg" src="/now_playing/image?zone_id=' + encodeURIComponent(zone.zone_id) + '&width=120&height=120" alt="">' +
         '<div class="zone-info">' +
           '<h3>' + esc(zone.zone_name) + deviceInfo + '</h3>' +
@@ -362,9 +360,9 @@ async function loadZones() {
           '<p>' + artist + (album ? ' • ' + album : '') + '</p>' +
           '<p class="muted">Volume: ' + vol + '</p>' +
           '<div class="zone-controls">' +
-            (hasVol ? '<button class="ctrl" data-action="vol_rel" data-value="-1">−</button>' : '') +
+            '<button class="ctrl" data-action="vol_rel" data-value="-1">−</button>' +
             '<button class="ctrl" data-action="play_pause">' + playIcon + '</button>' +
-            (hasVol ? '<button class="ctrl" data-action="vol_rel" data-value="1">+</button>' : '') +
+            '<button class="ctrl" data-action="vol_rel" data-value="1">+</button>' +
             '<button class="ctrl" data-action="previous">⏮</button>' +
             '<button class="ctrl" data-action="next">⏭</button>' +
           '</div>' +
