@@ -452,8 +452,9 @@ ${navHtml('critical')}
 <script>
 ${versionScript}
 ${escapeScript}
-let selectedZone = null;
+let selectedZone = localStorage.getItem('criticalZone') || null;
 let zonesData = [];
+let initialLoad = true;
 
 async function loadZones() {
   const res = await fetch('/admin/status.json');
@@ -463,16 +464,33 @@ async function loadZones() {
   (data.bridge?.now_playing || []).forEach(np => nowPlaying[np.zone_id] = np);
 
   const sel = document.getElementById('zone-select');
-  const current = sel.value;
   sel.innerHTML = '<option value="">-- Select Zone --</option>' + zonesData.map(z =>
-    '<option value="' + escAttr(z.zone_id) + '"' + (z.zone_id === current ? ' selected' : '') + '>' + esc(z.zone_name) + '</option>'
+    '<option value="' + escAttr(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + '</option>'
   ).join('');
+
+  // Auto-restore saved zone on first load
+  if (initialLoad && selectedZone) {
+    initialLoad = false;
+    const exists = zonesData.some(z => z.zone_id === selectedZone);
+    if (exists) {
+      document.getElementById('zone-display').classList.remove('hidden');
+    } else {
+      selectedZone = null;
+      localStorage.removeItem('criticalZone');
+    }
+  }
+  initialLoad = false;
 
   if (selectedZone) updateZoneDisplay(nowPlaying[selectedZone]);
 }
 
 function selectZone(zoneId) {
   selectedZone = zoneId;
+  if (zoneId) {
+    localStorage.setItem('criticalZone', zoneId);
+  } else {
+    localStorage.removeItem('criticalZone');
+  }
   if (!zoneId) {
     document.getElementById('zone-display').classList.add('hidden');
     return;
