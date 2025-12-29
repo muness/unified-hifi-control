@@ -231,8 +231,8 @@ function createKnobRoutes({ roon, knobs, logger }) {
     });
   });
 
-  // GET /knobs - List all known knobs
-  router.get('/knobs', (req, res) => {
+  // GET /api/knobs - List all known knobs (JSON API)
+  router.get('/api/knobs', (req, res) => {
     log.debug('Knobs list requested', { ip: req.ip });
     res.json({ knobs: knobs.listKnobs() });
   });
