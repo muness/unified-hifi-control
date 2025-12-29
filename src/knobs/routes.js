@@ -341,7 +341,7 @@ function createKnobRoutes({ roon, knobs, logger }) {
 </div>
 
 <div class="section">
-  <h2>Firmware</h2>
+  <h2>S3 Knob Firmware</h2>
   <p>Current: <span id="fw-version">checking...</span></p>
   <button id="fetch-btn" onclick="fetchFirmware()">Fetch Latest from GitHub</button>
   <div id="firmware-status" class="status-msg"></div>
