@@ -12,6 +12,7 @@ const {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } = require('@modelcontextprotocol/sdk/types.js');
+const { version: VERSION } = require('../../package.json');
 
 const BRIDGE_URL = process.env.HIFI_BRIDGE_URL || 'http://localhost:3000';
 
@@ -249,7 +250,7 @@ async function handleTool(name, args) {
 
 async function main() {
   const server = new Server(
-    { name: 'unified-hifi-control', version: '0.2.0' },
+    { name: 'unified-hifi-control', version: VERSION },
     { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS }
   );
 
