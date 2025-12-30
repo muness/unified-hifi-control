@@ -141,28 +141,9 @@ class HQPNativeClient extends EventEmitter {
       const rootContent = parsed[rootName];
 
       // Multi-item command handling
-      if (itemType) {
-        // Start of multi-item response
-        if (rootName === command && !this.collectingItems) {
-          this.collectingItems = {
-            meta: typeof rootContent === 'object' ? { ...rootContent } : {},
-            items: [],
-          };
-          // Remove nested items from meta
-          delete this.collectingItems.meta[itemType];
-          return;
-        }
-
-        // Item element
-        if (rootName === itemType && this.collectingItems) {
-          this.collectingItems.items.push(
-            typeof rootContent === 'object' ? rootContent : {}
-          );
-          return;
-        }
-
-        // End - check if rootContent contains items (self-contained response)
-        if (rootName === command && rootContent && rootContent[itemType]) {
+      if (itemType && rootName === command) {
+        // Check if self-contained response (items embedded in same XML)
+        if (rootContent && rootContent[itemType]) {
           clearTimeout(timeout);
           const items = Array.isArray(rootContent[itemType])
             ? rootContent[itemType]
@@ -177,8 +158,18 @@ class HQPNativeClient extends EventEmitter {
           return;
         }
 
+        // Start collecting (items will come on separate lines)
+        if (!this.collectingItems) {
+          this.collectingItems = {
+            meta: typeof rootContent === 'object' ? { ...rootContent } : {},
+            items: [],
+          };
+          delete this.collectingItems.meta[itemType];
+          return;
+        }
+
         // End - closing tag (we got items separately)
-        if (this.collectingItems && (rootContent === '' || rootContent === undefined)) {
+        if (this.collectingItems) {
           clearTimeout(timeout);
           const result = { ...this.collectingItems.meta, items: this.collectingItems.items };
           this.currentRequest = null;
@@ -187,6 +178,14 @@ class HQPNativeClient extends EventEmitter {
           this.processNextRequest();
           return;
         }
+      }
+
+      // Item element (on separate line)
+      if (itemType && rootName === itemType && this.collectingItems) {
+        this.collectingItems.items.push(
+          typeof rootContent === 'object' ? rootContent : {}
+        );
+        return;
       }
 
       // Single element response
