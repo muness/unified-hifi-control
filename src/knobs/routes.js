@@ -783,7 +783,7 @@ ${navHtml('settings')}
 <h2>Settings</h2>
 
 <div class="section">
-  <h3>HQPlayer Configuration</h3>
+  <h3>HQPlayer Embedded Configuration</h3>
   <div id="hqp-status-line" class="muted">Checking...</div>
   <div id="hqp-config-form">
     <div class="form-row"><label>Host:</label><input type="text" id="hqp-host" placeholder="192.168.1.x"></div>
