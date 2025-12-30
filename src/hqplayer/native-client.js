@@ -28,7 +28,7 @@
 
 const net = require('net');
 const xpath = require('xpath');
-const { DOMParser } = require('xmldom');
+const { DOMParser } = require('@xmldom/xmldom');
 const { EventEmitter } = require('events');
 
 const DEFAULT_PORT = 4321;
@@ -573,7 +573,7 @@ class HQPNativeClient extends EventEmitter {
  */
 function discoverHQPlayers(timeout = 3000) {
   const dgram = require('dgram');
-  const { DOMParser } = require('xmldom');
+  const { DOMParser } = require('@xmldom/xmldom');
   const domParser = new DOMParser();
 
   return new Promise((resolve) => {
