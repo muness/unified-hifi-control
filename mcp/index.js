@@ -12,7 +12,7 @@ const {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } = require('@modelcontextprotocol/sdk/types.js');
-const { version: VERSION } = require('../../package.json');
+const { version: VERSION } = require('../package.json');
 
 const BRIDGE_URL = process.env.HIFI_BRIDGE_URL || 'http://localhost:3000';
 

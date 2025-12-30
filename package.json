@@ -4,12 +4,12 @@
   "description": "Source-agnostic hi-fi control bridge for hardware surfaces and Home Assistant",
   "main": "src/index.js",
   "bin": {
-    "unified-hifi-control-mcp": "src/mcp/index.js"
+    "unified-hifi-control-mcp": "mcp/index.js"
   },
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "mcp": "node src/mcp/index.js",
+    "mcp": "node mcp/index.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "version": "node scripts/sync-version.js && git add .claude-plugin/marketplace.json plugin/.claude-plugin/plugin.json"
