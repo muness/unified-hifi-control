@@ -165,8 +165,39 @@ async function handleTool(name, args) {
 
       case 'hifi_control': {
         const { zone_id, action, value } = args;
-        const body = { zone_id, action };
-        if (value !== undefined) body.value = value;
+        // Translate MCP actions to backend actions
+        let backendAction = action;
+        let backendValue = value;
+        switch (action) {
+          case 'play':
+          case 'pause':
+          case 'playpause':
+          case 'stop':
+            backendAction = 'play_pause';
+            break;
+          case 'next':
+            backendAction = 'next';
+            break;
+          case 'previous':
+          case 'prev':
+            backendAction = 'previous';
+            break;
+          case 'volume':
+            // Detect relative vs absolute: negative values or explicit +N are relative
+            if (value !== undefined && (value < 0 || String(value).startsWith('+'))) {
+              backendAction = 'vol_rel';
+              backendValue = Number(value);
+            } else {
+              backendAction = 'vol_abs';
+              backendValue = Number(value);
+            }
+            break;
+          default:
+            // Pass through for any other actions
+            break;
+        }
+        const body = { zone_id, action: backendAction };
+        if (backendValue !== undefined) body.value = backendValue;
         await apiFetch('/control', { method: 'POST', body: JSON.stringify(body) });
         const data = await apiFetch(`/now_playing?zone_id=${encodeURIComponent(zone_id)}`);
         return { content: [{ type: 'text', text: `Action "${action}" executed.\n\nCurrent state:\n${JSON.stringify(data, null, 2)}` }] };
