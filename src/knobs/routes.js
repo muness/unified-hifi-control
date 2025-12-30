@@ -373,9 +373,14 @@ async function loadHqpProfiles() {
     ]);
     const status = await statusRes.json();
     const profiles = await profilesRes.json();
-    hqpProfiles = profiles.profiles || [];
-    hqpCurrentProfile = status.configName || null;
-  } catch (e) { /* HQPlayer not configured */ }
+    // Only update if we got valid data (preserve cache on HQPlayer restart)
+    if (profiles.profiles && profiles.profiles.length > 0) {
+      hqpProfiles = profiles.profiles;
+    }
+    if (status.configName) {
+      hqpCurrentProfile = status.configName;
+    }
+  } catch (e) { /* HQPlayer not configured or restarting - keep cached profiles */ }
 }
 
 async function loadZones() {
@@ -403,9 +408,9 @@ async function loadZones() {
       const deviceInfo = zone.device_name ? ' <span class="muted">(' + esc(zone.device_name) + ')</span>' : '';
       const isHqp = (zone.output_name || '').toLowerCase().includes('hqplayer');
       const profileSelect = isHqp && hqpProfiles.length > 0 ?
-        '<p class="muted" style="margin-top:0.5em;">Profile: <select class="hqp-profile-select" style="padding:0.2em;">' +
+        '<p class="muted" style="margin-top:0.5em;">Configuration: <select class="hqp-profile-select" style="padding:0.2em;">' +
         hqpProfiles.map(p => '<option value="' + escAttr(p.value) + '"' +
-          ((hqpCurrentProfile && p.title.toLowerCase() === hqpCurrentProfile.toLowerCase()) ? ' selected' : '') + '>' +
+          ((hqpCurrentProfile && (p.title.toLowerCase() === hqpCurrentProfile.toLowerCase() || p.value === hqpCurrentProfile)) ? ' selected' : '') + '>' +
           esc(p.title) + '</option>').join('') +
         '</select></p>' : '';
       return '<div class="zone-card" data-zone-id="' + escAttr(zone.zone_id) + '" data-step="' + step + '">' +
@@ -445,13 +450,21 @@ async function ctrl(zoneId, action, value) {
 }
 
 async function loadProfile(profile) {
+  // Update UI immediately to show selection
+  hqpCurrentProfile = profile;
+  loadZones();
+
   await fetch('/hqp/profiles/load', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profile })
   });
-  await loadHqpProfiles();
-  loadZones();
+
+  // HQPlayer restarts when loading a profile - wait before re-fetching
+  setTimeout(async () => {
+    await loadHqpProfiles();
+    loadZones();
+  }, 5000);
 }
 
 // Event delegation for zone control buttons
@@ -522,12 +535,12 @@ ${navHtml('critical')}
   </div>
   <div id="hqp-configured" class="hidden">
     <p>Status: <span id="hqp-status">checking...</span></p>
-    <div class="form-row"><label>Profile:</label><select id="hqp-profile" onchange="loadProfile(this.value)"></select></div>
+    <div class="form-row"><label>Configuration:</label><select id="hqp-profile" onchange="loadProfile(this.value)"></select></div>
     <div class="form-row"><label>Mode:</label><select id="hqp-mode" onchange="setPipeline('mode',this.value)"></select></div>
     <div class="form-row"><label>Sample Rate:</label><select id="hqp-samplerate" onchange="setPipeline('samplerate',this.value)"></select></div>
     <div class="form-row"><label>Filter (1x):</label><select id="hqp-filter1x" onchange="setPipeline('filter1x',this.value)"></select></div>
     <div class="form-row"><label>Filter (Nx):</label><select id="hqp-filterNx" onchange="setPipeline('filterNx',this.value)"></select></div>
-    <div class="form-row"><label>Shaper:</label><select id="hqp-shaper" onchange="setPipeline('shaper',this.value)"></select></div>
+    <div class="form-row"><label id="hqp-shaper-label">Shaper:</label><select id="hqp-shaper" onchange="setPipeline('shaper',this.value)"></select></div>
     <div id="hqp-msg" class="status-msg"></div>
   </div>
 </div>
@@ -651,6 +664,12 @@ async function loadHqpPipeline() {
   popSel('hqp-filter1x', s.filter1x?.options, s.filter1x?.selected?.value);
   popSel('hqp-filterNx', s.filterNx?.options, s.filterNx?.selected?.value);
   popSel('hqp-shaper', s.shaper?.options, s.shaper?.selected?.value);
+  // Update shaper label based on mode: PCM uses Dither, SDM uses Modulator
+  const shaperLabel = document.getElementById('hqp-shaper-label');
+  if (shaperLabel) {
+    const modeLabel = s.mode?.selected?.label?.toLowerCase() || '';
+    shaperLabel.textContent = modeLabel.includes('sdm') || modeLabel.includes('dsd') ? 'Modulator:' : 'Dither:';
+  }
 }
 
 function popSel(id, opts, cur) {
@@ -669,15 +688,41 @@ async function loadProfile(profile) {
   if (!profile) return;
   document.getElementById('hqp-msg').textContent = 'Loading...';
   const res = await fetch('/hqp/profiles/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile }) });
-  document.getElementById('hqp-msg').textContent = res.ok ? 'Profile loaded' : 'Error';
+  document.getElementById('hqp-msg').textContent = res.ok ? 'Configuration loading...' : 'Error';
   document.getElementById('hqp-msg').className = 'status-msg ' + (res.ok ? 'success' : 'error');
   setTimeout(loadHqpPipeline, 2000);
 }
 
 async function setPipeline(setting, value) {
+  // Disable all HQPlayer controls and show loading
+  const selects = ['hqp-mode', 'hqp-samplerate', 'hqp-filter1x', 'hqp-filterNx', 'hqp-shaper', 'hqp-profile'];
+  selects.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+  const msg = document.getElementById('hqp-msg');
+  msg.textContent = 'Updating...';
+  msg.className = 'status-msg';
+  document.body.style.cursor = 'wait';
+
   const res = await fetch('/hqp/pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ setting, value }) });
-  document.getElementById('hqp-msg').textContent = res.ok ? setting + ' updated' : 'Error';
-  document.getElementById('hqp-msg').className = 'status-msg ' + (res.ok ? 'success' : 'error');
+
+  if (res.ok) {
+    // Refresh pipeline to show updated values
+    await loadHqpPipeline();
+    msg.textContent = setting + ' updated';
+    msg.className = 'status-msg success';
+  } else {
+    msg.textContent = 'Error';
+    msg.className = 'status-msg error';
+  }
+
+  // Re-enable controls
+  selects.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
+  document.body.style.cursor = 'default';
 }
 
 loadZones();
@@ -866,14 +911,18 @@ ${navHtml('settings')}
 <h2>Settings</h2>
 
 <div class="section">
-  <h3>HQPlayer Embedded Configuration</h3>
-  <p class="muted" style="margin:0.5em 0;">Filter/shaper/rate control uses native protocol (port 4321). Profile switching requires web UI auth below.</p>
+  <h3>HQPlayer Configuration</h3>
   <div id="hqp-status-line" class="muted">Checking...</div>
-  <div id="hqp-config-form">
+  <button id="hqp-reconfig-btn" onclick="showHqpConfig()" style="display:none;margin-top:0.5em;">Reconfigure</button>
+  <div id="hqp-config-form" style="display:none;">
+    <p class="muted" style="margin:0.5em 0;">Filter/shaper/rate control uses native protocol (port 4321).</p>
     <div class="form-row"><label>Host:</label><input type="text" id="hqp-host" placeholder="192.168.1.x"></div>
-    <div class="form-row"><label>Port (Web UI):</label><input type="text" id="hqp-port" value="8088"></div>
-    <div class="form-row"><label>Username:</label><input type="text" id="hqp-username" placeholder="(optional, for profile switching)"></div>
-    <div class="form-row"><label>Password:</label><input type="password" id="hqp-password"></div>
+    <div id="hqp-embedded-fields" style="display:none;">
+      <p class="muted" style="margin:0.5em 0;">Configuration switching requires web UI credentials (Embedded only):</p>
+      <div class="form-row"><label>Port (Web UI):</label><input type="text" id="hqp-port" value="8088"></div>
+      <div class="form-row"><label>Username:</label><input type="text" id="hqp-username" placeholder="(optional)"></div>
+      <div class="form-row"><label>Password:</label><input type="password" id="hqp-password"></div>
+    </div>
     <button onclick="saveHqpConfig()">Save</button>
     <span id="hqp-save-msg" class="status-msg"></span>
   </div>
@@ -897,15 +946,46 @@ ${navHtml('settings')}
 ${versionScript}
 
 // HQPlayer config
+function showHqpConfig() {
+  document.getElementById('hqp-config-form').style.display = 'block';
+  document.getElementById('hqp-reconfig-btn').style.display = 'none';
+}
+
 async function loadHqpConfig() {
   try {
     const res = await fetch('/hqp/status');
     const data = await res.json();
-    document.getElementById('hqp-status-line').textContent = data.enabled
-      ? 'Connected to ' + (data.host || 'HQPlayer') + (data.connected ? ' ✓' : ' (disconnected)')
-      : 'Not configured';
-    document.getElementById('hqp-status-line').className = data.connected ? 'success' : 'muted';
-  } catch (e) {}
+    const statusLine = document.getElementById('hqp-status-line');
+    const embeddedFields = document.getElementById('hqp-embedded-fields');
+    const configForm = document.getElementById('hqp-config-form');
+    const reconfigBtn = document.getElementById('hqp-reconfig-btn');
+
+    if (data.enabled && data.connected) {
+      const product = data.product || 'HQPlayer';
+      const version = data.version ? ' v' + data.version : '';
+      statusLine.textContent = product + version + ' at ' + (data.host || 'unknown') + ' ✓';
+      statusLine.className = 'success';
+
+      // Hide form, show reconfigure button
+      configForm.style.display = 'none';
+      reconfigBtn.style.display = 'inline-block';
+
+      // Show embedded fields only for HQPlayer Embedded
+      if (data.isEmbedded) {
+        embeddedFields.style.display = 'block';
+      }
+    } else {
+      statusLine.textContent = data.enabled ? 'Configured but disconnected' : 'Not configured';
+      statusLine.className = 'muted';
+      // Show form, hide reconfigure button
+      configForm.style.display = 'block';
+      reconfigBtn.style.display = 'none';
+    }
+  } catch (e) {
+    // Show form on error
+    document.getElementById('hqp-config-form').style.display = 'block';
+    document.getElementById('hqp-reconfig-btn').style.display = 'none';
+  }
 }
 
 async function saveHqpConfig() {

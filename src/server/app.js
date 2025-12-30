@@ -95,8 +95,8 @@ function createApp(opts = {}) {
   });
 
   app.get('/hqp/profiles', async (req, res) => {
-    if (!hqp.isConfigured()) {
-      return res.json({ enabled: false, profiles: [] });
+    if (!hqp.hasWebCredentials()) {
+      return res.json({ enabled: false, profiles: [], message: 'Web credentials required for profiles' });
     }
     try {
       const profiles = await hqp.fetchProfiles();
@@ -112,8 +112,8 @@ function createApp(opts = {}) {
     if (!profile) {
       return res.status(400).json({ error: 'profile required' });
     }
-    if (!hqp.isConfigured()) {
-      return res.status(400).json({ error: 'HQPlayer not configured' });
+    if (!hqp.hasWebCredentials()) {
+      return res.status(400).json({ error: 'Web credentials required for profile loading' });
     }
     try {
       await hqp.loadProfile(profile);

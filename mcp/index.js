@@ -120,16 +120,16 @@ const TOOLS = [
   },
   {
     name: 'hifi_hqplayer_profiles',
-    description: 'List available HQPlayer Embedded configuration profiles',
+    description: 'List available HQPlayer Embedded configurations',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'hifi_hqplayer_load_profile',
-    description: 'Load an HQPlayer Embedded configuration profile (will restart HQPlayer)',
+    description: 'Load an HQPlayer Embedded configuration (will restart HQPlayer)',
     inputSchema: {
       type: 'object',
       properties: {
-        profile: { type: 'string', description: 'Profile name to load (get from hifi_hqplayer_profiles)' },
+        profile: { type: 'string', description: 'Configuration name to load (get from hifi_hqplayer_profiles)' },
       },
       required: ['profile'],
     },
@@ -225,7 +225,7 @@ async function handleTool(name, args) {
       case 'hifi_hqplayer_load_profile': {
         const { profile } = args;
         await apiFetch('/hqp/profiles/load', { method: 'POST', body: JSON.stringify({ profile }) });
-        return { content: [{ type: 'text', text: `Profile "${profile}" loading. HQPlayer will restart.` }] };
+        return { content: [{ type: 'text', text: `Configuration "${profile}" loading. HQPlayer will restart.` }] };
       }
 
       case 'hifi_hqplayer_set_pipeline': {

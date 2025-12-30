@@ -97,6 +97,10 @@ function createMqttService({ hqp, logger } = {}) {
     }
 
     if (topic === `${topicPrefix}/command/hqplayer/load`) {
+      if (!hqp.hasWebCredentials()) {
+        log.warn('Profile loading requires web credentials');
+        return;
+      }
       const profile = payload.trim();
       if (profile) {
         log.info('Loading HQPlayer profile via MQTT', { profile });
@@ -144,6 +148,10 @@ function createMqttService({ hqp, logger } = {}) {
       await hqp.setPipelineSetting('mode', value);
       setTimeout(() => publishHqpState(), 1000);
     } else if (topic === `${topicPrefix}/hqplayer/profile/set`) {
+      if (!hqp.hasWebCredentials()) {
+        log.warn('Profile loading requires web credentials');
+        return;
+      }
       log.info('Loading HQPlayer profile via MQTT select', { profile: payload });
       await hqp.loadProfile(payload);
       // HQPlayer restarts when loading profile - wait longer
@@ -267,6 +275,7 @@ function createMqttService({ hqp, logger } = {}) {
     let pipelineSettings = {};
     let pipelineVolume = null;
     let profiles = [];
+    let supportsProfiles = false;
     if (hqp.isConfigured()) {
       try {
         const pipeline = await hqp.fetchPipeline();
@@ -275,10 +284,14 @@ function createMqttService({ hqp, logger } = {}) {
       } catch (err) {
         log.warn('Failed to fetch pipeline for discovery', { error: err.message });
       }
-      try {
-        profiles = await hqp.fetchProfiles();
-      } catch (err) {
-        log.warn('Failed to fetch profiles for discovery', { error: err.message });
+      // Only fetch profiles if we have web credentials (Embedded only)
+      if (hqp.hasWebCredentials()) {
+        try {
+          profiles = await hqp.fetchProfiles();
+          supportsProfiles = profiles.length > 0;
+        } catch (err) {
+          log.warn('Failed to fetch profiles for discovery', { error: err.message });
+        }
       }
     }
 
@@ -530,14 +543,15 @@ function createMqttService({ hqp, logger } = {}) {
       );
     }
 
-    // Profile select - uses configName as the active profile indicator
-    // HQPlayer doesn't explicitly expose "active profile" but configName
-    // typically matches the loaded profile name after a profile load.
-    // Recommendation: Set your HQPlayer config title to match your profile name
+    // Configuration select - uses configName as the active configuration indicator
+    // HQPlayer doesn't explicitly expose "active configuration" but configName
+    // typically matches the loaded configuration name after switching.
+    // Recommendation: Set your HQPlayer config title to match your configuration name
     // for accurate state sync in Home Assistant.
-    if (profiles.length > 0) {
+    // Only show configuration select if HQPlayer Embedded with web credentials
+    if (supportsProfiles) {
       const profileSelect = {
-        name: 'HQPlayer Profile',
+        name: 'HQPlayer Configuration',
         unique_id: 'unified_hifi_hqp_profile_select',
         state_topic: `${topicPrefix}/hqplayer/profile/state`,
         command_topic: `${topicPrefix}/hqplayer/profile/set`,

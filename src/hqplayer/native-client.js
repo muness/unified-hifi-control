@@ -6,6 +6,21 @@
  *
  * Based on Jussi Laako's hqp-control reference implementation.
  *
+ * IMPORTANT: Index vs Value distinction
+ * -------------------------------------
+ * The State command returns ARRAY INDICES for filter/shaper settings, NOT the
+ * values used in the web UI or SetFilter/SetShaping commands.
+ *
+ * Example:
+ *   - State returns: { filter1x: 40, shaper: 24 }
+ *   - filters[40] = { index: 40, name: 'poly-sinc-long-mp-2s', value: 29 }
+ *   - shapers[24] = { index: 24, name: 'ASDM7EC-fast', value: 33 }
+ *   - Web UI shows: filter1x=29, shaper=33 (the VALUE fields)
+ *
+ * To get the correct value for UI display or SetFilter commands:
+ *   const filterObj = filters[state.filter1x];  // Look up by array index
+ *   const valueForUI = filterObj.value;         // Use the .value field
+ *
  * Note: Profile loading (ConfigurationLoad) requires authenticated sessions
  * with ECDH key exchange + ChaCha20Poly1305 encryption, so we keep the
  * web scraping approach for that functionality.
@@ -13,7 +28,7 @@
 
 const net = require('net');
 const xpath = require('xpath');
-const { DOMParser } = require('xmldom');
+const { DOMParser } = require('@xmldom/xmldom');
 const { EventEmitter } = require('events');
 
 const DEFAULT_PORT = 4321;
@@ -38,6 +53,7 @@ class HQPNativeClient extends EventEmitter {
     this.log = logger || console;
     this.socket = null;
     this.connected = false;
+    this.connecting = null;  // Promise for in-progress connection
     this.buffer = '';
     this.pendingRequests = [];
     this.currentRequest = null;
@@ -59,25 +75,32 @@ class HQPNativeClient extends EventEmitter {
   }
 
   connect() {
-    return new Promise((resolve, reject) => {
-      if (!this.host) {
-        return reject(new Error('HQPlayer host not configured'));
-      }
+    if (!this.host) {
+      return Promise.reject(new Error('HQPlayer host not configured'));
+    }
 
-      if (this.connected && this.socket) {
-        return resolve();
-      }
+    if (this.connected && this.socket) {
+      return Promise.resolve();
+    }
 
+    // Return existing connection attempt if in progress
+    if (this.connecting) {
+      return this.connecting;
+    }
+
+    this.connecting = new Promise((resolve, reject) => {
       this.socket = new net.Socket();
       this.buffer = '';
 
       const timeout = setTimeout(() => {
+        this.connecting = null;
         this.socket.destroy();
         reject(new Error('Connection timeout'));
       }, CONNECT_TIMEOUT);
 
       this.socket.on('connect', () => {
         clearTimeout(timeout);
+        this.connecting = null;
         this.connected = true;
         this.log.info('HQPlayer native protocol connected', { host: this.host, port: this.port });
         this.emit('connected');
@@ -100,12 +123,15 @@ class HQPNativeClient extends EventEmitter {
         this.log.error('HQPlayer socket error', { error: err.message });
         this.emit('error', err);
         if (!this.connected) {
+          this.connecting = null;
           reject(err);
         }
       });
 
       this.socket.connect(this.port, this.host);
     });
+
+    return this.connecting;
   }
 
   handleData(data) {
@@ -452,7 +478,10 @@ class HQPNativeClient extends EventEmitter {
   }
 
   /**
-   * Get full pipeline status in a format compatible with existing HQPClient
+   * Get full pipeline status in a format compatible with existing HQPClient.
+   *
+   * Note: State returns array indices for filters/shapers. We look up by index
+   * to get the actual value field needed for UI display. See file header.
    */
   async getPipelineStatus() {
     const [state, modes, filters, shapers, rates, volRange] = await Promise.all([
@@ -464,9 +493,15 @@ class HQPNativeClient extends EventEmitter {
       this.getVolumeRange(),
     ]);
 
-    // Determine active filter values - use filter1x/filterNx if set, else legacy filter
-    const filter1xVal = state.filter1x !== null ? state.filter1x : state.filter;
-    const filterNxVal = state.filterNx !== null ? state.filterNx : state.filter;
+    // State returns array indices for filters/shapers, look up to get the actual value
+    const filter1xIdx = state.filter1x !== null ? state.filter1x : state.filter;
+    const filterNxIdx = state.filterNx !== null ? state.filterNx : state.filter;
+    const shaperIdx = state.shaper;
+
+    // Look up by array index to get the filter/shaper objects
+    const filter1xObj = filters[filter1xIdx];
+    const filterNxObj = filters[filterNxIdx];
+    const shaperObj = shapers[shaperIdx];
 
     // Mode lookup - state.mode is index, activeMode is value
     const getModeByIndex = (idx) => modes.find(m => m.index === idx)?.name || '';
@@ -477,8 +512,8 @@ class HQPNativeClient extends EventEmitter {
         state: ['Stopped', 'Paused', 'Playing'][state.state] || 'Unknown',
         mode: getModeByIndex(state.mode),
         activeMode: getModeByValue(state.activeMode),
-        activeFilter: filters.find(f => f.value === filter1xVal)?.name || '',
-        activeShaper: shapers.find(s => s.value === state.shaper)?.name || '',
+        activeFilter: filter1xObj?.name || '',
+        activeShaper: shaperObj?.name || '',
         activeRate: state.activeRate || 0,
         convolution: state.convolution,
         invert: state.invert,
@@ -499,34 +534,34 @@ class HQPNativeClient extends EventEmitter {
         },
         filter1x: {
           selected: {
-            value: String(filter1xVal),
-            label: filters.find(f => f.value === filter1xVal)?.name || '',
+            value: String(filter1xObj?.value ?? filter1xIdx),
+            label: filter1xObj?.name || '',
           },
           options: filters.map(f => ({ value: String(f.value), label: f.name })),
         },
         filterNx: {
           selected: {
-            value: String(filterNxVal),
-            label: filters.find(f => f.value === filterNxVal)?.name || '',
+            value: String(filterNxObj?.value ?? filterNxIdx),
+            label: filterNxObj?.name || '',
           },
           options: filters.map(f => ({ value: String(f.value), label: f.name })),
         },
         shaper: {
           selected: {
-            value: String(state.shaper),
-            label: shapers.find(s => s.value === state.shaper)?.name || '',
+            value: String(shaperObj?.value ?? shaperIdx),
+            label: shaperObj?.name || '',
           },
           options: shapers.map(s => ({ value: String(s.value), label: s.name })),
         },
         samplerate: {
           selected: {
             value: String(state.rate),
-            label: rates.find(r => r.index === state.rate)?.rate?.toString() || 'Auto',
+            label: state.rate === 0 ? 'Auto' : (rates.find(r => r.index === state.rate)?.rate?.toString() || 'Auto'),
           },
-          options: [
-            { value: '0', label: 'Auto' },
-            ...rates.map(r => ({ value: String(r.index), label: String(r.rate) })),
-          ],
+          options: rates.map(r => ({
+            value: String(r.index),
+            label: r.index === 0 ? 'Auto' : String(r.rate),
+          })),
         },
       },
     };
@@ -538,7 +573,7 @@ class HQPNativeClient extends EventEmitter {
  */
 function discoverHQPlayers(timeout = 3000) {
   const dgram = require('dgram');
-  const { DOMParser } = require('xmldom');
+  const { DOMParser } = require('@xmldom/xmldom');
   const domParser = new DOMParser();
 
   return new Promise((resolve) => {

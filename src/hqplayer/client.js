@@ -2,6 +2,7 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { HQPNativeClient, discoverHQPlayers } = require('./native-client');
 
 const PROFILE_PATH = '/config/profile/load';
 const CONFIG_DIR = process.env.CONFIG_DIR || path.join(__dirname, '..', '..', 'data');
@@ -10,7 +11,7 @@ const HQP_CONFIG_FILE = path.join(CONFIG_DIR, 'hqp-config.json');
 class HQPClient {
   constructor({ host, port = 8088, username, password, logger } = {}) {
     this.host = host || null;
-    this.port = Number(port) || 8088;
+    this.port = Number(port) || 8088;  // Web UI port
     this.username = username || '';
     this.password = password || '';
     this.log = logger || console;
@@ -18,6 +19,10 @@ class HQPClient {
     this.digest = null;
     this.lastHiddenFields = {};
     this.lastProfiles = [];
+    this.lastConfigTitle = null;
+
+    // Native protocol client (port 4321) - used for pipeline control
+    this.native = new HQPNativeClient({ logger: this.log });
 
     // Load saved config on startup
     this._loadConfig();
@@ -31,6 +36,10 @@ class HQPClient {
         if (saved.port) this.port = Number(saved.port);
         if (saved.username) this.username = saved.username;
         if (saved.password) this.password = saved.password;
+        // Configure native client with same host
+        if (this.host) {
+          this.native.configure({ host: this.host });
+        }
         this.log.info('Loaded HQPlayer config from disk', { host: this.host, port: this.port });
       }
     } catch (e) {
@@ -56,6 +65,11 @@ class HQPClient {
   }
 
   isConfigured() {
+    // Native protocol only needs host; web creds optional (for profiles)
+    return !!this.host;
+  }
+
+  hasWebCredentials() {
     return !!(this.host && this.username && this.password);
   }
 
@@ -64,6 +78,10 @@ class HQPClient {
     this.port = Number(port) || this.port;
     this.username = username || this.username;
     this.password = password || this.password;
+    // Configure native client
+    if (this.host) {
+      this.native.configure({ host: this.host });
+    }
     // Reset auth state when reconfiguring
     this.cookies = {};
     this.digest = null;
@@ -384,63 +402,84 @@ class HQPClient {
   }
 
   async fetchConfigTitle() {
-    const response = await this.request('/config');
-    if (response.statusCode >= 400) {
-      throw new Error(`Failed to load config page (${response.statusCode}).`);
+    try {
+      const response = await this.request('/config');
+      if (response.statusCode >= 400) {
+        throw new Error(`Failed to load config page (${response.statusCode}).`);
+      }
+
+      const titleMatch = response.body.match(/<input[^>]*name\s*=\s*["']title["'][^>]*>/i);
+      if (!titleMatch) return this.lastConfigTitle;
+
+      const title = this.getAttribute(titleMatch[0], 'value') || null;
+      if (title) {
+        this.lastConfigTitle = title;
+      }
+      return title;
+    } catch (err) {
+      // Return cached value on error (e.g., during HQPlayer restart)
+      return this.lastConfigTitle;
     }
-
-    const titleMatch = response.body.match(/<input[^>]*name\s*=\s*["']title["'][^>]*>/i);
-    if (!titleMatch) return null;
-
-    return this.getAttribute(titleMatch[0], 'value') || null;
   }
 
   async fetchPipeline() {
-    const response = await this.makeRequest('/', { method: 'GET', headers: this.baseHeaders() });
-    if (response.statusCode >= 400) {
-      throw new Error(`Failed to load HQPlayer page (${response.statusCode}).`);
-    }
-
-    const html = response.body;
-    return {
-      status: this.parseStatusTable(html),
-      volume: this.parseVolume(html),
-      settings: {
-        mode: this.parseSelectOptions(html, 'mode'),
-        filter1x: this.parseSelectOptions(html, 'filter1x'),
-        filterNx: this.parseSelectOptions(html, 'filterNx'),
-        shaper: this.parseSelectOptions(html, 'shaper'),
-        dither: this.parseSelectOptions(html, 'dither'),
-        samplerate: this.parseSelectOptions(html, 'samplerate'),
-      },
-    };
+    // Use native protocol (port 4321) for pipeline status
+    return this.native.getPipelineStatus();
   }
 
   async setPipelineSetting(name, value) {
-    const pipeline = await this.fetchPipeline();
-    const settings = pipeline.settings || {};
+    // Use native protocol for pipeline changes
+    // Note: UI sends VALUES (from option.value), but native protocol expects INDICES
+    // (array positions). We need to convert value → index for mode/filter/shaper.
+    // Samplerate is the exception - UI already sends index.
+    const numValue = Number(value);
 
-    const formData = {
-      mode: settings.mode?.selected?.value || '0',
-      samplerate: settings.samplerate?.selected?.value || '0',
-      filter1x: settings.filter1x?.selected?.value || '0',
-      filterNx: settings.filterNx?.selected?.value || '0',
-      shaper: settings.shaper?.selected?.value || '0',
-      dither: settings.dither?.selected?.value || '0',
-    };
+    switch (name) {
+      case 'mode': {
+        // Convert value (-1, 0, 1) to index (0, 1, 2)
+        const modes = await this.native.getModes();
+        const mode = modes.find(m => m.value === numValue);
+        if (!mode) throw new Error(`Invalid mode value: ${value}`);
+        return this.native.setMode(mode.index);
+      }
 
-    formData[name] = value;
+      case 'filter1x': {
+        // Convert value to index, keep current Nx filter
+        const [filters, state] = await Promise.all([
+          this.native.getFilters(),
+          this.native.getState(),
+        ]);
+        const filter = filters.find(f => f.value === numValue);
+        if (!filter) throw new Error(`Invalid filter value: ${value}`);
+        return this.native.setFilter(state.filterNx ?? state.filter, filter.index);
+      }
 
-    const payload = new URLSearchParams(formData).toString();
-    const response = await this.request('/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: payload,
-    });
-    if (response.statusCode >= 400) {
-      throw new Error(`Failed to set ${name} (${response.statusCode}).`);
+      case 'filterNx': {
+        // Convert value to index, keep current 1x filter
+        const [filters, state] = await Promise.all([
+          this.native.getFilters(),
+          this.native.getState(),
+        ]);
+        const filter = filters.find(f => f.value === numValue);
+        if (!filter) throw new Error(`Invalid filter value: ${value}`);
+        return this.native.setFilter(filter.index, state.filter1x ?? state.filter);
+      }
+
+      case 'shaper': {
+        // Convert value to index
+        const shapers = await this.native.getShapers();
+        const shaper = shapers.find(s => s.value === numValue);
+        if (!shaper) throw new Error(`Invalid shaper value: ${value}`);
+        return this.native.setShaping(shaper.index);
+      }
+
+      case 'samplerate':
+        // Samplerate UI already sends index, not value
+        return this.native.setRate(numValue);
+
+      default:
+        throw new Error(`Unknown setting: ${name}`);
     }
-    return true;
   }
 
   async setVolume(value) {
@@ -448,28 +487,7 @@ class HQPClient {
     if (pipeline.volume?.isFixed) {
       throw new Error('Volume is fixed in current profile');
     }
-
-    const settings = pipeline.settings || {};
-    const formData = {
-      mode: settings.mode?.selected?.value || '0',
-      samplerate: settings.samplerate?.selected?.value || '0',
-      filter1x: settings.filter1x?.selected?.value || '0',
-      filterNx: settings.filterNx?.selected?.value || '0',
-      shaper: settings.shaper?.selected?.value || '0',
-      dither: settings.dither?.selected?.value || '0',
-      volume: String(value),
-    };
-
-    const payload = new URLSearchParams(formData).toString();
-    const response = await this.request('/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: payload,
-    });
-    if (response.statusCode >= 400) {
-      throw new Error(`Failed to set volume (${response.statusCode}).`);
-    }
-    return true;
+    return this.native.setVolume(Number(value));
   }
 
   async loadProfile(profileValue) {
@@ -507,18 +525,34 @@ class HQPClient {
     }
 
     try {
-      const [configTitle, pipeline, profiles] = await Promise.all([
-        this.fetchConfigTitle().catch(() => null),
+      // Get info and pipeline via native protocol
+      const [info, pipeline] = await Promise.all([
+        this.native.getInfo().catch(() => null),
         this.fetchPipeline().catch(() => null),
-        this.fetchProfiles().catch(() => []),
       ]);
+
+      const isEmbedded = info?.product?.toLowerCase().includes('embedded');
+
+      // Fetch profiles and current config name if we have web creds AND it's Embedded
+      let profiles = [];
+      let configName = null;
+      if (isEmbedded && this.hasWebCredentials()) {
+        [profiles, configName] = await Promise.all([
+          this.fetchProfiles().catch(() => this.lastProfiles),
+          this.fetchConfigTitle().catch(() => this.lastConfigTitle),
+        ]);
+      }
 
       return {
         enabled: true,
         connected: true,
         host: this.host,
         port: this.port,
-        configName: configTitle,
+        product: info?.product || null,
+        version: info?.version || null,
+        isEmbedded,
+        supportsProfiles: isEmbedded && this.hasWebCredentials(),
+        configName,
         profiles,
         pipeline,
       };
@@ -531,6 +565,11 @@ class HQPClient {
         error: err.message,
       };
     }
+  }
+
+  // Expose discovery for finding HQPlayers on the network
+  static discover(timeout = 3000) {
+    return discoverHQPlayers(timeout);
   }
 }
 
