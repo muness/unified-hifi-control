@@ -5,7 +5,6 @@ services:
     network_mode: host
     volumes:
       - ./data:/data
-      - ./firmware:/app/firmware
     environment:
       - PORT=8088
       - CONFIG_DIR=/data

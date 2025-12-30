@@ -32,8 +32,4 @@ ENV CONFIG_DIR=/data
 
 EXPOSE 8088
 
-# Run as non-root user
-RUN useradd -r -s /bin/false appuser && chown -R appuser:appuser /app /data
-USER appuser
-
 CMD ["node", "src/index.js"]
