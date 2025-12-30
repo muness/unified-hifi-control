@@ -7,7 +7,7 @@ A source-agnostic hi-fi control bridge that connects music sources and audio pip
 Hi-fi software assumes you're at a computer or using vendor-specific apps. This bridge fills the gap:
 
 - **Music Sources:** Roon (now)
-- **Audio Pipeline:** HQPlayer Embedded (web UI control), receiver control (future)
+- **Audio Pipeline:** HQPlayer, receiver control (future)
 - **Surfaces:** Anything that speaks HTTP or MQTT — ESP32 hardware, web UIs, Home Assistant, Claude (via MCP), etc.
 
 ## Status
@@ -45,7 +45,7 @@ docker compose up -d
 │            Unified Hi-Fi Control Bridge              │
 │  ┌──────────┐  ┌──────────────┐                     │
 │  │   Roon   │  │  HQPlayer    │   (+ future sources)│
-│  │          │  │  Embedded    │                     │
+│  │          │  │              │                     │
 │  └──────────┘  └──────────────┘                     │
 │                                                      │
 │  HTTP API + optional MQTT                            │
@@ -99,7 +99,6 @@ Ask Claude: "What's playing right now?" or "Turn the volume down a bit" or "Swit
 
 ## Related
 
-- [Open Horizons Endeavor](https://app.openhorizons.me/endeavor/80222d6d-63ab-45d8-a262-ee00303f18c9) — Strategic context and planning
 - [roon-knob](https://github.com/muness/roon-knob) — ESP32-S3 hardware controller (firmware)
 
 ## License
