@@ -543,15 +543,15 @@ function createMqttService({ hqp, logger } = {}) {
       );
     }
 
-    // Profile select - uses configName as the active profile indicator
-    // HQPlayer doesn't explicitly expose "active profile" but configName
-    // typically matches the loaded profile name after a profile load.
-    // Recommendation: Set your HQPlayer config title to match your profile name
+    // Configuration select - uses configName as the active configuration indicator
+    // HQPlayer doesn't explicitly expose "active configuration" but configName
+    // typically matches the loaded configuration name after switching.
+    // Recommendation: Set your HQPlayer config title to match your configuration name
     // for accurate state sync in Home Assistant.
-    // Only show profile select if HQPlayer Embedded with web credentials
+    // Only show configuration select if HQPlayer Embedded with web credentials
     if (supportsProfiles) {
       const profileSelect = {
-        name: 'HQPlayer Profile',
+        name: 'HQPlayer Configuration',
         unique_id: 'unified_hifi_hqp_profile_select',
         state_topic: `${topicPrefix}/hqplayer/profile/state`,
         command_topic: `${topicPrefix}/hqplayer/profile/set`,

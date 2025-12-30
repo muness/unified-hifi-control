@@ -19,6 +19,7 @@ class HQPClient {
     this.digest = null;
     this.lastHiddenFields = {};
     this.lastProfiles = [];
+    this.lastConfigTitle = null;
 
     // Native protocol client (port 4321) - used for pipeline control
     this.native = new HQPNativeClient({ logger: this.log });
@@ -401,15 +402,24 @@ class HQPClient {
   }
 
   async fetchConfigTitle() {
-    const response = await this.request('/config');
-    if (response.statusCode >= 400) {
-      throw new Error(`Failed to load config page (${response.statusCode}).`);
+    try {
+      const response = await this.request('/config');
+      if (response.statusCode >= 400) {
+        throw new Error(`Failed to load config page (${response.statusCode}).`);
+      }
+
+      const titleMatch = response.body.match(/<input[^>]*name\s*=\s*["']title["'][^>]*>/i);
+      if (!titleMatch) return this.lastConfigTitle;
+
+      const title = this.getAttribute(titleMatch[0], 'value') || null;
+      if (title) {
+        this.lastConfigTitle = title;
+      }
+      return title;
+    } catch (err) {
+      // Return cached value on error (e.g., during HQPlayer restart)
+      return this.lastConfigTitle;
     }
-
-    const titleMatch = response.body.match(/<input[^>]*name\s*=\s*["']title["'][^>]*>/i);
-    if (!titleMatch) return null;
-
-    return this.getAttribute(titleMatch[0], 'value') || null;
   }
 
   async fetchPipeline() {
@@ -492,10 +502,14 @@ class HQPClient {
 
       const isEmbedded = info?.product?.toLowerCase().includes('embedded');
 
-      // Only fetch profiles if we have web creds AND it's Embedded
+      // Fetch profiles and current config name if we have web creds AND it's Embedded
       let profiles = [];
+      let configName = null;
       if (isEmbedded && this.hasWebCredentials()) {
-        profiles = await this.fetchProfiles().catch(() => []);
+        [profiles, configName] = await Promise.all([
+          this.fetchProfiles().catch(() => this.lastProfiles),
+          this.fetchConfigTitle().catch(() => this.lastConfigTitle),
+        ]);
       }
 
       return {
@@ -507,6 +521,7 @@ class HQPClient {
         version: info?.version || null,
         isEmbedded,
         supportsProfiles: isEmbedded && this.hasWebCredentials(),
+        configName,
         profiles,
         pipeline,
       };
