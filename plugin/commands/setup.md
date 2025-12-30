@@ -30,7 +30,7 @@ If this fails, help the user:
 
 Use the `claude mcp add` command:
 ```bash
-claude mcp add hifi-control --scope user -e HIFI_BRIDGE_URL=${HIFI_BRIDGE_URL} -- node /path/to/unified-hifi-control/src/mcp/index.js
+claude mcp add hifi-control --scope user -e HIFI_BRIDGE_URL=${HIFI_BRIDGE_URL} -- node /path/to/unified-hifi-control/mcp/index.js
 ```
 
 ## Step 4: Inform the user
