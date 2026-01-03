@@ -6,7 +6,7 @@ const { createApp } = require('./server/app');
 const { createLogger } = require('./lib/logger');
 const { advertise } = require('./lib/mdns');
 const { createKnobsStore } = require('./knobs/store');
-const { initBus } = require('./bus');
+const { bus } = require('./bus');
 const { RoonAdapter } = require('./bus/adapters/roon');
 const busDebug = require('./bus/debug');
 
@@ -42,16 +42,9 @@ const hqp = new HQPClient({
   logger: createLogger('HQP'),
 });
 
-// Initialize bus and register backends
-const bus = initBus({
-  logger: createLogger('Bus'),
-});
-
+// Register backends with bus
 const roonAdapter = new RoonAdapter(roon);
 bus.registerBackend('roon', roonAdapter);
-
-// Initialize debug consumer
-busDebug.init();
 
 // Create knobs store for ESP32 knob configuration
 const knobs = createKnobsStore({

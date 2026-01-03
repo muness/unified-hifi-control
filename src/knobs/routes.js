@@ -33,7 +33,7 @@ function createKnobRoutes({ roon, knobs, logger }) {
     log.debug('Zones requested', { ip: req.ip, knob_id: knob?.id });
 
     // TODO(Phase 3): Remove roon fallback after HQP migration to bus
-    const zones = bus ? bus.getZones() : roon.getZones();
+    const zones = bus.getZones();
     res.json({ zones });
   });
 

@@ -177,22 +177,7 @@ function createBus({ logger } = {}) {
   };
 }
 
-// Singleton instance
-let busInstance = null;
+// Module-level instance (created on load)
+const bus = createBus({ logger: console });
 
-function getBus() {
-  if (!busInstance) {
-    throw new Error('Bus not initialized - call initBus() first');
-  }
-  return busInstance;
-}
-
-function initBus({ logger } = {}) {
-  if (busInstance) {
-    throw new Error('Bus already initialized');
-  }
-  busInstance = createBus({ logger });
-  return busInstance;
-}
-
-module.exports = { createBus, initBus, getBus };
+module.exports = { bus, createBus };
