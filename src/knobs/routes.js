@@ -14,7 +14,7 @@ function extractKnob(req) {
   return { id, version };
 }
 
-function createKnobRoutes({ roon, knobs, logger }) {
+function createKnobRoutes({ bus, roon, knobs, logger }) {
   const router = express.Router();
   const log = logger || console;
 
