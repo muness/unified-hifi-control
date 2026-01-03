@@ -9,9 +9,8 @@
  */
 
 class LMSAdapter {
-  constructor(lmsClient, { onZonesChanged } = {}) {
+  constructor(lmsClient) {
     this.lms = lmsClient;
-    this.onZonesChanged = onZonesChanged;
   }
 
   async start() {
@@ -70,16 +69,8 @@ class LMSAdapter {
   }
 
   async getImage(image_key, opts = {}) {
-    // image_key is coverid - we need to find the player
-    // For simplicity, use the first player or extract from context
-    const players = this.lms.getCachedPlayers();
-    if (players.length === 0) {
-      throw new Error('No players available');
-    }
-
-    // Use first player's ID for artwork URL construction
-    const playerId = players[0].playerid;
-    return this.lms.getArtwork(playerId, image_key, opts);
+    // image_key is coverid - LMS artwork URL uses coverid only
+    return this.lms.getArtwork(image_key, opts);
   }
 
   getStatus() {

@@ -58,9 +58,7 @@ class LMSClient {
    * Execute JSON-RPC command
    */
   async execute(playerId, params) {
-    const url = playerId
-      ? `${this.baseUrl}/jsonrpc.js`
-      : `${this.baseUrl}/jsonrpc.js`;
+    const url = `${this.baseUrl}/jsonrpc.js`;
 
     const body = {
       id: 1,
