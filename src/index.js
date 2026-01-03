@@ -1,6 +1,7 @@
 const os = require('os');
 const { createRoonClient } = require('./roon/client');
 const { HQPClient } = require('./hqplayer/client');
+const { LMSClient } = require('./lms/client');
 const { createMqttService } = require('./mqtt');
 const { createApp } = require('./server/app');
 const { createLogger } = require('./lib/logger');
@@ -8,6 +9,7 @@ const { advertise } = require('./lib/mdns');
 const { createKnobsStore } = require('./knobs/store');
 const { createBus } = require('./bus');
 const { RoonAdapter } = require('./bus/adapters/roon');
+const { LMSAdapter } = require('./bus/adapters/lms');
 const busDebug = require('./bus/debug');
 
 const PORT = process.env.PORT || 8088;
@@ -42,11 +44,25 @@ const hqp = new HQPClient({
   logger: createLogger('HQP'),
 });
 
+// Create LMS client (configured via env vars)
+const lms = new LMSClient({
+  host: process.env.LMS_HOST,
+  port: process.env.LMS_PORT || 9000,
+  logger: createLogger('LMS'),
+});
+
 // Create and configure bus
 const bus = createBus({ logger: createLogger('Bus') });
 
 const roonAdapter = new RoonAdapter(roon);
 bus.registerBackend('roon', roonAdapter);
+
+// Register LMS adapter if host configured
+if (process.env.LMS_HOST) {
+  const lmsAdapter = new LMSAdapter(lms);
+  bus.registerBackend('lms', lmsAdapter);
+  log.info('LMS configured from environment', { host: process.env.LMS_HOST });
+}
 
 // Initialize debug consumer
 busDebug.init(bus);
