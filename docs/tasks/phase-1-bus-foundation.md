@@ -202,15 +202,14 @@ Once interface is published:
 
 ## Phase 1 Complete When
 
-- ✅ Bus core exists (`/src/bus/index.js`, `/src/bus/zone.js`)
+- ✅ Bus core exists (`/src/bus/index.js`)
 - ✅ Adapter interface defined (`/src/bus/adapter.js`)
-- ✅ Mock adapter works (tests prove bus routing)
 - ✅ Roon adapter exists (`/src/bus/adapters/roon.js`)
-- ✅ HQP adapter exists (`/src/bus/adapters/hqp.js`)
-- ✅ All tests pass
 - ✅ Documentation complete
-- ❌ No HTTP routes changed yet (Phase 2)
-- ❌ No bus integration with main app yet (Phase 2)
+- ❌ HQP adapter (planned for Phase 3)
+- ❌ Tests (planned for future phase)
+- ✅ HTTP routes updated (Phase 2 complete)
+- ✅ Bus integrated with main app (Phase 2 complete)
 
 **Phase 1 output:** Reusable bus abstraction + two adapters, ready to integrate.
 

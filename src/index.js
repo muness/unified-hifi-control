@@ -98,10 +98,11 @@ app.listen(PORT, () => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   log.info('Shutting down...');
   if (mdnsService) mdnsService.stop();
   mqttService.disconnect();
+  await bus.stop();
   process.exit(0);
 });
 

@@ -17,6 +17,11 @@ class RoonAdapter {
     return this.roon.start();
   }
 
+  async stop() {
+    // RoonClient doesn't expose stop/disconnect
+    // Cleanup happens via process exit
+  }
+
   getZones(opts = {}) {
     const zones = this.roon.getZones(opts);
     return zones.map(zone => ({

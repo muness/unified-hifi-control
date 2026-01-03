@@ -19,7 +19,8 @@ function createBus({ logger } = {}) {
     };
     log.info(`Registered ${source} backend`, caps);
 
-    refreshZones(source);
+    // Note: Don't refresh zones yet - state.zones is empty until start() completes
+    // Zones will be refreshed after bus.start() (see start() method)
   }
 
   function refreshZones(source = null) {
@@ -125,6 +126,7 @@ function createBus({ logger } = {}) {
     getImage,
     getStatus,
     start,
+    stop,
   };
 }
 
