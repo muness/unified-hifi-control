@@ -60,14 +60,19 @@ class HQPAdapter {
       };
     }
 
+    // Map HQP pipeline state to zone state
+    const pipelineState = pipeline.status?.state || 'Stopped';
+    const state = pipelineState.toLowerCase(); // 'stopped', 'paused', 'playing'
+
     return {
       line1: 'HQPlayer Pipeline',
       line2: pipeline.settings?.filter1x?.selected?.label || '',
       line3: status.configName || '',
-      is_playing: false,  // HQP doesn't control playback
+      is_playing: state === 'playing',
       volume: pipeline.volume?.value !== undefined ? pipeline.volume.value : null,
       volume_min: pipeline.volume?.min || -60,
       volume_max: pipeline.volume?.max || 0,
+      volume_step: 1,  // HQP uses 1dB increments
       volume_type: 'db',
       zone_id,
       image_key: null,  // HQP doesn't provide artwork
@@ -80,11 +85,31 @@ class HQPAdapter {
     }
 
     // HQP only supports volume control, not transport
-    if (action === 'volume') {
-      return this.hqp.setVolume(value);
-    }
+    switch (action) {
+      case 'vol_abs': {
+        // Absolute volume
+        const np = await this.getNowPlaying(zone_id);
+        const min = np?.volume_min ?? -60;
+        const max = np?.volume_max ?? 0;
+        const clamped = Math.max(min, Math.min(max, Number(value)));
+        return this.hqp.setVolume(clamped);
+      }
 
-    throw new Error(`HQPlayer does not support transport control (action: ${action})`);
+      case 'vol_rel': {
+        // Relative volume adjustment
+        const np = await this.getNowPlaying(zone_id);
+        if (np?.volume == null) {
+          throw new Error('Cannot get current volume for relative adjustment');
+        }
+        const min = np.volume_min ?? -60;
+        const max = np.volume_max ?? 0;
+        const newVolume = Math.max(min, Math.min(max, np.volume + Number(value)));
+        return this.hqp.setVolume(newVolume);
+      }
+
+      default:
+        throw new Error(`HQPlayer does not support '${action}' (only volume control supported)`);
+    }
   }
 
   getStatus() {
