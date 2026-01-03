@@ -13,16 +13,16 @@ function extractKnob(req) {
   return { id, version };
 }
 
-function createKnobRoutes({ roon, knobs, logger }) {
+function createKnobRoutes({ roon, knobs, bus, logger }) {
   const router = express.Router();
   const log = logger || console;
 
-  // GET /zones - List all Roon zones
+  // GET /zones - List all zones from bus (multi-backend)
   router.get('/zones', (req, res) => {
     const knob = extractKnob(req);
     log.debug('Zones requested', { ip: req.ip, knob_id: knob?.id });
 
-    const zones = roon.getZones();
+    const zones = bus ? bus.getZones() : roon.getZones();
     res.json({ zones });
   });
 
@@ -32,7 +32,7 @@ function createKnobRoutes({ roon, knobs, logger }) {
     const knob = extractKnob(req);
 
     if (!zoneId) {
-      const zones = roon.getZones();
+      const zones = bus ? bus.getZones() : roon.getZones();
       return res.status(400).json({ error: 'zone_id required', zones });
     }
 
@@ -53,9 +53,9 @@ function createKnobRoutes({ roon, knobs, logger }) {
       knobs.updateKnobStatus(knob.id, statusUpdates);
     }
 
-    const data = roon.getNowPlaying(zoneId);
+    const data = bus ? bus.getNowPlaying(zoneId) : roon.getNowPlaying(zoneId);
     if (!data) {
-      const zones = roon.getZones();
+      const zones = bus ? bus.getZones() : roon.getZones();
       log.warn('now_playing miss', { zoneId, ip: req.ip });
       return res.status(404).json({ error: 'zone not found', zones });
     }
@@ -64,7 +64,7 @@ function createKnobRoutes({ roon, knobs, logger }) {
 
     const image_url = `/now_playing/image?zone_id=${encodeURIComponent(zoneId)}`;
     const config_sha = knob?.id ? knobs.getConfigSha(knob.id) : null;
-    const zones = roon.getZones();
+    const zones = bus ? bus.getZones() : roon.getZones();
 
     res.json({ ...data, image_url, zones, config_sha });
   });
@@ -72,11 +72,12 @@ function createKnobRoutes({ roon, knobs, logger }) {
   // GET /now_playing/image - Get album artwork
   router.get('/now_playing/image', async (req, res) => {
     const zoneId = req.query.zone_id;
+
     if (!zoneId) {
       return res.status(400).json({ error: 'zone_id required' });
     }
 
-    const data = roon.getNowPlaying(zoneId);
+    const data = bus ? bus.getNowPlaying(zoneId) : roon.getNowPlaying(zoneId);
     if (!data) {
       return res.status(404).json({ error: 'zone not found' });
     }
@@ -85,14 +86,16 @@ function createKnobRoutes({ roon, knobs, logger }) {
     const { width, height, format } = req.query || {};
 
     try {
-      if (data.image_key && roon.getImage) {
+      if (data.image_key) {
         // RGB565 format for ESP32 display
         if (format === 'rgb565') {
-          const { body } = await roon.getImage(data.image_key, {
+          const imageOpts = {
             width: width || 360,
             height: height || 360,
             format: 'image/jpeg',
-          });
+            zone_id: zoneId,  // Add for bus routing
+          };
+          const { body } = bus ? await bus.getImage(data.image_key, imageOpts) : await roon.getImage(data.image_key, imageOpts);
 
           const targetWidth = parseInt(width) || 360;
           const targetHeight = parseInt(height) || 360;
@@ -176,6 +179,7 @@ function createKnobRoutes({ roon, knobs, logger }) {
   // POST /control - Send control commands
   router.post('/control', async (req, res) => {
     const { zone_id, action, value } = req.body || {};
+
     if (!zone_id || !action) {
       log.warn('control missing params', { zone_id, action, ip: req.ip });
       return res.status(400).json({ error: 'zone_id and action required' });
@@ -183,7 +187,7 @@ function createKnobRoutes({ roon, knobs, logger }) {
 
     try {
       log.info('control', { zone_id, action, value, ip: req.ip });
-      await roon.control(zone_id, action, value);
+      await (bus ? bus.control(zone_id, action, value) : roon.control(zone_id, action, value));
       res.json({ status: 'ok' });
     } catch (error) {
       log.error('control failed', { zone_id, action, value, ip: req.ip, error: error.message });
