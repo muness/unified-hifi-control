@@ -84,10 +84,33 @@ class HQPAdapter {
       throw new Error(`Unknown zone: ${zone_id}`);
     }
 
-    // HQP only supports volume control, not transport
-    switch (action) {
+    // Map bus actions to HQP native protocol
+      case 'play':
+        return this.hqp.native.play();
+
+      case 'play_pause': {
+        const np = await this.getNowPlaying(zone_id);
+        return np?.is_playing ? this.hqp.native.pause() : this.hqp.native.play();
+      }
+
+      case 'pause':
+        return this.hqp.native.pause();
+
+      case 'stop':
+        return this.hqp.native.stop();
+
+      case 'next':
+        return this.hqp.native.next();
+
+      case 'previous':
+      case 'prev':
+        return this.hqp.native.previous();
+
+      case 'seek':
+        if (value == null || value < 0) throw new Error('Seek requires non-negative position');
+        return this.hqp.native.seek(value);
+
       case 'vol_abs': {
-        // Absolute volume
         const np = await this.getNowPlaying(zone_id);
         const min = np?.volume_min ?? -60;
         const max = np?.volume_max ?? 0;
@@ -96,11 +119,8 @@ class HQPAdapter {
       }
 
       case 'vol_rel': {
-        // Relative volume adjustment
         const np = await this.getNowPlaying(zone_id);
-        if (np?.volume == null) {
-          throw new Error('Cannot get current volume for relative adjustment');
-        }
+        if (np?.volume == null) throw new Error('Cannot get current volume for relative adjustment');
         const min = np.volume_min ?? -60;
         const max = np.volume_max ?? 0;
         const newVolume = Math.max(min, Math.min(max, np.volume + Number(value)));
@@ -108,7 +128,7 @@ class HQPAdapter {
       }
 
       default:
-        throw new Error(`HQPlayer does not support '${action}' (only volume control supported)`);
+        throw new Error(`Unknown action: ${action}`);
     }
   }
 
