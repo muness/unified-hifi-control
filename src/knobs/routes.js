@@ -2,7 +2,7 @@ const express = require('express');
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
-const { bus } = require('../bus');
+const { bus } = require('../index');
 const busDebug = require('../bus/debug');
 
 function extractKnob(req) {

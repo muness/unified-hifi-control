@@ -177,7 +177,4 @@ function createBus({ logger } = {}) {
   };
 }
 
-// Module-level instance (created on load)
-const bus = createBus({ logger: console });
-
-module.exports = { bus, createBus };
+module.exports = { createBus };

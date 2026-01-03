@@ -6,7 +6,7 @@ const { createApp } = require('./server/app');
 const { createLogger } = require('./lib/logger');
 const { advertise } = require('./lib/mdns');
 const { createKnobsStore } = require('./knobs/store');
-const { bus } = require('./bus');
+const { createBus } = require('./bus');
 const { RoonAdapter } = require('./bus/adapters/roon');
 const busDebug = require('./bus/debug');
 
@@ -42,9 +42,14 @@ const hqp = new HQPClient({
   logger: createLogger('HQP'),
 });
 
-// Register backends with bus
+// Create and configure bus
+const bus = createBus({ logger: createLogger('Bus') });
+
 const roonAdapter = new RoonAdapter(roon);
 bus.registerBackend('roon', roonAdapter);
+
+// Initialize debug consumer
+busDebug.init(bus);
 
 // Create knobs store for ESP32 knob configuration
 const knobs = createKnobsStore({
@@ -105,3 +110,6 @@ process.on('SIGTERM', async () => {
 process.on('unhandledRejection', (err) => {
   log.error('Unhandled rejection', { error: err.message, stack: err.stack });
 });
+
+// Export bus for other modules
+module.exports = { bus };
