@@ -134,11 +134,13 @@ function createKnobRoutes({ roon, knobs, bus, logger }) {
           return res.send(rgb565);
         } else {
           // Return JPEG (optionally resized)
-          const { contentType, body } = await roon.getImage(data.image_key, {
+          const imageOpts = {
             width: width || 360,
             height: height || 360,
             format: 'image/jpeg',
-          });
+            zone_id: zoneId,  // Add for bus routing
+          };
+          const { contentType, body } = bus ? await bus.getImage(data.image_key, imageOpts) : await roon.getImage(data.image_key, imageOpts);
 
           if ((width || height) && contentType && contentType.startsWith('image/')) {
             const targetWidth = parseInt(width) || parseInt(height) || 360;

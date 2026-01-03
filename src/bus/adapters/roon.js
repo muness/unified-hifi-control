@@ -54,7 +54,7 @@ class RoonAdapter {
   }
 
   getStatus() {
-    const status = this.roon.getStatus();
+    const status = { ...this.roon.getStatus() };
 
     if (status.zones) {
       status.zones = status.zones.map(z => ({

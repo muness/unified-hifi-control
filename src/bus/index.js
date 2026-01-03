@@ -116,6 +116,19 @@ function createBus({ logger } = {}) {
     refreshZones();
   }
 
+  async function stop() {
+    log.info('Stopping bus...');
+    for (const [source, adapter] of backends) {
+      try {
+        await adapter.stop();
+        log.info(`${source} stopped`);
+      } catch (err) {
+        log.error(`${source} stop failed:`, err);
+      }
+    }
+    zones.clear();
+  }
+
   return {
     registerBackend,
     refreshZones,

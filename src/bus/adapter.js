@@ -7,13 +7,6 @@ function validateAdapter(adapter, source) {
   return true;
 }
 
-function validateZoneId(zone_id) {
-  if (!zone_id || !zone_id.includes(':')) {
-    throw new Error(`Invalid zone_id format (expected "backend:id"): ${zone_id}`);
-  }
-  return true;
-}
-
 const ACTIONS = {
   PLAY_PAUSE: 'play_pause',
   PLAY: 'play',
@@ -27,4 +20,4 @@ const ACTIONS = {
   SEEK: 'seek',
 };
 
-module.exports = { validateAdapter, validateZoneId, ACTIONS };
+module.exports = { validateAdapter, ACTIONS };
