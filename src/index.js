@@ -8,6 +8,7 @@ const { advertise } = require('./lib/mdns');
 const { createKnobsStore } = require('./knobs/store');
 const { createBus } = require('./bus');
 const { RoonAdapter } = require('./bus/adapters/roon');
+const { HQPAdapter } = require('./bus/adapters/hqp');
 const busDebug = require('./bus/debug');
 
 const PORT = process.env.PORT || 8088;
@@ -47,6 +48,9 @@ const bus = createBus({ logger: createLogger('Bus') });
 
 const roonAdapter = new RoonAdapter(roon);
 bus.registerBackend('roon', roonAdapter);
+
+const hqpAdapter = new HQPAdapter(hqp);
+bus.registerBackend('hqp', hqpAdapter);
 
 // Initialize debug consumer
 busDebug.init(bus);
