@@ -8,6 +8,7 @@ const { advertise } = require('./lib/mdns');
 const { createKnobsStore } = require('./knobs/store');
 const { createBus } = require('./bus');
 const { RoonAdapter } = require('./bus/adapters/roon');
+const { createBusDebug } = require('./bus/debug');
 
 const PORT = process.env.PORT || 8088;
 const log = createLogger('Main');
@@ -49,6 +50,9 @@ const bus = createBus({
 const roonAdapter = new RoonAdapter(roon);
 bus.registerBackend('roon', roonAdapter);
 
+// Create debug consumer
+const busDebug = createBusDebug(bus, { logger: createLogger('BusDebug') });
+
 // Create knobs store for ESP32 knob configuration
 const knobs = createKnobsStore({
   logger: createLogger('Knobs'),
@@ -73,10 +77,11 @@ const mqttService = createMqttService({
 
 // Create HTTP server
 const app = createApp({
-  roon,    // Keep for backward compat during Phase 2 testing
+  roon,       // Keep for backward compat during Phase 2 testing
   hqp,
   knobs,
-  bus,     // Add bus for new routes
+  bus,        // Add bus for new routes
+  busDebug,   // Debug consumer
   logger: createLogger('Server'),
 });
 
