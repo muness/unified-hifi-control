@@ -7,6 +7,28 @@ function createBus({ logger } = {}) {
   const log = logger || console;
   const backends = new Map();
   const zones = new Map();
+  const observers = [];
+
+  function subscribe(callback) {
+    if (typeof callback !== 'function') {
+      throw new Error('Observer must be a function');
+    }
+    observers.push(callback);
+    return () => {
+      const idx = observers.indexOf(callback);
+      if (idx >= 0) observers.splice(idx, 1);
+    };
+  }
+
+  function notifyObservers(activity) {
+    observers.forEach(observer => {
+      try {
+        observer(activity);
+      } catch (err) {
+        log.error('Observer error:', err);
+      }
+    });
+  }
 
   function registerBackend(source, adapter) {
     validateAdapter(adapter, source);
@@ -65,14 +87,21 @@ function createBus({ logger } = {}) {
     const adapter = getAdapterForZone(zone_id);
     if (!adapter) {
       log.warn(`No adapter for zone: ${zone_id}`);
+      notifyObservers({ type: 'getNowPlaying', zone_id, error: 'No adapter found', timestamp: Date.now() });
       return null;
     }
-    return adapter.getNowPlaying(zone_id);
+    const result = adapter.getNowPlaying(zone_id);
+    notifyObservers({ type: 'getNowPlaying', zone_id, backend: zone_id.split(':')[0], has_data: !!result, timestamp: Date.now() });
+    return result;
   }
 
   async function control(zone_id, action, value) {
     const adapter = getAdapterForZone(zone_id);
-    if (!adapter) throw new Error(`Zone not found: ${zone_id}`);
+    if (!adapter) {
+      notifyObservers({ type: 'control', zone_id, action, value, error: 'Zone not found', timestamp: Date.now() });
+      throw new Error(`Zone not found: ${zone_id}`);
+    }
+    notifyObservers({ type: 'control', zone_id, backend: zone_id.split(':')[0], action, value, timestamp: Date.now() });
     return adapter.control(zone_id, action, value);
   }
 
@@ -80,18 +109,22 @@ function createBus({ logger } = {}) {
     // Route by zone_id context (routes have zone_id when requesting images)
     const zone_id = opts.zone_id;
     if (!zone_id) {
+      notifyObservers({ type: 'getImage', image_key, error: 'zone_id required', timestamp: Date.now() });
       throw new Error('zone_id required in opts for image routing');
     }
 
     const adapter = getAdapterForZone(zone_id);
     if (!adapter) {
+      notifyObservers({ type: 'getImage', image_key, zone_id, error: 'Backend not found', timestamp: Date.now() });
       throw new Error(`Backend not found for zone: ${zone_id}`);
     }
 
     if (!adapter.getImage) {
+      notifyObservers({ type: 'getImage', image_key, zone_id, error: 'Images not supported', timestamp: Date.now() });
       throw new Error(`${adapter.constructor.name} does not support images`);
     }
 
+    notifyObservers({ type: 'getImage', image_key, zone_id, backend: zone_id.split(':')[0], timestamp: Date.now() });
     return adapter.getImage(image_key, opts);
   }
 
@@ -140,6 +173,7 @@ function createBus({ logger } = {}) {
     getStatus,
     start,
     stop,
+    subscribe,
   };
 }
 
