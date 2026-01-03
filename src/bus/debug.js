@@ -1,18 +1,19 @@
 const MESSAGE_RETENTION_MS = 5 * 60 * 1000;
-const { bus } = require('./index');
 
 const messageLog = [];
 
-// Subscribe at module load
-bus.subscribe((activity) => {
-  messageLog.push(activity);
+function init(bus) {
+  // Subscribe to bus activity
+  bus.subscribe((activity) => {
+    messageLog.push(activity);
 
-  // Purge old messages
-  const cutoff = Date.now() - MESSAGE_RETENTION_MS;
-  while (messageLog.length > 0 && messageLog[0].timestamp < cutoff) {
-    messageLog.shift();
-  }
-});
+    // Purge old messages
+    const cutoff = Date.now() - MESSAGE_RETENTION_MS;
+    while (messageLog.length > 0 && messageLog[0].timestamp < cutoff) {
+      messageLog.shift();
+    }
+  });
+}
 
 function getDebugInfo() {
   return {
@@ -22,4 +23,4 @@ function getDebugInfo() {
   };
 }
 
-module.exports = { getDebugInfo };
+module.exports = { init, getDebugInfo };
