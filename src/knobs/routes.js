@@ -964,6 +964,10 @@ ${navHtml('settings')}
 <div class="section">
   <h3>Status</h3>
   <pre id="status" style="font-size:0.85em;overflow-x:auto;"></pre>
+  <details style="margin-top:1em;">
+    <summary style="cursor:pointer;color:#888;">Debug Info (Bus Activity)</summary>
+    <pre id="debug-status" style="font-size:0.75em;overflow-x:auto;margin-top:0.5em;"></pre>
+  </details>
 </div>
 
 <script>
@@ -1035,7 +1039,15 @@ async function saveHqpConfig() {
 async function loadStatus() {
   const res = await fetch('/admin/status.json');
   const data = await res.json();
+
+  // Separate debug from main status
+  const debug = data.debug;
+  delete data.debug;
+
   document.getElementById('status').textContent = JSON.stringify(data, null, 2);
+  if (debug) {
+    document.getElementById('debug-status').textContent = JSON.stringify(debug, null, 2);
+  }
 }
 
 // UI Settings
