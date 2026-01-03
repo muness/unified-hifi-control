@@ -170,6 +170,12 @@ function createUPnPClient(opts = {}) {
     for (const [uuid, renderer] of state.renderers.entries()) {
       if (now - renderer.lastSeen > staleThreshold) {
         log.info('Removing stale renderer', { uuid });
+
+        // Clean up event listeners before deletion
+        if (renderer.client && renderer.client.removeAllListeners) {
+          renderer.client.removeAllListeners();
+        }
+
         state.renderers.delete(uuid);
       }
     }
@@ -282,9 +288,21 @@ function createUPnPClient(opts = {}) {
       clearInterval(state.searchInterval);
       state.searchInterval = null;
     }
+
+    // Clean up all renderer clients
+    for (const renderer of state.renderers.values()) {
+      if (renderer.client && renderer.client.removeAllListeners) {
+        renderer.client.removeAllListeners();
+      }
+    }
+    state.renderers.clear();
+
+    // Clean up SSDP client
     if (state.ssdpClient) {
+      state.ssdpClient.removeAllListeners();
       state.ssdpClient.stop();
     }
+
     log.info('UPnP client stopped');
   }
 
