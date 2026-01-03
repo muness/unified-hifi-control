@@ -5,16 +5,75 @@
  * Documentation: http://HOST:9000/html/docs/cli-api.html
  */
 
+const fs = require('fs');
+const path = require('path');
+
+const CONFIG_DIR = process.env.CONFIG_DIR || path.join(__dirname, '..', '..', 'data');
+const LMS_CONFIG_FILE = path.join(CONFIG_DIR, 'lms-config.json');
+
 class LMSClient {
   constructor(opts = {}) {
-    this.host = opts.host;
+    this.host = opts.host || null;
     this.port = opts.port || 9000;
     this.logger = opts.logger || console;
-    this.baseUrl = `http://${this.host}:${this.port}`;
     this.players = new Map();
     this.pollInterval = opts.pollInterval || 2000;
     this.pollTimer = null;
     this.connected = false;
+
+    // Load saved config on startup
+    this._loadConfig();
+
+    // Set baseUrl after loading config
+    if (this.host) {
+      this.baseUrl = `http://${this.host}:${this.port}`;
+    }
+  }
+
+  _loadConfig() {
+    try {
+      if (fs.existsSync(LMS_CONFIG_FILE)) {
+        const saved = JSON.parse(fs.readFileSync(LMS_CONFIG_FILE, 'utf8'));
+        if (saved.host) this.host = saved.host;
+        if (saved.port) this.port = Number(saved.port);
+        this.logger.info('Loaded LMS config from disk', { host: this.host, port: this.port });
+      }
+    } catch (e) {
+      this.logger.warn('Failed to load LMS config', { error: e.message });
+    }
+  }
+
+  _saveConfig() {
+    try {
+      if (!fs.existsSync(CONFIG_DIR)) {
+        fs.mkdirSync(CONFIG_DIR, { recursive: true });
+      }
+      fs.writeFileSync(LMS_CONFIG_FILE, JSON.stringify({
+        host: this.host,
+        port: this.port,
+      }, null, 2));
+      this.logger.info('Saved LMS config to disk');
+    } catch (e) {
+      this.logger.error('Failed to save LMS config', { error: e.message });
+    }
+  }
+
+  isConfigured() {
+    return !!this.host;
+  }
+
+  configure({ host, port }) {
+    this.host = host || this.host;
+    this.port = Number(port) || this.port;
+    if (this.host) {
+      this.baseUrl = `http://${this.host}:${this.port}`;
+    }
+    // Persist config to disk
+    this._saveConfig();
+    // If already connected, stop and allow restart
+    if (this.connected) {
+      this.stop();
+    }
   }
 
   /**
