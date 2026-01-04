@@ -125,15 +125,12 @@ function createUPnPClient(opts = {}) {
     log.info('Discovered UPnP MediaRenderer', { uuid, location, usn });
 
     try {
-      // Create MediaRenderer client for this device
-      const client = new MediaRendererClient(location);
-
-      // Store renderer info
+      // Store renderer info (client created lazily on control to avoid errors)
       state.renderers.set(uuid, {
         uuid,
         location,
         usn,
-        client,
+        client: null,  // Created lazily in control()
         info: {
           uuid,
           name: null, // Will be populated when we get device description
@@ -144,9 +141,6 @@ function createUPnPClient(opts = {}) {
         },
         lastSeen: Date.now(),
       });
-
-      // Set up event listeners for this renderer
-      setupRendererListeners(uuid, client);
 
       // Fetch device description to get friendly name
       fetchDeviceName(uuid, location).catch(err => {
@@ -430,7 +424,74 @@ function createUPnPClient(opts = {}) {
       throw new Error('Renderer not found');
     }
 
-    // Create client lazily on first control
+    // Use OpenHome services for OpenHome devices
+    if (renderer.hasOpenHome) {
+      if (!renderer.deviceClient) {
+        renderer.deviceClient = new DeviceClient(renderer.location);
+      }
+
+      const callTransport = (actionName) => new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Transport timeout')), 1000);
+        renderer.deviceClient.callAction('urn:av-openhome-org:serviceId:Transport', actionName, {}, (err) => {
+          clearTimeout(timeout);
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+
+      const callVolume = (actionName, params = {}) => new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Volume timeout')), 1000);
+        renderer.deviceClient.callAction('urn:av-openhome-org:serviceId:Volume', actionName, params, (err, result) => {
+          clearTimeout(timeout);
+          if (err) return reject(err);
+          resolve(result);
+        });
+      });
+
+      switch (action) {
+        case 'play_pause':
+          await callTransport(renderer.info.state === 'playing' ? 'Pause' : 'Play');
+          break;
+        case 'play':
+          await callTransport('Play');
+          break;
+        case 'pause':
+          await callTransport('Pause');
+          break;
+        case 'stop':
+          await callTransport('Stop');
+          break;
+        case 'next':
+          await callTransport('SkipNext');
+          break;
+        case 'previous':
+        case 'prev':
+          await callTransport('SkipPrevious');
+          break;
+        case 'vol_abs':
+          const volume = Math.max(0, Math.min(100, Number(value) || 0));
+          await callVolume('SetVolume', { Value: volume });
+          renderer.info.volume = volume;
+          break;
+        case 'vol_rel':
+          const delta = Number(value) || 0;
+          const targetVolume = Math.max(0, Math.min(100, (renderer.info.volume || 0) + delta));
+          await callVolume('SetVolume', { Value: targetVolume });
+          renderer.info.volume = targetVolume;
+          break;
+        default:
+          throw new Error('Unknown action');
+      }
+      
+      // Trigger immediate poll to update UI quickly
+      setTimeout(() => {
+        pollTrackInfo().catch(err => log.warn('Immediate poll failed', { uuid, error: err.message }));
+      }, 200);
+      
+      return;
+    }
+
+    // UPnP fallback for non-OpenHome devices
     if (!renderer.client) {
       renderer.client = new MediaRendererClient(renderer.location);
       setupRendererListeners(uuid, renderer.client);
@@ -457,18 +518,16 @@ function createUPnPClient(opts = {}) {
         await promisify(client, 'stop');
         break;
       case 'next':
-        // Not all renderers support next/previous
         throw new Error('Next track not supported');
       case 'previous':
       case 'prev':
         throw new Error('Previous track not supported');
       case 'vol_abs':
-        const volume = Math.max(0, Math.min(100, Number(value) || 0));
-        await promisify(client, 'setVolume', volume);
-        renderer.info.volume = volume;
+        const volume2 = Math.max(0, Math.min(100, Number(value) || 0));
+        await promisify(client, 'setVolume', volume2);
+        renderer.info.volume = volume2;
         break;
       case 'vol_rel':
-        // Get current volume first
         const currentVolume = await promisify(client, 'getVolume');
         const newVolume = Math.max(0, Math.min(100, currentVolume + (Number(value) || 0)));
         await promisify(client, 'setVolume', newVolume);
@@ -478,6 +537,7 @@ function createUPnPClient(opts = {}) {
         throw new Error('Unknown action');
     }
   }
+
 
   // Helper to promisify MediaRendererClient methods
   function promisify(client, method, ...args) {
@@ -529,6 +589,10 @@ function createUPnPClient(opts = {}) {
     };
   }
 
+  function setOnZonesChanged(callback) {
+    onZonesChanged = callback || (() => {});
+  }
+
   return {
     start,
     stop,
@@ -536,6 +600,7 @@ function createUPnPClient(opts = {}) {
     getNowPlaying,
     control,
     getStatus,
+    setOnZonesChanged,
   };
 }
 
