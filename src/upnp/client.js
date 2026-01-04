@@ -6,7 +6,6 @@
 
 const { Client: SSDPClient } = require('node-ssdp');
 const MediaRendererClient = require('upnp-mediarenderer-client');
-const DeviceClient = require('upnp-device-client');
 const http = require('http');
 const https = require('https');
 const { parseString } = require('xml2js');
@@ -21,7 +20,6 @@ function createUPnPClient(opts = {}) {
     renderers: new Map(), // uuid -> { device, client, info }
     ssdpClient: null,
     searchInterval: null,
-    trackPollInterval: null,
   };
 
   // Create SSDP client for discovery
@@ -54,25 +52,16 @@ function createUPnPClient(opts = {}) {
                 const modelName = device?.modelName;
                 const manufacturer = device?.manufacturer;
 
-                // Check for OpenHome services
-                const serviceList = device?.serviceList?.service || [];
-                const services = Array.isArray(serviceList) ? serviceList : [serviceList];
-                const hasOpenHomeInfo = services.some(s =>
-                  s.serviceType?.includes('av-openhome-org:service:Info')
-                );
-
                 const renderer = state.renderers.get(uuid);
                 if (renderer) {
                   renderer.info.name = friendlyName || `Renderer ${uuid.substring(0, 8)}`;
                   renderer.info.manufacturer = manufacturer || null;
                   renderer.info.model = modelName || null;
-                  renderer.hasOpenHome = hasOpenHomeInfo;
 
                   log.info('Got device info', {
                     uuid,
                     name: renderer.info.name,
                     model: modelName,
-                    openHome: hasOpenHomeInfo
                   });
                   onZonesChanged();
                 }
@@ -94,11 +83,8 @@ function createUPnPClient(opts = {}) {
   ssdpClient.on('response', (headers, statusCode, rinfo) => {
     const st = headers.ST || headers.NT;
 
-    // Process MediaRenderer OR OpenHome devices
-    const isMediaRenderer = st === RENDERER_SERVICE_TYPE;
-    const isOpenHome = st && st.includes('av-openhome-org');
-
-    if (!isMediaRenderer && !isOpenHome) {
+    // Only process MediaRenderer devices
+    if (st !== RENDERER_SERVICE_TYPE) {
       return;
     }
 
@@ -219,138 +205,14 @@ function createUPnPClient(opts = {}) {
       cleanupStaleRenderers();
     }, SSDP_SEARCH_INTERVAL_MS);
 
-    // Poll track info periodically for playing devices
-    state.trackPollInterval = setInterval(() => {
-      pollTrackInfo();
-    }, 2000);  // Poll every 2 seconds
-
     log.info('UPnP discovery started');
   }
 
   function performSearch() {
     try {
-      // Search for both MediaRenderer and OpenHome devices
       state.ssdpClient.search(RENDERER_SERVICE_TYPE);
-      state.ssdpClient.search('urn:av-openhome-org:service:Product:1');
     } catch (err) {
       log.error('SSDP search failed', { error: err.message });
-    }
-  }
-
-  async function pollTrackInfo() {
-    const now = Date.now();
-
-    for (const [uuid, renderer] of state.renderers.entries()) {
-      // Only poll OpenHome devices
-      if (!renderer.hasOpenHome) {
-        continue;
-      }
-
-      // Poll all OpenHome devices (get state + track info)
-
-      // Rate limit: max once per 5 seconds per device
-      if (renderer.lastTrackPoll && now - renderer.lastTrackPoll < 5000) {
-        continue;
-      }
-      renderer.lastTrackPoll = now;
-
-      // Reuse device client
-      if (!renderer.deviceClient) {
-        renderer.deviceClient = new DeviceClient(renderer.location);
-      }
-
-      try {
-        // Query OpenHome Transport state first
-        const transportState = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
-          renderer.deviceClient.callAction(
-            'urn:av-openhome-org:serviceId:Transport',
-            'TransportState',
-            {},
-            (err, result) => {
-              clearTimeout(timeout);
-              if (err) return reject(err);
-              resolve(result);
-            }
-          );
-        });
-
-        const newState = (transportState.State || '').toLowerCase();
-        if (newState !== renderer.info.state) {
-          renderer.info.state = newState;
-          onZonesChanged();
-        }
-
-        // Query OpenHome Volume
-        const volumeInfo = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
-          renderer.deviceClient.callAction(
-            'urn:av-openhome-org:serviceId:Volume',
-            'Volume',
-            {},
-            (err, result) => {
-              clearTimeout(timeout);
-              if (err) return reject(err);
-              resolve(result);
-            }
-          );
-        });
-
-        if (volumeInfo.Value !== undefined) {
-          renderer.info.volume = Number(volumeInfo.Value);
-        }
-
-        // Query OpenHome Info:Track service
-        const trackInfo = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
-          renderer.deviceClient.callAction(
-            'urn:av-openhome-org:serviceId:Info',
-            'Track',
-            {},
-            (err, result) => {
-              clearTimeout(timeout);
-              if (err) return reject(err);
-              resolve(result);
-            }
-          );
-        });
-
-        // Only parse if URI changed
-        if (trackInfo.Uri && trackInfo.Uri !== renderer.lastTrackUri) {
-          renderer.lastTrackUri = trackInfo.Uri;
-
-          if (trackInfo.Metadata) {
-            const metadata = await new Promise((resolve, reject) => {
-              parseString(trackInfo.Metadata, { explicitArray: false, trim: true }, (err, result) => {
-                if (err) return reject(err);
-                resolve(result);
-              });
-            });
-
-            const item = metadata?.['DIDL-Lite']?.item;
-            if (item) {
-              renderer.openHomeTrackInfo = {
-                title: item['dc:title'] || '',
-                artist: (Array.isArray(item['upnp:artist']) ? item['upnp:artist'][0] : item['upnp:artist']) || '',
-                album: item['upnp:album'] || '',
-                albumArtUri: item['upnp:albumArtURI'] || '',
-                genre: item['upnp:genre'] || '',
-              };
-              log.info('Updated OpenHome track info', {
-                uuid,
-                track: renderer.openHomeTrackInfo.title,
-                hasArt: !!renderer.openHomeTrackInfo.albumArtUri
-              });
-            }
-          }
-        }
-      } catch (err) {
-        // Log occasionally (max once per minute per device)
-        if (!renderer.lastPollError || now - renderer.lastPollError > 60000) {
-          log.warn('Failed to poll OpenHome track info', { uuid, name: renderer.info.name, error: err.message });
-          renderer.lastPollError = now;
-        }
-      }
     }
   }
 
@@ -375,47 +237,36 @@ function createUPnPClient(opts = {}) {
   }
 
   function getZones() {
-    return Array.from(state.renderers.values()).map(renderer => {
-      const zone = {
-        zone_id: renderer.uuid,
-        zone_name: renderer.info.name,
-        source: 'upnp',
-        protocol: renderer.hasOpenHome ? 'openhome' : 'upnp',
-        state: renderer.info.state,
-        output_count: 1,
-        output_name: renderer.info.name,
-        device_name: renderer.info.manufacturer && renderer.info.model
-          ? `${renderer.info.manufacturer} ${renderer.info.model}`
-          : null,
-        volume_control: (renderer.info.volume !== null || renderer.hasOpenHome) ? {
-          type: 'number',
-          min: 0,
-          max: 100,
-          is_muted: false,
-        } : null,
-      };
-
-      // Add unsupported actions for basic UPnP devices
-      if (!renderer.hasOpenHome) {
-        zone.unsupported = ['next', 'previous', 'track_metadata', 'album_art'];
-      }
-
-      return zone;
-    });
+    return Array.from(state.renderers.values()).map(renderer => ({
+      zone_id: renderer.uuid,
+      zone_name: renderer.info.name,
+      state: renderer.info.state,
+      output_count: 1,
+      output_name: renderer.info.name,
+      device_name: renderer.info.manufacturer && renderer.info.model
+        ? `${renderer.info.manufacturer} ${renderer.info.model}`
+        : null,
+      volume_control: renderer.info.volume !== null ? {
+        type: 'number',
+        min: 0,
+        max: 100,
+        is_muted: false,
+      } : null,
+      // Pure UPnP doesn't support these features
+      unsupported: ['next', 'previous', 'track_metadata', 'album_art'],
+    }));
   }
 
   function getNowPlaying(uuid) {
     const renderer = state.renderers.get(uuid);
     if (!renderer) return null;
 
-    // Use OpenHome track info if available
-    const track = renderer.openHomeTrackInfo || {};
-
+    // Pure UPnP doesn't provide track metadata
     return {
       zone_id: uuid,
-      line1: track.title || renderer.info.name,
-      line2: track.artist || '',
-      line3: track.album || '',
+      line1: renderer.info.name,
+      line2: '',
+      line3: '',
       is_playing: renderer.info.state === 'playing',
       volume: renderer.info.volume,
       volume_type: 'number',
@@ -424,7 +275,7 @@ function createUPnPClient(opts = {}) {
       volume_step: 1,
       seek_position: null,
       length: null,
-      image_key: track.albumArtUri || null,  // Album art URL
+      image_key: null,
     };
   }
 
@@ -434,74 +285,7 @@ function createUPnPClient(opts = {}) {
       throw new Error('Renderer not found');
     }
 
-    // Use OpenHome services for OpenHome devices
-    if (renderer.hasOpenHome) {
-      if (!renderer.deviceClient) {
-        renderer.deviceClient = new DeviceClient(renderer.location);
-      }
-
-      const callTransport = (actionName) => new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Transport timeout')), 5000);
-        renderer.deviceClient.callAction('urn:av-openhome-org:serviceId:Transport', actionName, {}, (err) => {
-          clearTimeout(timeout);
-          if (err) return reject(err);
-          resolve();
-        });
-      });
-
-      const callVolume = (actionName, params = {}) => new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Volume timeout')), 5000);
-        renderer.deviceClient.callAction('urn:av-openhome-org:serviceId:Volume', actionName, params, (err, result) => {
-          clearTimeout(timeout);
-          if (err) return reject(err);
-          resolve(result);
-        });
-      });
-
-      switch (action) {
-        case 'play_pause':
-          await callTransport(renderer.info.state === 'playing' ? 'Pause' : 'Play');
-          break;
-        case 'play':
-          await callTransport('Play');
-          break;
-        case 'pause':
-          await callTransport('Pause');
-          break;
-        case 'stop':
-          await callTransport('Stop');
-          break;
-        case 'next':
-          await callTransport('SkipNext');
-          break;
-        case 'previous':
-        case 'prev':
-          await callTransport('SkipPrevious');
-          break;
-        case 'vol_abs':
-          const volume = Math.max(0, Math.min(100, Number(value) || 0));
-          await callVolume('SetVolume', { Value: volume });
-          renderer.info.volume = volume;
-          break;
-        case 'vol_rel':
-          const delta = Number(value) || 0;
-          const targetVolume = Math.max(0, Math.min(100, (renderer.info.volume || 0) + delta));
-          await callVolume('SetVolume', { Value: targetVolume });
-          renderer.info.volume = targetVolume;
-          break;
-        default:
-          throw new Error('Unknown action');
-      }
-      
-      // Trigger immediate poll to update UI quickly
-      setTimeout(() => {
-        pollTrackInfo().catch(err => log.warn('Immediate poll failed', { uuid, error: err.message }));
-      }, 200);
-      
-      return;
-    }
-
-    // UPnP fallback for non-OpenHome devices
+    // Create MediaRenderer client lazily
     if (!renderer.client) {
       renderer.client = new MediaRendererClient(renderer.location);
       setupRendererListeners(uuid, renderer.client);
@@ -567,11 +351,6 @@ function createUPnPClient(opts = {}) {
     if (state.searchInterval) {
       clearInterval(state.searchInterval);
       state.searchInterval = null;
-    }
-
-    if (state.trackPollInterval) {
-      clearInterval(state.trackPollInterval);
-      state.trackPollInterval = null;
     }
 
     // Clean up all renderer clients

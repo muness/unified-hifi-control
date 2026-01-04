@@ -1,6 +1,7 @@
 const os = require('os');
 const { createRoonClient } = require('./roon/client');
 const { createUPnPClient } = require('./upnp/client');
+const { createOpenHomeClient } = require('./openhome/client');
 const { HQPClient } = require('./hqplayer/client');
 const { createMqttService } = require('./mqtt');
 const { createApp } = require('./server/app');
@@ -10,6 +11,7 @@ const { createKnobsStore } = require('./knobs/store');
 const { createBus } = require('./bus');
 const { RoonAdapter } = require('./bus/adapters/roon');
 const { UPnPAdapter } = require('./bus/adapters/upnp');
+const { OpenHomeAdapter } = require('./bus/adapters/openhome');
 const busDebug = require('./bus/debug');
 
 const PORT = process.env.PORT || 8088;
@@ -43,9 +45,15 @@ const roon = createRoonClient({
   onZonesChanged: () => bus.refreshZones('roon'),
 });
 
-// Create UPnP client
+// Create UPnP client (pure DLNA MediaRenderer)
 const upnp = createUPnPClient({
   logger: createLogger('UPnP'),
+});
+
+// Create OpenHome client (OpenHome protocol devices)
+const openhome = createOpenHomeClient({
+  logger: createLogger('OpenHome'),
+  onZonesChanged: () => bus.refreshZones('openhome'),
 });
 
 // Create HQPlayer client (unconfigured initially, configured via API or env vars)
@@ -61,6 +69,11 @@ const upnpAdapter = new UPnPAdapter(upnp, {
   onZonesChanged: () => bus.refreshZones('upnp'),
 });
 bus.registerBackend('upnp', upnpAdapter);
+
+const openhomeAdapter = new OpenHomeAdapter(openhome, {
+  onZonesChanged: () => bus.refreshZones('openhome'),
+});
+bus.registerBackend('openhome', openhomeAdapter);
 
 // Initialize debug consumer
 busDebug.init(bus);
