@@ -21,6 +21,7 @@ function createUPnPClient(opts = {}) {
     renderers: new Map(), // uuid -> { device, client, info }
     ssdpClient: null,
     searchInterval: null,
+    trackPollInterval: null,
   };
 
   // Create SSDP client for discovery
@@ -205,6 +206,11 @@ function createUPnPClient(opts = {}) {
       cleanupStaleRenderers();
     }, SSDP_SEARCH_INTERVAL_MS);
 
+    // Poll track info periodically for playing devices
+    state.trackPollInterval = setInterval(() => {
+      pollTrackInfo();
+    }, 2000);  // Poll every 2 seconds
+
     log.info('UPnP discovery started');
   }
 
@@ -349,6 +355,11 @@ function createUPnPClient(opts = {}) {
     if (state.searchInterval) {
       clearInterval(state.searchInterval);
       state.searchInterval = null;
+    }
+
+    if (state.trackPollInterval) {
+      clearInterval(state.trackPollInterval);
+      state.trackPollInterval = null;
     }
 
     // Clean up all renderer clients
