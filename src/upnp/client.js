@@ -6,6 +6,7 @@
 
 const { Client: SSDPClient } = require('node-ssdp');
 const MediaRendererClient = require('upnp-mediarenderer-client');
+const DeviceClient = require('upnp-device-client');
 const http = require('http');
 const https = require('https');
 const { parseString } = require('xml2js');
