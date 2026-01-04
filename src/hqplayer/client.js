@@ -24,6 +24,11 @@ class HQPClient {
     // Native protocol client (port 4321) - used for pipeline control
     this.native = new HQPNativeClient({ logger: this.log });
 
+    // Handle native client errors gracefully (don't crash if HQPlayer unavailable)
+    this.native.on('error', (err) => {
+      this.log.warn('HQPlayer native client error (non-fatal)', { error: err.message });
+    });
+
     // Load saved config on startup
     this._loadConfig();
   }

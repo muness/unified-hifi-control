@@ -40,7 +40,12 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
 
     // Update knob status from query params
     if (knob?.id) {
-      const statusUpdates = { zone_id: zoneId };
+      // Update version if provided (ensures version updates after OTA)
+      if (knob.version) {
+        knobs.getOrCreateKnob(knob.id, knob.version);
+      }
+
+      const statusUpdates = { zone_id: zoneId, ip: req.ip };
 
       if (req.query.battery_level !== undefined) {
         const level = parseInt(req.query.battery_level, 10);
@@ -324,68 +329,165 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
   router.get('/', (req, res) => res.redirect('/control'));
 
   // ========== JTBD-Organized Admin Pages ==========
-  // Jobs: Control (normal listening), Critical (DSP tweaks), Knobs (setup), Settings (admin)
+  // Jobs: Control (normal listening), Zone (single zone + DSP), Knobs (setup), Settings (admin)
 
   const baseStyles = `
-    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 0 1em 2em; }
-    nav { background: #f5f5f5; margin: 0 -1em; padding: 0.8em 1em; border-bottom: 1px solid #ddd; display: flex; align-items: center; gap: 1.5em; flex-wrap: wrap; }
+    /* Theme variables */
+    :root, [data-theme="light"] {
+      --bg: #ffffff;
+      --bg-surface: #f5f5f5;
+      --bg-elevated: #ffffff;
+      --text: #333333;
+      --text-muted: #666666;
+      --border: #dddddd;
+      --border-light: #eeeeee;
+      --accent: #4CAF50;
+      --accent-hover: #45a049;
+      --success: #28a745;
+      --error: #dc3545;
+      --ctrl-bg: #f5f5f5;
+      --ctrl-hover: #e5e5e5;
+      --code-bg: #f5f5f5;
+      --card-selected: #f8fff8;
+      --art-bg: #f0f0f0;
+    }
+    [data-theme="dark"] {
+      --bg: #1a1a1a;
+      --bg-surface: #2d2d2d;
+      --bg-elevated: #3d3d3d;
+      --text: #e0e0e0;
+      --text-muted: #999999;
+      --border: #444444;
+      --border-light: #3d3d3d;
+      --accent: #4CAF50;
+      --accent-hover: #5cbf60;
+      --success: #5cb85c;
+      --error: #d9534f;
+      --ctrl-bg: #3d3d3d;
+      --ctrl-hover: #4d4d4d;
+      --code-bg: #2d2d2d;
+      --card-selected: #1a2f1a;
+      --art-bg: #2d2d2d;
+    }
+    [data-theme="black"] {
+      --bg: #000000;
+      --bg-surface: #111111;
+      --bg-elevated: #1a1a1a;
+      --text: #e0e0e0;
+      --text-muted: #888888;
+      --border: #333333;
+      --border-light: #222222;
+      --accent: #4CAF50;
+      --accent-hover: #5cbf60;
+      --success: #5cb85c;
+      --error: #d9534f;
+      --ctrl-bg: #1a1a1a;
+      --ctrl-hover: #2a2a2a;
+      --code-bg: #111111;
+      --card-selected: #0a1f0a;
+      --art-bg: #111111;
+    }
+
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 0 1em 2em; background: var(--bg); color: var(--text); }
+    nav { background: var(--bg-surface); margin: 0 -1em; padding: 0.8em 1em; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 1em; flex-wrap: wrap; }
     nav h1 { margin: 0; font-size: 1.1em; }
-    nav a { text-decoration: none; color: #666; padding: 0.4em 0.8em; border-radius: 4px; }
-    nav a:hover { background: #e5e5e5; }
-    nav a.active { background: #4CAF50; color: white; }
-    .version { margin-left: auto; color: #999; font-size: 0.85em; }
+    nav a { text-decoration: none; color: var(--text-muted); padding: 0.4em 0.8em; border-radius: 4px; }
+    nav a:hover { background: var(--ctrl-hover); }
+    nav a.active { background: var(--accent); color: white; }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 1em; }
+    .version { color: var(--text-muted); font-size: 0.85em; }
+    .theme-toggle { background: var(--ctrl-bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.3em 0.6em; cursor: pointer; font-size: 0.9em; color: var(--text); }
+    .theme-toggle:hover { background: var(--ctrl-hover); }
     h2 { margin-top: 1.5em; }
-    button { padding: 0.5em 1em; cursor: pointer; margin-right: 0.5em; }
-    .section { margin: 1.5em 0; padding: 1em; border: 1px solid #ddd; border-radius: 4px; }
+    button { padding: 0.5em 1em; cursor: pointer; margin-right: 0.5em; background: var(--ctrl-bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; }
+    button:hover { background: var(--ctrl-hover); }
+    .section { margin: 1.5em 0; padding: 1em; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-surface); }
     .status-msg { margin-top: 0.5em; }
-    .success { color: green; }
-    .error { color: red; }
-    .muted { color: #666; }
-    select { padding: 0.4em; min-width: 150px; }
+    .success { color: var(--success); }
+    .error { color: var(--error); }
+    .muted { color: var(--text-muted); }
+    select { padding: 0.4em; min-width: 150px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); border-radius: 4px; }
     label { display: inline-block; min-width: 100px; margin-right: 0.5em; }
     .form-row { margin: 0.8em 0; }
-    input[type="text"], input[type="number"], input[type="password"] { padding: 0.4em; }
+    input[type="text"], input[type="number"], input[type="password"] { padding: 0.4em; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); border-radius: 4px; }
     .hidden { display: none; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 0.5em; border-bottom: 1px solid #eee; }
-    img.art { width: 80px; height: 80px; border-radius: 4px; object-fit: cover; background: #f0f0f0; }
-    .ctrl { padding: 0.4em 0.7em; margin: 0 0.15em; background: #f5f5f5; border: 1px solid #ddd; cursor: pointer; border-radius: 4px; font-size: 1em; }
-    .ctrl:hover { background: #e5e5e5; }
-    .config-btn { padding: 0.3em 0.8em; background: #4CAF50; border: none; color: #fff; border-radius: 4px; cursor: pointer; }
-    code { background: #f5f5f5; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.85em; }
+    th, td { text-align: left; padding: 0.5em; border-bottom: 1px solid var(--border-light); }
+    img.art { width: 80px; height: 80px; border-radius: 4px; object-fit: cover; background: var(--art-bg); }
+    .ctrl { padding: 0.4em 0.7em; margin: 0 0.15em; background: var(--ctrl-bg); border: 1px solid var(--border); cursor: pointer; border-radius: 4px; font-size: 1em; color: var(--text); }
+    .ctrl:hover { background: var(--ctrl-hover); }
+    .config-btn { padding: 0.3em 0.8em; background: var(--accent); border: none; color: #fff; border-radius: 4px; cursor: pointer; }
+    .config-btn:hover { background: var(--accent-hover); }
+    code { background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.85em; color: var(--text); }
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
     .modal-overlay.open { display: flex; }
-    .modal { background: #fff; border-radius: 8px; padding: 1.5em; max-width: 550px; width: 90%; max-height: 85vh; overflow-y: auto; }
+    .modal { background: var(--bg-elevated); border-radius: 8px; padding: 1.5em; max-width: 550px; width: 90%; max-height: 85vh; overflow-y: auto; color: var(--text); }
     .modal h2 { margin-top: 0; }
-    .modal-close { float: right; background: none; border: none; font-size: 1.5em; cursor: pointer; color: #666; }
-    .form-section { border-top: 1px solid #eee; padding-top: 1em; margin-top: 1em; }
+    .modal-close { float: right; background: none; border: none; font-size: 1.5em; cursor: pointer; color: var(--text-muted); }
+    .form-section { border-top: 1px solid var(--border-light); padding-top: 1em; margin-top: 1em; }
     .form-section h3 { margin: 0 0 0.8em 0; font-size: 1em; }
     .form-actions { display: flex; gap: 0.5em; justify-content: flex-end; margin-top: 1.5em; }
-    .btn-primary { background: #4CAF50; border: none; color: #fff; padding: 0.5em 1em; border-radius: 4px; cursor: pointer; }
-    .btn-secondary { background: #f5f5f5; border: 1px solid #ddd; padding: 0.5em 1em; border-radius: 4px; cursor: pointer; }
-    .config-form { margin-top: 1em; padding-top: 1em; border-top: 1px solid #eee; }
-    .zone-card { border: 1px solid #ddd; border-radius: 8px; padding: 1em; margin-bottom: 1em; display: flex; gap: 1em; align-items: center; }
-    .zone-card.selected { border-color: #4CAF50; background: #f8fff8; }
-    img.art-lg { width: 120px; height: 120px; border-radius: 6px; object-fit: cover; }
-    .zone-info { flex: 1; }
+    .btn-primary { background: var(--accent); border: none; color: #fff; padding: 0.5em 1em; border-radius: 4px; cursor: pointer; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: var(--ctrl-bg); border: 1px solid var(--border); padding: 0.5em 1em; border-radius: 4px; cursor: pointer; color: var(--text); }
+    .btn-secondary:hover { background: var(--ctrl-hover); }
+    .config-form { margin-top: 1em; padding-top: 1em; border-top: 1px solid var(--border-light); }
+    .zone-card { border: 1px solid var(--border); border-radius: 8px; padding: 1em; margin-bottom: 1em; display: flex; gap: 1em; align-items: center; background: var(--bg-surface); }
+    .zone-card.selected { border-color: var(--accent); background: var(--card-selected); }
+    img.art-lg { width: 120px; height: 120px; border-radius: 6px; object-fit: cover; background: var(--art-bg); }
+    .zone-info { flex: 1; min-width: 0; }
     .zone-info h3 { margin: 0 0 0.3em 0; }
     .zone-controls { display: flex; gap: 0.3em; margin-top: 0.8em; }
+    /* Mobile responsive */
+    @media (max-width: 600px) {
+      nav { gap: 0.5em; padding: 0.6em 0.8em; }
+      nav h1 { font-size: 1em; width: 100%; }
+      nav a { padding: 0.3em 0.6em; font-size: 0.9em; }
+      .nav-right { width: 100%; justify-content: space-between; margin-left: 0; }
+      .zone-card { flex-direction: column; align-items: stretch; text-align: center; }
+      img.art-lg { width: 100%; max-width: 200px; height: auto; aspect-ratio: 1; margin: 0 auto; }
+      .zone-controls { justify-content: center; }
+      .modal { padding: 1em; max-height: 90vh; }
+      table { font-size: 0.85em; }
+      th, td { padding: 0.3em; }
+    }
   `;
 
   const navHtml = (active) => `
     <nav>
       <h1>Hi-Fi Control</h1>
       <a href="/control" class="${active === 'control' ? 'active' : ''}">Control</a>
-      <a href="/critical" class="${active === 'critical' ? 'active' : ''}">Critical</a>
+      <a href="/zone" class="${active === 'zone' ? 'active' : ''}">Zone</a>
       <a href="/knobs" class="${active === 'knobs' ? 'active' : ''}">Knobs</a>
       <a href="/settings" class="${active === 'settings' ? 'active' : ''}">Settings</a>
-      <span class="version" id="app-version"></span>
+      <div class="nav-right">
+        <button class="theme-toggle" onclick="cycleTheme()" title="Toggle theme" aria-label="Toggle theme">
+          <span id="theme-icon">☀</span>
+        </button>
+        <span class="version" id="app-version"></span>
+      </div>
     </nav>
   `;
 
   const versionScript = `
     fetch('/status').then(r=>r.json()).then(d=>{document.getElementById('app-version').textContent='v'+d.version;});
     fetch('/api/settings').then(r=>r.json()).then(s=>{if(s.hideKnobsPage){const k=document.querySelector('nav a[href="/knobs"]');if(k)k.style.display='none';}}).catch(()=>{});
+    // Theme handling
+    const themes = ['light', 'dark', 'black'];
+    const themeIcons = { light: '☀', dark: '🌙', black: '●' };
+    function getTheme() { return localStorage.getItem('hifi-theme') || 'light'; }
+    function setTheme(t) {
+      document.documentElement.setAttribute('data-theme', t);
+      localStorage.setItem('hifi-theme', t);
+      const icon = document.getElementById('theme-icon');
+      if (icon) icon.textContent = themeIcons[t] || '☀';
+    }
+    function cycleTheme() {
+      const current = getTheme();
+      const next = themes[(themes.indexOf(current) + 1) % themes.length];
+      setTheme(next);
+    }
+    setTheme(getTheme());
   `;
 
   // HTML escape helper to prevent XSS
@@ -562,11 +664,11 @@ setInterval(loadZones, 4000);
 </script></body></html>`);
   });
 
-  // GET /critical - Critical listening: single zone + HQPlayer DSP
-  router.get(['/critical', '/admin/critical'], (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Critical Listening - Hi-Fi</title><style>${baseStyles}</style></head><body>
-${navHtml('critical')}
-<h2>Critical Listening</h2>
+  // GET /zone - Single zone focus + HQPlayer DSP controls
+  router.get(['/zone', '/critical', '/admin/critical'], (req, res) => {
+    res.send(`<!DOCTYPE html><html><head><title>Zone - Hi-Fi</title><style>${baseStyles}</style></head><body>
+${navHtml('zone')}
+<h2>Zone</h2>
 <p class="muted">Select a zone and tweak DSP settings for focused listening.</p>
 
 <div class="form-row">
@@ -618,7 +720,7 @@ ${navHtml('critical')}
 <script>
 ${versionScript}
 ${escapeScript}
-let selectedZone = localStorage.getItem('criticalZone') || null;
+let selectedZone = localStorage.getItem('hifi-zone') || null;
 let zonesData = [];
 let initialLoad = true;
 
@@ -642,7 +744,7 @@ async function loadZones() {
       document.getElementById('zone-display').classList.remove('hidden');
     } else {
       selectedZone = null;
-      localStorage.removeItem('criticalZone');
+      localStorage.removeItem('hifi-zone');
     }
   }
   initialLoad = false;
@@ -653,9 +755,9 @@ async function loadZones() {
 function selectZone(zoneId) {
   selectedZone = zoneId;
   if (zoneId) {
-    localStorage.setItem('criticalZone', zoneId);
+    localStorage.setItem('hifi-zone', zoneId);
   } else {
-    localStorage.removeItem('criticalZone');
+    localStorage.removeItem('hifi-zone');
   }
   if (!zoneId) {
     document.getElementById('zone-display').classList.add('hidden');
@@ -808,14 +910,15 @@ ${navHtml('knobs')}
 <h2>Knob Devices</h2>
 <p id="community-link" style="margin-bottom:1em;"><a href="https://community.roonlabs.com/t/50-esp32-s3-knob-roon-controller/311363" target="_blank" rel="noopener">Knob Community Thread</a> - build info, firmware updates, discussion</p>
 <table>
-  <thead><tr><th>ID</th><th>Name</th><th>Version</th><th>Zone</th><th>Battery</th><th>Last Seen</th><th></th></tr></thead>
-  <tbody id="knobs-body"><tr><td colspan="7" class="muted">Loading...</td></tr></tbody>
+  <thead><tr><th>ID</th><th>Name</th><th>Version</th><th>IP</th><th>Zone</th><th>Battery</th><th>Last Seen</th><th></th></tr></thead>
+  <tbody id="knobs-body"><tr><td colspan="8" class="muted">Loading...</td></tr></tbody>
 </table>
 
 <div class="section" style="margin-top:2em;">
   <h3>Firmware</h3>
   <p>Current: <span id="fw-version">checking...</span></p>
   <button id="fetch-btn" onclick="fetchFirmware()">Fetch Latest from GitHub</button>
+  <a href="/knobs/flash" style="margin-left:1em;">Flash a new knob</a>
   <span id="fw-msg" class="status-msg"></span>
 </div>
 
@@ -853,7 +956,7 @@ async function loadKnobs() {
 
   const tbody = document.getElementById('knobs-body');
   if (knobs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="muted">No knobs registered. Connect a knob to see it here.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="muted">No knobs registered. Connect a knob to see it here.</td></tr>';
     return;
   }
 
@@ -861,7 +964,8 @@ async function loadKnobs() {
     const st = k.status || {};
     const bat = st.battery_level != null ? st.battery_level + '%' + (st.battery_charging ? ' ⚡' : '') : '—';
     const zone = st.zone_id ? esc(zonesData.find(z => z.zone_id === st.zone_id)?.zone_name || st.zone_id) : '—';
-    return '<tr><td><code>' + esc(k.knob_id || '') + '</code></td><td>' + (k.name ? esc(k.name) : '<span class="muted">unnamed</span>') + '</td><td>' + esc(k.version || '—') + '</td><td>' + zone + '</td><td>' + bat + '</td><td>' + ago(k.last_seen) + '</td><td><button class="config-btn" data-knob-id="' + escAttr(k.knob_id) + '">Config</button></td></tr>';
+    const ip = st.ip || '—';
+    return '<tr><td><code>' + esc(k.knob_id || '') + '</code></td><td>' + (k.name ? esc(k.name) : '<span class="muted">unnamed</span>') + '</td><td>' + esc(k.version || '—') + '</td><td>' + esc(ip) + '</td><td>' + zone + '</td><td>' + bat + '</td><td>' + ago(k.last_seen) + '</td><td><button class="config-btn" data-knob-id="' + escAttr(k.knob_id) + '">Config</button></td></tr>';
   }).join('');
 }
 
@@ -893,7 +997,23 @@ async function openConfig(knobId) {
   const slpChg = c.sleep_charging || { enabled: false, timeout_sec: 0 };
   const slpBat = c.sleep_battery || { enabled: true, timeout_sec: 60 };
 
-  document.getElementById('configForm').innerHTML = '<form id="knobConfigForm"><div class="form-row"><label>Name:</label><input type="text" name="name" value="' + escAttr(c.name || '') + '" placeholder="Living Room Knob"></div><div class="form-section"><h3>Display Rotation</h3><div class="form-row"><label>Charging:</label>' + rotSel('rotation_charging', c.rotation_charging ?? 180) + ' <label style="margin-left:1em;">Battery:</label>' + rotSel('rotation_not_charging', c.rotation_not_charging ?? 0) + '</div></div><div class="form-section"><h3>Power Timers (sec, 0=skip)</h3><table style="font-size:0.9em;"><tr><th></th><th>Charging</th><th>Battery</th></tr><tr><td>Art Mode</td><td><input type="number" name="art_chg_sec" value="' + artChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_chg_on"' + (artChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="art_bat_sec" value="' + artBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_bat_on"' + (artBat.enabled ? ' checked' : '') + '> On</label></td></tr><tr><td>Dim</td><td><input type="number" name="dim_chg_sec" value="' + dimChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_chg_on"' + (dimChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="dim_bat_sec" value="' + dimBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_bat_on"' + (dimBat.enabled ? ' checked' : '') + '> On</label></td></tr><tr><td>Sleep</td><td><input type="number" name="slp_chg_sec" value="' + slpChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_chg_on"' + (slpChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="slp_bat_sec" value="' + slpBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_bat_on"' + (slpBat.enabled ? ' checked' : '') + '> On</label></td></tr></table></div><div class="form-section"><h3>Power Mgmt</h3><div class="form-row"><label><input type="checkbox" name="wifi_ps"' + (c.wifi_power_save_enabled ? ' checked' : '') + '> WiFi Sleep</label> <label style="margin-left:1em;"><input type="checkbox" name="cpu_scale"' + (c.cpu_freq_scaling_enabled ? ' checked' : '') + '> CPU Scaling</label></div><div class="form-row"><label>Sleep poll (stopped):</label><input type="number" name="sleep_poll_stopped" value="' + (c.sleep_poll_stopped_sec ?? 60) + '" style="width:50px;"> sec</div></div><div class="form-actions"><button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button><button type="submit" class="btn-primary">Save</button></div></form>';
+  document.getElementById('configForm').innerHTML = '<form id="knobConfigForm">' +
+    '<div class="form-row"><label>Name:</label><input type="text" name="name" value="' + escAttr(c.name || '') + '" placeholder="Living Room Knob"></div>' +
+    '<div class="form-section"><h3>Display Rotation</h3>' +
+    '<p class="muted" style="margin:0 0 0.8em;font-size:0.85em;">Flip the display based on how the knob is oriented. Useful if you mount it differently when docked vs handheld.</p>' +
+    '<div class="form-row"><label>Charging:</label>' + rotSel('rotation_charging', c.rotation_charging ?? 180) + ' <label style="margin-left:1em;">Battery:</label>' + rotSel('rotation_not_charging', c.rotation_not_charging ?? 0) + '</div></div>' +
+    '<div class="form-section"><h3>Power Timers</h3>' +
+    '<p class="muted" style="margin:0 0 0.8em;font-size:0.85em;">After inactivity, the display transitions: <strong>Art Mode</strong> (album art) → <strong>Dim</strong> (reduced brightness) → <strong>Sleep</strong> (display off). Timeout in seconds, 0 to skip.</p>' +
+    '<table style="font-size:0.9em;"><tr><th></th><th>Charging</th><th>Battery</th></tr>' +
+    '<tr><td>Art Mode</td><td><input type="number" name="art_chg_sec" value="' + artChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_chg_on"' + (artChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="art_bat_sec" value="' + artBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_bat_on"' + (artBat.enabled ? ' checked' : '') + '> On</label></td></tr>' +
+    '<tr><td>Dim</td><td><input type="number" name="dim_chg_sec" value="' + dimChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_chg_on"' + (dimChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="dim_bat_sec" value="' + dimBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_bat_on"' + (dimBat.enabled ? ' checked' : '') + '> On</label></td></tr>' +
+    '<tr><td>Sleep</td><td><input type="number" name="slp_chg_sec" value="' + slpChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_chg_on"' + (slpChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="slp_bat_sec" value="' + slpBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_bat_on"' + (slpBat.enabled ? ' checked' : '') + '> On</label></td></tr></table></div>' +
+    '<div class="form-section"><h3>Power Management</h3>' +
+    '<p class="muted" style="margin:0 0 0.8em;font-size:0.85em;">Battery optimization settings. May slightly increase response latency.</p>' +
+    '<div class="form-row"><label><input type="checkbox" name="wifi_ps"' + (c.wifi_power_save_enabled ? ' checked' : '') + '> WiFi Sleep</label> <span class="muted" style="font-size:0.8em;">— reduces WiFi power when idle</span></div>' +
+    '<div class="form-row"><label><input type="checkbox" name="cpu_scale"' + (c.cpu_freq_scaling_enabled ? ' checked' : '') + '> CPU Scaling</label> <span class="muted" style="font-size:0.8em;">— lowers CPU speed when idle</span></div>' +
+    '<div class="form-row" style="margin-top:0.8em;"><label>Poll interval when stopped:</label><input type="number" name="sleep_poll_stopped" value="' + (c.sleep_poll_stopped_sec ?? 60) + '" style="width:50px;"> sec <span class="muted" style="font-size:0.8em;">— how often to check for updates when nothing is playing</span></div></div>' +
+    '<div class="form-actions"><button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button><button type="submit" class="btn-primary">Save</button></div></form>';
 
   document.getElementById('knobConfigForm').addEventListener('submit', saveConfig);
 }
@@ -972,6 +1092,104 @@ loadKnobs();
 loadFirmwareVersion();
 setInterval(loadKnobs, 5000);
 </script></body></html>`);
+  });
+
+  // GET /knobs/flash - Web flasher for ESP32-S3
+  router.get('/knobs/flash', (req, res) => {
+    res.send(`<!DOCTYPE html><html><head>
+<title>Flash Knob - Hi-Fi Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>${baseStyles}
+  .flash-card { background: var(--bg-surface); border-radius: 12px; padding: 24px; margin: 20px 0; }
+  .flash-card h3 { margin-top: 0; }
+  .flash-section { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin: 1em 0; }
+  esp-web-install-button button { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: 600; }
+  esp-web-install-button button:hover { background: var(--accent-hover); }
+  .version-info { color: var(--text-muted); }
+  .info-box { background: var(--bg-surface); border-left: 4px solid #2196f3; padding: 12px 16px; border-radius: 4px; margin: 1em 0; }
+  .warning-box { background: var(--bg-surface); border-left: 4px solid #ff9800; padding: 12px 16px; border-radius: 4px; margin: 1em 0; }
+  .unsupported { display: none; background: var(--bg-surface); border-left: 4px solid var(--error); padding: 12px 16px; border-radius: 4px; margin: 1em 0; }
+  .steps ol { padding-left: 20px; }
+  .steps li { margin-bottom: 8px; color: var(--text-muted); }
+  .steps code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+</style>
+</head><body>
+${navHtml('knobs')}
+<h2>Flash Knob Firmware</h2>
+<p class="muted">Flash firmware directly from your browser - no tools to install</p>
+
+<div class="unsupported" id="unsupported">
+  <strong>Browser Not Supported</strong><br>
+  Web Serial requires Chrome or Edge (version 89+). Safari and Firefox are not supported.
+</div>
+
+<div class="info-box">
+  <strong>Chip Auto-Detection</strong><br>
+  Not sure which chip? Just try - ESP Web Tools detects the chip and warns if it doesn't match.
+</div>
+
+<div class="flash-card">
+  <h3>ESP32-S3 Controller</h3>
+  <p class="muted">The main Roon Knob controller - handles display, rotary encoder, touch, WiFi, and music source communication.</p>
+  <div class="flash-section">
+    <esp-web-install-button id="flash-btn" manifest="/manifest-s3.json">
+      <button slot="activate">Flash ESP32-S3</button>
+      <span slot="unsupported">Not supported</span>
+      <span slot="not-allowed">HTTPS required</span>
+    </esp-web-install-button>
+    <span class="version-info" id="fw-version">Loading...</span>
+  </div>
+  <div id="no-firmware-msg" class="warning-box" style="display:none;">
+    <strong>No firmware available</strong><br>
+    Go to <a href="/knobs">Knobs page</a> and click "Fetch Latest from GitHub" first.
+  </div>
+  <div class="steps">
+    <strong>Steps:</strong>
+    <ol>
+      <li>Turn on the device (power slider towards USB-C port)</li>
+      <li>Connect via USB-C</li>
+      <li>Click "Flash ESP32-S3" and select the serial port</li>
+      <li>Wait ~30 seconds for flashing to complete</li>
+    </ol>
+    <p class="muted"><strong>Port name:</strong> macOS: <code>cu.usbmodem*</code> · Linux: <code>ttyACM0</code> · Windows: <code>COM*</code></p>
+  </div>
+</div>
+
+<div class="warning-box">
+  <strong>First time?</strong><br>
+  After flashing, the device creates a WiFi access point called <code>roon-knob-setup</code>. Connect to it to configure your WiFi credentials.
+</div>
+
+<div class="section">
+  <h3>Requirements</h3>
+  <ul>
+    <li><strong>Browser:</strong> Chrome or Edge 89+</li>
+    <li><strong>USB cable</strong> connected to your computer</li>
+    <li><strong>Driver:</strong> <a href="https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers" target="_blank">CP210x</a> or <a href="https://www.wch-ic.com/downloads/CH341SER_ZIP.html" target="_blank">CH340</a> may be needed</li>
+  </ul>
+</div>
+
+<script>
+${versionScript}
+if (!('serial' in navigator)) {
+  document.getElementById('unsupported').style.display = 'block';
+}
+fetch('/firmware/version')
+  .then(r => {
+    if (!r.ok) throw new Error('No firmware');
+    return r.json();
+  })
+  .then(data => {
+    document.getElementById('fw-version').textContent = 'v' + data.version;
+  })
+  .catch(() => {
+    document.getElementById('fw-version').textContent = '';
+    document.getElementById('flash-btn').style.display = 'none';
+    document.getElementById('no-firmware-msg').style.display = 'block';
+  });
+</script>
+</body></html>`);
   });
 
   // GET /settings - Settings page (HQPlayer config, firmware, status)
@@ -1440,6 +1658,33 @@ loadAdapterSettings();
     res.set('Content-Disposition', `attachment; filename="${firmwareFile}"`);
 
     fs.createReadStream(firmwarePath).pipe(res);
+  });
+
+  // GET /manifest-s3.json - ESP Web Tools manifest for ESP32-S3 flasher
+  router.get('/manifest-s3.json', (req, res) => {
+    try {
+      const versionFile = path.join(FIRMWARE_DIR, 'version.json');
+      let version = 'latest';
+      if (fs.existsSync(versionFile)) {
+        const versionData = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
+        version = versionData.version || 'latest';
+      }
+      res.json({
+        name: 'Hi-Fi Control Knob',
+        version: version,
+        new_install_prompt_erase: true,
+        builds: [{
+          chipFamily: 'ESP32-S3',
+          parts: [{
+            path: '/firmware/download',
+            offset: 0
+          }]
+        }]
+      });
+    } catch (err) {
+      log.warn('Manifest generation failed', { error: err.message });
+      res.status(500).json({ error: 'Manifest generation failed' });
+    }
   });
 
   return router;
