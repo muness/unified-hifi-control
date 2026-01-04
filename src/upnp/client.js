@@ -252,10 +252,7 @@ function createUPnPClient(opts = {}) {
         continue;
       }
 
-      // Only poll playing devices
-      if (renderer.info.state !== 'playing') {
-        continue;
-      }
+      // Poll all OpenHome devices (get state + track info)
 
       // Rate limit: max once per 5 seconds per device
       if (renderer.lastTrackPoll && now - renderer.lastTrackPoll < 5000) {
