@@ -32,6 +32,48 @@ function createUPnPClient(opts = {}) {
 
   state.ssdpClient = ssdpClient;
 
+  // Fetch device friendly name from description XML
+  async function fetchDeviceName(uuid, location) {
+    try {
+      const urlObj = new URL(location);
+      const protocol = urlObj.protocol === 'https:' ? https : http;
+
+      return new Promise((resolve, reject) => {
+        protocol.get(location, (res) => {
+          let xml = '';
+          res.on('data', chunk => { xml += chunk; });
+          res.on('end', () => {
+            parseString(xml, { explicitArray: false }, (err, result) => {
+              if (err) return reject(err);
+
+              try {
+                const device = result.root?.device;
+                const friendlyName = device?.friendlyName;
+                const modelName = device?.modelName;
+                const manufacturer = device?.manufacturer;
+
+                const renderer = state.renderers.get(uuid);
+                if (renderer) {
+                  renderer.info.name = friendlyName || `Renderer ${uuid.substring(0, 8)}`;
+                  renderer.info.manufacturer = manufacturer || null;
+                  renderer.info.model = modelName || null;
+                  log.info('Got device info', { uuid, name: renderer.info.name, model: modelName });
+                  onZonesChanged();
+                }
+                resolve();
+              } catch (e) {
+                reject(e);
+              }
+            });
+          });
+        }).on('error', reject);
+      });
+    } catch (err) {
+      log.error('Failed to parse device location', { uuid, location, error: err.message });
+    }
+  }
+
+
   // Handle discovered devices
   ssdpClient.on('response', (headers, statusCode, rinfo) => {
     // Only process MediaRenderer devices
