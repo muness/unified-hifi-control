@@ -35,6 +35,7 @@
     "node-ssdp": "^4.0.1",
     "sharp": "^0.34.5",
     "upnp-mediarenderer-client": "^1.4.0",
+    "xml2js": "^0.6.2",
     "xpath": "^0.0.34"
   },
   "devDependencies": {

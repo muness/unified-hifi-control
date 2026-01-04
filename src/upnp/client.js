@@ -6,6 +6,9 @@
 
 const { Client: SSDPClient } = require('node-ssdp');
 const MediaRendererClient = require('upnp-mediarenderer-client');
+const http = require('http');
+const https = require('https');
+const { parseString } = require('xml2js');
 
 const SSDP_SEARCH_INTERVAL_MS = 30000; // Search every 30 seconds
 const RENDERER_SERVICE_TYPE = 'urn:schemas-upnp-org:device:MediaRenderer:1';
@@ -82,13 +85,16 @@ function createUPnPClient(opts = {}) {
       // Set up event listeners for this renderer
       setupRendererListeners(uuid, client);
 
-      // Try to get device-friendly name
-      // MediaRendererClient doesn't expose device description directly,
-      // so we'll use the UUID as the name for now
-      state.renderers.get(uuid).info.name = `Renderer ${uuid.substring(0, 8)}`;
-
-      // Notify that zones changed
-      onZonesChanged();
+      // Fetch device description to get friendly name
+      fetchDeviceName(uuid, location).catch(err => {
+        log.warn('Failed to fetch device name, using UUID', { uuid, error: err.message });
+        // Fallback to UUID-based name
+        const renderer = state.renderers.get(uuid);
+        if (renderer) {
+          renderer.info.name = `Renderer ${uuid.substring(0, 8)}`;
+        }
+        onZonesChanged();
+      });
 
     } catch (err) {
       log.error('Failed to create MediaRenderer client', { uuid, error: err.message });
