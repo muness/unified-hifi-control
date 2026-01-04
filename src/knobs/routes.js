@@ -1094,101 +1094,33 @@ setInterval(loadKnobs, 5000);
 </script></body></html>`);
   });
 
-  // GET /knobs/flash - Web flasher for ESP32-S3
+  // GET /knobs/flash - Redirect to HTTPS web flasher (Web Serial requires HTTPS)
   router.get('/knobs/flash', (req, res) => {
     res.send(`<!DOCTYPE html><html><head>
 <title>Flash Knob - Hi-Fi Control</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 <style>${baseStyles}
-  .flash-card { background: var(--bg-surface); border-radius: 12px; padding: 24px; margin: 20px 0; }
-  .flash-card h3 { margin-top: 0; }
-  .flash-section { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin: 1em 0; }
-  esp-web-install-button button { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: 600; }
-  esp-web-install-button button:hover { background: var(--accent-hover); }
-  .version-info { color: var(--text-muted); }
-  .info-box { background: var(--bg-surface); border-left: 4px solid #2196f3; padding: 12px 16px; border-radius: 4px; margin: 1em 0; }
-  .warning-box { background: var(--bg-surface); border-left: 4px solid #ff9800; padding: 12px 16px; border-radius: 4px; margin: 1em 0; }
-  .unsupported { display: none; background: var(--bg-surface); border-left: 4px solid var(--error); padding: 12px 16px; border-radius: 4px; margin: 1em 0; }
-  .steps ol { padding-left: 20px; }
-  .steps li { margin-bottom: 8px; color: var(--text-muted); }
-  .steps code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+  .info-box { background: var(--bg-surface); border-left: 4px solid #2196f3; padding: 16px 20px; border-radius: 4px; margin: 1em 0; }
+  .flash-link { display: inline-block; background: var(--accent); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 1em 0; }
+  .flash-link:hover { background: var(--accent-hover); }
 </style>
 </head><body>
 ${navHtml('knobs')}
 <h2>Flash Knob Firmware</h2>
-<p class="muted">Flash firmware directly from your browser - no tools to install</p>
-
-<div class="unsupported" id="unsupported">
-  <strong>Browser Not Supported</strong><br>
-  Web Serial requires Chrome or Edge (version 89+). Safari and Firefox are not supported.
-</div>
 
 <div class="info-box">
-  <strong>Chip Auto-Detection</strong><br>
-  Not sure which chip? Just try - ESP Web Tools detects the chip and warns if it doesn't match.
+  <strong>HTTPS Required</strong><br>
+  Browser-based flashing requires HTTPS. Use the official web flasher hosted on GitHub Pages:
 </div>
 
-<div class="flash-card">
-  <h3>ESP32-S3 Controller</h3>
-  <p class="muted">The main Roon Knob controller - handles display, rotary encoder, touch, WiFi, and music source communication.</p>
-  <div class="flash-section">
-    <esp-web-install-button id="flash-btn" manifest="/manifest-s3.json">
-      <button slot="activate">Flash ESP32-S3</button>
-      <span slot="unsupported">Not supported</span>
-      <span slot="not-allowed">HTTPS required</span>
-    </esp-web-install-button>
-    <span class="version-info" id="fw-version">Loading...</span>
-  </div>
-  <div id="no-firmware-msg" class="warning-box" style="display:none;">
-    <strong>No firmware available</strong><br>
-    Go to <a href="/knobs">Knobs page</a> and click "Fetch Latest from GitHub" first.
-  </div>
-  <div class="steps">
-    <strong>Steps:</strong>
-    <ol>
-      <li>Turn on the device (power slider towards USB-C port)</li>
-      <li>Connect via USB-C</li>
-      <li>Click "Flash ESP32-S3" and select the serial port</li>
-      <li>Wait ~30 seconds for flashing to complete</li>
-    </ol>
-    <p class="muted"><strong>Port name:</strong> macOS: <code>cu.usbmodem*</code> · Linux: <code>ttyACM0</code> · Windows: <code>COM*</code></p>
-  </div>
-</div>
+<a href="https://roon-knob.muness.com/flash.html" target="_blank" class="flash-link">Open Web Flasher →</a>
 
-<div class="warning-box">
-  <strong>First time?</strong><br>
-  After flashing, the device creates a WiFi access point called <code>roon-knob-setup</code>. Connect to it to configure your WiFi credentials.
-</div>
+<p class="muted" style="margin-top: 2em;">
+  The web flasher uses <a href="https://esphome.github.io/esp-web-tools/" target="_blank">ESP Web Tools</a> to flash firmware directly from Chrome or Edge.
+  No software installation required.
+</p>
 
-<div class="section">
-  <h3>Requirements</h3>
-  <ul>
-    <li><strong>Browser:</strong> Chrome or Edge 89+</li>
-    <li><strong>USB cable</strong> connected to your computer</li>
-    <li><strong>Driver:</strong> <a href="https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers" target="_blank">CP210x</a> or <a href="https://www.wch-ic.com/downloads/CH341SER_ZIP.html" target="_blank">CH340</a> may be needed</li>
-  </ul>
-</div>
-
-<script>
-${versionScript}
-if (!('serial' in navigator)) {
-  document.getElementById('unsupported').style.display = 'block';
-}
-fetch('/firmware/version')
-  .then(r => {
-    if (!r.ok) throw new Error('No firmware');
-    return r.json();
-  })
-  .then(data => {
-    document.getElementById('fw-version').textContent = 'v' + data.version;
-  })
-  .catch(() => {
-    document.getElementById('fw-version').textContent = '';
-    document.getElementById('flash-btn').style.display = 'none';
-    document.getElementById('no-firmware-msg').style.display = 'block';
-  });
-</script>
+<script>${versionScript}</script>
 </body></html>`);
   });
 
