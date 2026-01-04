@@ -375,23 +375,33 @@ function createUPnPClient(opts = {}) {
   }
 
   function getZones() {
-    return Array.from(state.renderers.values()).map(renderer => ({
-      zone_id: renderer.uuid,
-      zone_name: renderer.info.name,
-      source: 'upnp',
-      state: renderer.info.state,
-      output_count: 1,
-      output_name: renderer.info.name,
-      device_name: renderer.info.manufacturer && renderer.info.model
-        ? `${renderer.info.manufacturer} ${renderer.info.model}`
-        : null,
-      volume_control: (renderer.info.volume !== null || renderer.hasOpenHome) ? {
-        type: 'number',
-        min: 0,
-        max: 100,
-        is_muted: false,
-      } : null,
-    }));
+    return Array.from(state.renderers.values()).map(renderer => {
+      const zone = {
+        zone_id: renderer.uuid,
+        zone_name: renderer.info.name,
+        source: 'upnp',
+        protocol: renderer.hasOpenHome ? 'openhome' : 'upnp',
+        state: renderer.info.state,
+        output_count: 1,
+        output_name: renderer.info.name,
+        device_name: renderer.info.manufacturer && renderer.info.model
+          ? `${renderer.info.manufacturer} ${renderer.info.model}`
+          : null,
+        volume_control: (renderer.info.volume !== null || renderer.hasOpenHome) ? {
+          type: 'number',
+          min: 0,
+          max: 100,
+          is_muted: false,
+        } : null,
+      };
+
+      // Add unsupported actions for basic UPnP devices
+      if (!renderer.hasOpenHome) {
+        zone.unsupported = ['next', 'previous', 'track_metadata', 'album_art'];
+      }
+
+      return zone;
+    });
   }
 
   function getNowPlaying(uuid) {
