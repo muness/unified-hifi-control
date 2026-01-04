@@ -440,12 +440,12 @@ async function loadZones() {
       return;
     }
 
-    // Group zones by protocol
+    // Group zones by prefix (roon:, upnp:, openhome:)
     const groupedZones = {};
     zones.forEach(zone => {
-      const protocol = zone.protocol || 'unknown';
-      if (!groupedZones[protocol]) groupedZones[protocol] = [];
-      groupedZones[protocol].push(zone);
+      const prefix = zone.zone_id.split(':')[0] || 'unknown';
+      if (!groupedZones[prefix]) groupedZones[prefix] = [];
+      groupedZones[prefix].push(zone);
     });
 
     const protocolLabels = { openhome: 'OpenHome', upnp: 'UPnP/DLNA', roon: 'Roon' };

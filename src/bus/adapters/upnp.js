@@ -30,7 +30,6 @@ class UPnPAdapter {
     return zones.map(zone => ({
       ...zone,
       zone_id: `upnp:${zone.zone_id}`,  // Prefix for routing
-      source: 'upnp',
     }));
   }
 
