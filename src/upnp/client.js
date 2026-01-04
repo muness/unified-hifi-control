@@ -262,7 +262,7 @@ function createUPnPClient(opts = {}) {
       try {
         // Query OpenHome Transport state first
         const transportState = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Timeout')), 3000);
+          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
           renderer.deviceClient.callAction(
             'urn:av-openhome-org:serviceId:Transport',
             'TransportState',
@@ -283,7 +283,7 @@ function createUPnPClient(opts = {}) {
 
         // Query OpenHome Volume
         const volumeInfo = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Timeout')), 3000);
+          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
           renderer.deviceClient.callAction(
             'urn:av-openhome-org:serviceId:Volume',
             'Volume',
@@ -302,7 +302,7 @@ function createUPnPClient(opts = {}) {
 
         // Query OpenHome Info:Track service
         const trackInfo = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Timeout')), 3000);
+          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
           renderer.deviceClient.callAction(
             'urn:av-openhome-org:serviceId:Info',
             'Track',
@@ -441,7 +441,7 @@ function createUPnPClient(opts = {}) {
       }
 
       const callTransport = (actionName) => new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Transport timeout')), 1000);
+        const timeout = setTimeout(() => reject(new Error('Transport timeout')), 5000);
         renderer.deviceClient.callAction('urn:av-openhome-org:serviceId:Transport', actionName, {}, (err) => {
           clearTimeout(timeout);
           if (err) return reject(err);
@@ -450,7 +450,7 @@ function createUPnPClient(opts = {}) {
       });
 
       const callVolume = (actionName, params = {}) => new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Volume timeout')), 1000);
+        const timeout = setTimeout(() => reject(new Error('Volume timeout')), 5000);
         renderer.deviceClient.callAction('urn:av-openhome-org:serviceId:Volume', actionName, params, (err, result) => {
           clearTimeout(timeout);
           if (err) return reject(err);
