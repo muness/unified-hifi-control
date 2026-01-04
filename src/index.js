@@ -3,6 +3,7 @@ const { createRoonClient } = require('./roon/client');
 const { createUPnPClient } = require('./upnp/client');
 const { createOpenHomeClient } = require('./openhome/client');
 const { HQPClient } = require('./hqplayer/client');
+const { LMSClient } = require('./lms/client');
 const { createMqttService } = require('./mqtt');
 const { createApp } = require('./server/app');
 const { createLogger } = require('./lib/logger');
@@ -13,6 +14,7 @@ const { createBus } = require('./bus');
 const { RoonAdapter } = require('./bus/adapters/roon');
 const { UPnPAdapter } = require('./bus/adapters/upnp');
 const { OpenHomeAdapter } = require('./bus/adapters/openhome');
+const { LMSAdapter } = require('./bus/adapters/lms');
 const busDebug = require('./bus/debug');
 
 const PORT = process.env.PORT || 8088;
@@ -38,12 +40,22 @@ const baseUrl = `http://${localIp}:${PORT}`;
 
 // Load settings for adapter configuration
 const appSettings = loadAppSettings();
-const adapterConfig = appSettings.adapters || { roon: true, upnp: false, openhome: false };
+const adapterConfig = appSettings.adapters || { roon: true, upnp: false, openhome: false, lms: false };
 
 log.info('Adapter configuration', adapterConfig);
 
 // Create bus first so we can reference it in callbacks
 const bus = createBus({ logger: createLogger('Bus') });
+
+// Create Lyrion client (shared for config API and adapter)
+const lms = new LMSClient({
+  host: process.env.LMS_HOST,
+  port: parseInt(process.env.LMS_PORT, 10) || 9000,
+  username: process.env.LMS_USERNAME,
+  password: process.env.LMS_PASSWORD,
+  logger: createLogger('Lyrion'),
+  onZonesChanged: () => bus.refreshZones('lms'),
+});
 
 // Adapter factory - creates adapters on demand for dynamic enable/disable
 const adapterFactory = {
@@ -72,6 +84,12 @@ const adapterFactory = {
       onZonesChanged: () => bus.refreshZones('openhome'),
     });
   },
+  createLMS() {
+    // Use shared lms client so config API works
+    return new LMSAdapter(lms, {
+      onZonesChanged: () => bus.refreshZones('lms'),
+    });
+  },
 };
 
 // Conditionally create and register adapters based on settings
@@ -90,6 +108,12 @@ if (adapterConfig.upnp) {
 if (adapterConfig.openhome) {
   bus.registerBackend('openhome', adapterFactory.createOpenHome());
   log.info('OpenHome adapter enabled');
+}
+
+// Enable Lyrion if configured via settings or env var
+if (adapterConfig.lms || process.env.LMS_HOST) {
+  bus.registerBackend('lms', adapterFactory.createLMS());
+  log.info('Lyrion adapter enabled', { host: process.env.LMS_HOST || 'via settings' });
 }
 
 // Create HQPlayer client (unconfigured initially, configured via API or env vars)
@@ -127,6 +151,7 @@ const app = createApp({
   bus,
   roon,    // Keep for backward compat during Phase 2 testing
   hqp,
+  lms,     // Lyrion client for configuration API
   knobs,
   adapterFactory,
   logger: createLogger('Server'),

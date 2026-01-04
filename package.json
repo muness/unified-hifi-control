@@ -1,6 +1,9 @@
 {
   "name": "unified-hifi-control",
-  "version": "0.3.0",
+  "version": "1.2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "description": "Source-agnostic hi-fi control bridge for hardware surfaces and Home Assistant",
   "main": "src/index.js",
   "bin": {
