@@ -46,6 +46,10 @@ class LMSAdapter {
     const player = this.lms.getCachedPlayer(playerId);
     if (!player) return null;
 
+    // For streaming services (Qobuz, Tidal, etc.), artwork_url has the real image
+    // coverid/artwork_track_id often return LMS placeholder icons for streaming content
+    const imageKey = player.artwork_url || player.coverid || player.artwork_track_id || null;
+
     return {
       zone_id: `lms:${player.playerid}`,
       line1: player.title || 'No track',
@@ -59,7 +63,8 @@ class LMSAdapter {
       volume_step: 1,
       seek_position: player.time || 0,
       length: player.duration || 0,
-      image_key: player.coverid || player.artwork_track_id || null,
+      image_key: imageKey,
+      artwork_url: player.artwork_url,  // Direct URL fallback
     };
   }
 
@@ -69,7 +74,27 @@ class LMSAdapter {
   }
 
   async getImage(image_key, opts = {}) {
-    // image_key is coverid - LMS artwork URL uses coverid only
+    if (!image_key) {
+      throw new Error('No image_key provided');
+    }
+
+    // If image_key is a URL (artwork_url fallback), fetch directly
+    if (image_key.startsWith('http://') || image_key.startsWith('https://')) {
+      const fetchOpts = {};
+      if (this.lms.username && this.lms.password) {
+        const auth = Buffer.from(`${this.lms.username}:${this.lms.password}`).toString('base64');
+        fetchOpts.headers = { 'Authorization': `Basic ${auth}` };
+      }
+      const response = await fetch(image_key, fetchOpts);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch artwork: ${response.status}`);
+      }
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      const body = Buffer.from(await response.arrayBuffer());
+      return { contentType, body };
+    }
+
+    // Otherwise image_key is coverid - use LMS artwork URL
     return this.lms.getArtwork(image_key, opts);
   }
 

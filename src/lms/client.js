@@ -185,13 +185,23 @@ class LMSClient {
       'status',
       '-',
       1,
-      'tags:aAldtK',  // Request album, artist, duration, title, artwork
+      'tags:aAdltKc',  // a=artist, A=album, d=duration, l=album_id, t=tracknum, K=artwork_url, c=coverid
     ]);
 
     const playlist_loop = result.playlist_loop?.[0] || {};
     const isPlaying = result.mode === 'play';
     const isPaused = result.mode === 'pause';
-    const isStopped = result.mode === 'stop';
+
+    // For artwork, LMS returns artwork_url as a relative path like:
+    // /imageproxy/https%3A%2F%2Fstatic.qobuz.com%2F.../image.jpg
+    // We need to make it absolute by prepending baseUrl
+    let artworkUrl = playlist_loop.artwork_url || null;
+    if (artworkUrl && artworkUrl.startsWith('/')) {
+      artworkUrl = `${this.baseUrl}${artworkUrl}`;
+    }
+
+    // coverid can be used for local content: /music/<coverid>/cover
+    const artworkId = playlist_loop.coverid || playlist_loop.artwork_track_id || playlist_loop.id;
 
     return {
       playerid: playerId,
@@ -206,8 +216,9 @@ class LMSClient {
       title: playlist_loop.title || '',
       artist: playlist_loop.artist || '',
       album: playlist_loop.album || '',
-      artwork_track_id: playlist_loop.artwork_track_id || playlist_loop.id,
-      coverid: playlist_loop.coverid,
+      artwork_track_id: artworkId,
+      coverid: artworkId,
+      artwork_url: artworkUrl,  // Full URL to artwork (via LMS imageproxy for streaming)
     };
   }
 

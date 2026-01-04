@@ -297,6 +297,7 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
         roon: adapterFactory.createRoon,
         upnp: adapterFactory.createUPnP,
         openhome: adapterFactory.createOpenHome,
+        lms: adapterFactory.createLMS,
       };
 
       for (const [name, createFn] of Object.entries(adapterMap)) {
@@ -1034,6 +1035,9 @@ ${navHtml('settings')}
   <div class="form-row">
     <label><input type="checkbox" id="adapter-openhome"> OpenHome (BubbleUPnP, Linn, etc.)</label>
   </div>
+  <div class="form-row">
+    <label><input type="checkbox" id="adapter-lms"> Lyrion (formerly LMS/Squeezebox)</label>
+  </div>
   <button onclick="saveAdapterSettings()">Save</button>
   <span id="adapter-save-msg" class="status-msg"></span>
 </div>
@@ -1221,6 +1225,7 @@ async function loadAdapterSettings() {
     document.getElementById('adapter-roon').checked = adapters.roon !== false;
     document.getElementById('adapter-upnp').checked = adapters.upnp || false;
     document.getElementById('adapter-openhome').checked = adapters.openhome || false;
+    document.getElementById('adapter-lms').checked = adapters.lms || false;
   } catch (e) {}
 }
 
@@ -1229,7 +1234,8 @@ async function saveAdapterSettings() {
   const adapters = {
     roon: document.getElementById('adapter-roon').checked,
     upnp: document.getElementById('adapter-upnp').checked,
-    openhome: document.getElementById('adapter-openhome').checked
+    openhome: document.getElementById('adapter-openhome').checked,
+    lms: document.getElementById('adapter-lms').checked
   };
   try {
     await fetch('/api/settings', {
