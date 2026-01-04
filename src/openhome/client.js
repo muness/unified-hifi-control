@@ -40,10 +40,17 @@ function createOpenHomeClient(opts = {}) {
       const protocol = urlObj.protocol === 'https:' ? https : http;
 
       return new Promise((resolve, reject) => {
-        protocol.get(location, (res) => {
+        let req;
+        const timeout = setTimeout(() => {
+          if (req) req.destroy();
+          reject(new Error('Device info fetch timeout'));
+        }, 5000);
+
+        req = protocol.get(location, (res) => {
           let xml = '';
           res.on('data', chunk => { xml += chunk; });
           res.on('end', () => {
+            clearTimeout(timeout);
             parseString(xml, { explicitArray: false }, (err, result) => {
               if (err) return reject(err);
 
@@ -67,7 +74,10 @@ function createOpenHomeClient(opts = {}) {
               }
             });
           });
-        }).on('error', reject);
+        }).on('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
       });
     } catch (err) {
       log.error('Failed to parse device location', { uuid, location, error: err.message });
@@ -397,10 +407,16 @@ function createOpenHomeClient(opts = {}) {
     }, 200);
   }
 
-  async function getImage(image_key) {
+  const MAX_REDIRECTS = 5;
+
+  async function getImage(image_key, redirectCount = 0) {
     // image_key is direct URL for OpenHome
     if (!image_key || (!image_key.startsWith('http://') && !image_key.startsWith('https://'))) {
       throw new Error('Invalid image URL');
+    }
+
+    if (redirectCount >= MAX_REDIRECTS) {
+      throw new Error('Too many redirects');
     }
 
     const protocol = image_key.startsWith('https') ? https : http;
@@ -418,7 +434,7 @@ function createOpenHomeClient(opts = {}) {
         // Handle redirects
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           const redirectUrl = new URL(res.headers.location, image_key);
-          return getImage(redirectUrl.href).then(resolve).catch(reject);
+          return getImage(redirectUrl.href, redirectCount + 1).then(resolve).catch(reject);
         }
 
         if (res.statusCode !== 200) {

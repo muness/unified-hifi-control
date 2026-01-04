@@ -10,7 +10,6 @@
 class UPnPAdapter {
   constructor(upnpClient, { onZonesChanged } = {}) {
     this.upnp = upnpClient;
-    this.onZonesChanged = onZonesChanged;
 
     // Pass onZonesChanged to client if provided
     if (onZonesChanged && upnpClient.setOnZonesChanged) {
@@ -51,9 +50,15 @@ class UPnPAdapter {
     return this.upnp.control(upnpId, action, value);
   }
 
-  async getImage(image_key, opts = {}) {
+  async getImage(image_key, opts = {}, redirectCount = 0) {
+    const MAX_REDIRECTS = 5;
+
     // For OpenHome devices, image_key is a direct URL
     if (image_key && (image_key.startsWith('http://') || image_key.startsWith('https://'))) {
+      if (redirectCount >= MAX_REDIRECTS) {
+        throw new Error('Too many redirects');
+      }
+
       const https = require('https');
       const http = require('http');
       const protocol = image_key.startsWith('https') ? https : http;
@@ -70,7 +75,8 @@ class UPnPAdapter {
 
           // Handle redirects
           if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            return this.getImage(res.headers.location, opts).then(resolve).catch(reject);
+            const redirectUrl = new URL(res.headers.location, image_key);
+            return this.getImage(redirectUrl.href, opts, redirectCount + 1).then(resolve).catch(reject);
           }
 
           // Check status

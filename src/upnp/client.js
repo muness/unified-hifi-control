@@ -39,10 +39,17 @@ function createUPnPClient(opts = {}) {
       const protocol = urlObj.protocol === 'https:' ? https : http;
 
       return new Promise((resolve, reject) => {
-        protocol.get(location, (res) => {
+        let req;
+        const timeout = setTimeout(() => {
+          if (req) req.destroy();
+          reject(new Error('Device info fetch timeout'));
+        }, 5000);
+
+        req = protocol.get(location, (res) => {
           let xml = '';
           res.on('data', chunk => { xml += chunk; });
           res.on('end', () => {
+            clearTimeout(timeout);
             parseString(xml, { explicitArray: false }, (err, result) => {
               if (err) return reject(err);
 
@@ -71,7 +78,10 @@ function createUPnPClient(opts = {}) {
               }
             });
           });
-        }).on('error', reject);
+        }).on('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
       });
     } catch (err) {
       log.error('Failed to parse device location', { uuid, location, error: err.message });

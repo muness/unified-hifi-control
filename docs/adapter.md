@@ -213,40 +213,44 @@ Standard actions all adapters should handle:
 - Lazy client creation
 - unsupported: ["next", "previous", "track_metadata", "album_art"]
 
-## Splitting UPnP and OpenHome Adapters
+## UPnP and OpenHome Architecture
 
-### Current State
-Single unified adapter in `src/bus/adapters/upnp.js` handles both protocols with capability detection.
+**Separate clients for separate protocols** - each has its own discovery and control implementation.
 
-### Split Architecture (Option A: Client-side detection)
+**OpenHome Client** (`src/openhome/client.js`):
+- SSDP discovery for OpenHome devices (`av-openhome-org` services)
+- Full metadata via Info:Track polling
+- All transport controls via Transport service
+- No unsupported field (full features)
 
-**Discovery Client** (`src/upnp/client.js`):
-- Single SSDP discovery for all UPnP/OpenHome devices
-- Detects OpenHome capability via device service list  
-- Stores devices with `hasOpenHome` flag
-- Prefixes zones: `openhome:uuid` or `upnp:uuid` based on capability
+**UPnP Client** (`src/upnp/client.js`):
+- SSDP discovery for MediaRenderer devices
+- Basic transport via AVTransport/RenderingControl
+- Limited features: unsupported: ['next', 'previous', 'track_metadata', 'album_art']
 
 **OpenHome Adapter** (`src/bus/adapters/openhome.js`):
-- Filters zones with `openhome:` prefix
-- No unsupported field (full features)
-- Uses OpenHome services (Info, Transport, Volume)
+- Thin wrapper adding `openhome:` prefix
 
 **UPnP Adapter** (`src/bus/adapters/upnp.js`):
-- Filters zones with `upnp:` prefix
-- Includes unsupported: ['next', 'previous', 'track_metadata', 'album_art']
-- Uses basic UPnP services (AVTransport, RenderingControl)
+- Thin wrapper adding `upnp:` prefix
 
-**Registration**:
+**Registration** (from `src/index.js`):
 ```javascript
-const upnpClient = createUPnPClient({...});
+// Each protocol has its own client
+const openhome = createOpenHomeClient({
+  logger,
+  onZonesChanged: () => bus.refreshZones('openhome'),
+});
+const openhomeAdapter = new OpenHomeAdapter(openhome, {
+  onZonesChanged: () => bus.refreshZones('openhome'),
+});
+bus.registerBackend('openhome', openhomeAdapter);
 
-bus.registerBackend('openhome', new OpenHomeAdapter(upnpClient, {
-  onZonesChanged: () => bus.refreshZones('openhome')
-}));
-
-bus.registerBackend('upnp', new UPnPAdapter(upnpClient, {
-  onZonesChanged: () => bus.refreshZones('upnp')
-}));
+const upnp = createUPnPClient({ logger });
+const upnpAdapter = new UPnPAdapter(upnp, {
+  onZonesChanged: () => bus.refreshZones('upnp'),
+});
+bus.registerBackend('upnp', upnpAdapter);
 ```
 
-**Result**: 3 backends (roon, openhome, upnp), each with single-purpose adapters.
+**Result**: 3 backends (roon, openhome, upnp), each with dedicated client and adapter.
