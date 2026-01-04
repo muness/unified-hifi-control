@@ -14,7 +14,7 @@ function extractKnob(req) {
   return { id, version };
 }
 
-function createKnobRoutes({ bus, roon, knobs, logger }) {
+function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
   const router = express.Router();
   const log = logger || console;
 
@@ -283,9 +283,38 @@ function createKnobRoutes({ bus, roon, knobs, logger }) {
     res.json(loadAppSettings());
   });
 
-  router.post('/api/settings', express.json(), (req, res) => {
+  router.post('/api/settings', express.json(), async (req, res) => {
     const current = loadAppSettings();
     const updated = { ...current, ...req.body };
+
+    // Handle dynamic adapter enable/disable
+    if (req.body.adapters && adapterFactory) {
+      const currentAdapters = current.adapters || {};
+      const newAdapters = req.body.adapters;
+
+      // Check each adapter for changes
+      const adapterMap = {
+        roon: adapterFactory.createRoon,
+        upnp: adapterFactory.createUPnP,
+        openhome: adapterFactory.createOpenHome,
+      };
+
+      for (const [name, createFn] of Object.entries(adapterMap)) {
+        const wasEnabled = name === 'roon' ? currentAdapters[name] !== false : !!currentAdapters[name];
+        const nowEnabled = name === 'roon' ? newAdapters[name] !== false : !!newAdapters[name];
+
+        if (wasEnabled && !nowEnabled) {
+          // Disable: unregister the backend
+          log.info(`Disabling ${name} adapter`);
+          await bus.unregisterBackend(name);
+        } else if (!wasEnabled && nowEnabled) {
+          // Enable: create and register the backend
+          log.info(`Enabling ${name} adapter`);
+          await bus.enableBackend(name, createFn());
+        }
+      }
+    }
+
     saveAppSettings(updated);
     res.json(updated);
   });
@@ -979,7 +1008,7 @@ ${navHtml('settings')}
 
 <div class="section">
   <h3>Audio Backends</h3>
-  <p class="muted" style="margin:0 0 1em;">Select which audio backends to enable. Changes require restart.</p>
+  <p class="muted" style="margin:0 0 1em;">Select which audio backends to enable. Changes apply immediately.</p>
   <div class="form-row">
     <label><input type="checkbox" id="adapter-roon"> Roon</label>
   </div>

@@ -45,39 +45,50 @@ log.info('Adapter configuration', adapterConfig);
 // Create bus first so we can reference it in callbacks
 const bus = createBus({ logger: createLogger('Bus') });
 
+// Adapter factory - creates adapters on demand for dynamic enable/disable
+const adapterFactory = {
+  createRoon() {
+    const client = createRoonClient({
+      logger: createLogger('Roon'),
+      base_url: baseUrl,
+      onZonesChanged: () => bus.refreshZones('roon'),
+    });
+    return new RoonAdapter(client);
+  },
+  createUPnP() {
+    const client = createUPnPClient({
+      logger: createLogger('UPnP'),
+    });
+    return new UPnPAdapter(client, {
+      onZonesChanged: () => bus.refreshZones('upnp'),
+    });
+  },
+  createOpenHome() {
+    const client = createOpenHomeClient({
+      logger: createLogger('OpenHome'),
+      onZonesChanged: () => bus.refreshZones('openhome'),
+    });
+    return new OpenHomeAdapter(client, {
+      onZonesChanged: () => bus.refreshZones('openhome'),
+    });
+  },
+};
+
 // Conditionally create and register adapters based on settings
 let roon = null;
 if (adapterConfig.roon !== false) {
-  roon = createRoonClient({
-    logger: createLogger('Roon'),
-    base_url: baseUrl,
-    onZonesChanged: () => bus.refreshZones('roon'),
-  });
-  const roonAdapter = new RoonAdapter(roon);
-  bus.registerBackend('roon', roonAdapter);
+  roon = adapterFactory.createRoon();
+  bus.registerBackend('roon', roon);
   log.info('Roon adapter enabled');
 }
 
 if (adapterConfig.upnp) {
-  const upnp = createUPnPClient({
-    logger: createLogger('UPnP'),
-  });
-  const upnpAdapter = new UPnPAdapter(upnp, {
-    onZonesChanged: () => bus.refreshZones('upnp'),
-  });
-  bus.registerBackend('upnp', upnpAdapter);
+  bus.registerBackend('upnp', adapterFactory.createUPnP());
   log.info('UPnP adapter enabled');
 }
 
 if (adapterConfig.openhome) {
-  const openhome = createOpenHomeClient({
-    logger: createLogger('OpenHome'),
-    onZonesChanged: () => bus.refreshZones('openhome'),
-  });
-  const openhomeAdapter = new OpenHomeAdapter(openhome, {
-    onZonesChanged: () => bus.refreshZones('openhome'),
-  });
-  bus.registerBackend('openhome', openhomeAdapter);
+  bus.registerBackend('openhome', adapterFactory.createOpenHome());
   log.info('OpenHome adapter enabled');
 }
 
@@ -113,10 +124,11 @@ const mqttService = createMqttService({
 
 // Create HTTP server
 const app = createApp({
-  bus,     // Pass bus to app
+  bus,
   roon,    // Keep for backward compat during Phase 2 testing
   hqp,
   knobs,
+  adapterFactory,
   logger: createLogger('Server'),
 });
 
