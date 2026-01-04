@@ -236,8 +236,6 @@ class LMSClient {
       const previousIds = new Set(this.players.keys());
 
       for (const player of players) {
-        if (!player.connected) continue;
-
         try {
           const status = await this.getPlayerStatus(player.playerid);
           this.players.set(player.playerid, {
@@ -252,8 +250,8 @@ class LMSClient {
         }
       }
 
-      // Remove disconnected players
-      const activeIds = new Set(players.filter(p => p.connected).map(p => p.playerid));
+      // Remove players no longer reported by LMS
+      const activeIds = new Set(players.map(p => p.playerid));
       for (const [id] of this.players) {
         if (!activeIds.has(id)) {
           this.players.delete(id);
