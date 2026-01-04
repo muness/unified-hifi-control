@@ -55,7 +55,9 @@ const bus = createBus({ logger: createLogger('Bus') });
 const roonAdapter = new RoonAdapter(roon);
 bus.registerBackend('roon', roonAdapter);
 
-const upnpAdapter = new UPnPAdapter(upnp);
+const upnpAdapter = new UPnPAdapter(upnp, {
+  onZonesChanged: () => bus.refreshZones('upnp'),
+});
 bus.registerBackend('upnp', upnpAdapter);
 
 // Initialize debug consumer

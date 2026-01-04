@@ -12,6 +12,7 @@ const RENDERER_SERVICE_TYPE = 'urn:schemas-upnp-org:device:MediaRenderer:1';
 
 function createUPnPClient(opts = {}) {
   const log = opts.logger || console;
+  let onZonesChanged = opts.onZonesChanged || (() => {});
   const state = {
     renderers: new Map(), // uuid -> { device, client, info }
     ssdpClient: null,
@@ -85,6 +86,9 @@ function createUPnPClient(opts = {}) {
       // MediaRendererClient doesn't expose device description directly,
       // so we'll use the UUID as the name for now
       state.renderers.get(uuid).info.name = `Renderer ${uuid.substring(0, 8)}`;
+
+      // Notify that zones changed
+      onZonesChanged();
 
     } catch (err) {
       log.error('Failed to create MediaRenderer client', { uuid, error: err.message });
@@ -177,6 +181,8 @@ function createUPnPClient(opts = {}) {
         }
 
         state.renderers.delete(uuid);
+        // Notify that zones changed (renderer removed)
+        onZonesChanged();
       }
     }
   }

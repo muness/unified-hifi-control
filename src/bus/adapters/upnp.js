@@ -11,6 +11,11 @@ class UPnPAdapter {
   constructor(upnpClient, { onZonesChanged } = {}) {
     this.upnp = upnpClient;
     this.onZonesChanged = onZonesChanged;
+
+    // Pass onZonesChanged to client if provided
+    if (onZonesChanged && upnpClient.setOnZonesChanged) {
+      upnpClient.setOnZonesChanged(onZonesChanged);
+    }
   }
 
   async start() {

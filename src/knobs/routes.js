@@ -256,11 +256,19 @@ function createKnobRoutes({ bus, roon, knobs, logger }) {
     const busStatus = bus.getStatus();
     const roonStatus = busStatus.roon || roon.getStatus();
 
+    // Get zones and now playing from bus (all backends)
+    const zones = bus.getZones();
+    const nowPlaying = zones.map(z => bus.getNowPlaying(z.zone_id)).filter(np => np);
+
     res.json({
-      bridge: roonStatus,
+      bridge: {
+        ...roonStatus,
+        zones,  // Override with all backend zones
+        now_playing: nowPlaying,  // Override with all backend now playing
+      },
       knobs: knobs.listKnobs(),
       debug: busDebug.getDebugInfo(),
-      bus: { backends: Object.keys(busStatus), zone_count: bus.getZones().length },
+      bus: { backends: Object.keys(busStatus), zone_count: zones.length },
     });
   });
 
@@ -416,7 +424,7 @@ async function loadZones() {
     (data.bridge?.now_playing || []).forEach(np => nowPlaying[np.zone_id] = np);
 
     if (zones.length === 0) {
-      document.getElementById('zones').innerHTML = '<p class="muted">No zones found. Is Roon connected?</p>';
+      document.getElementById('zones').innerHTML = '<p class="muted">No zones found. Check that your audio sources are connected.</p>';
       return;
     }
 
