@@ -489,6 +489,9 @@ async function loadZones() {
         '</div>' +
       '</div>';
     }).join('');
+    });
+
+    document.getElementById('zones').innerHTML = html;
   } catch (e) {
     document.getElementById('zones').innerHTML = '<p class="error">Error: ' + esc(e.message) + '</p>';
   }
