@@ -1162,7 +1162,7 @@ async function saveAdapterSettings() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adapters })
     });
-    msg.textContent = 'Saved! Restart to apply changes.';
+    msg.textContent = 'Saved!';
     msg.className = 'status-msg success';
   } catch (e) {
     msg.textContent = 'Error saving';
