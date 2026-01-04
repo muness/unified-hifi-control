@@ -29,6 +29,7 @@ class RoonAdapter {
       ...zone,
       zone_id: `roon:${zone.zone_id}`,  // Prefix for routing
       source: 'roon',
+      protocol: 'roon',
     }));
   }
 

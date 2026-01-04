@@ -38,6 +38,7 @@ const fallbackSummary = (zone) => {
 
 function createRoonClient(opts = {}) {
   const log = opts.logger || console;
+  const onZonesChanged = opts.onZonesChanged || (() => {});
   const baseUrl = opts.base_url || '';
   const state = {
     core: null,
@@ -142,15 +143,18 @@ function createRoonClient(opts = {}) {
       if (msg === 'Subscribed' && data?.zones) {
         state.zones = data.zones;
         data.zones.forEach(updateZone);
+        onZonesChanged();
       } else if (msg === 'Changed') {
         if (Array.isArray(data?.zones_removed)) {
           data.zones_removed.forEach((zone_id) => {
             state.nowPlayingByZone.delete(zone_id);
             state.zones = state.zones.filter((z) => z.zone_id !== zone_id);
           });
+          onZonesChanged();
         }
         if (Array.isArray(data?.zones_changed)) {
           data.zones_changed.forEach(updateZone);
+          onZonesChanged();
         }
         if (Array.isArray(data?.zones_seek_changed)) {
           data.zones_seek_changed.forEach((e) => {

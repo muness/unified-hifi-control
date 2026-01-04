@@ -252,15 +252,20 @@ function createKnobRoutes({ bus, roon, knobs, logger }) {
 
   // GET /admin/status.json - Admin diagnostics
   router.get('/admin/status.json', (req, res) => {
-    // Use bus status (with prefixed zone IDs) instead of raw roon status
     const busStatus = bus.getStatus();
-    const roonStatus = busStatus.roon || roon.getStatus();
+    const zones = bus.getZones();
+    const nowPlaying = zones.map(z => bus.getNowPlaying(z.zone_id)).filter(np => np);
 
     res.json({
-      bridge: roonStatus,
+      zones,
+      now_playing: nowPlaying,
+      backends: busStatus,
+      bus: {
+        backends: Object.keys(busStatus),
+        zone_count: zones.length,
+      },
       knobs: knobs.listKnobs(),
       debug: busDebug.getDebugInfo(),
-      bus: { backends: Object.keys(busStatus), zone_count: bus.getZones().length },
     });
   });
 
@@ -411,16 +416,35 @@ async function loadZones() {
   try {
     const res = await fetch('/admin/status.json');
     const data = await res.json();
-    const zones = data.bridge?.zones || [];
+    const zones = data.zones || [];
     const nowPlaying = {};
-    (data.bridge?.now_playing || []).forEach(np => nowPlaying[np.zone_id] = np);
+    (data.now_playing || []).forEach(np => nowPlaying[np.zone_id] = np);
 
     if (zones.length === 0) {
-      document.getElementById('zones').innerHTML = '<p class="muted">No zones found. Is Roon connected?</p>';
+      document.getElementById('zones').innerHTML = '<p class="muted">No zones found. Check that your audio sources are connected.</p>';
       return;
     }
 
-    document.getElementById('zones').innerHTML = zones.map(zone => {
+    // Group zones by protocol
+    const groupedZones = {};
+    zones.forEach(zone => {
+      const protocol = zone.protocol || 'unknown';
+      if (!groupedZones[protocol]) groupedZones[protocol] = [];
+      groupedZones[protocol].push(zone);
+    });
+
+    const protocolLabels = { openhome: 'OpenHome', upnp: 'UPnP/DLNA', roon: 'Roon' };
+    let html = '';
+    
+    Object.keys(groupedZones).sort().forEach(protocol => {
+      const protocolZones = groupedZones[protocol];
+      html += '<h2 style="margin-top:1.5em;margin-bottom:0.5em;color:#666;font-size:1.1em;">' + (protocolLabels[protocol] || protocol) + '</h2>';
+      
+      html += protocolZones.map(zone => {
+        const unsupported = zone.unsupported || [];
+        const supportsNextPrev = !unsupported.includes('next');
+        const supportsAlbumArt = !unsupported.includes('album_art');
+        const supportsTrackInfo = !unsupported.includes('track_metadata');
       const np = nowPlaying[zone.zone_id] || {};
       const track = esc(np.line1 || 'Stopped');
       const artist = esc(np.line2 || '');
@@ -438,18 +462,21 @@ async function loadZones() {
           esc(p.title) + '</option>').join('') +
         '</select></p>' : '';
       return '<div class="zone-card" data-zone-id="' + escAttr(zone.zone_id) + '" data-step="' + step + '">' +
-        '<img class="art-lg" src="/now_playing/image?zone_id=' + encodeURIComponent(zone.zone_id) + '&width=120&height=120" alt="">' +
+        (supportsAlbumArt 
+          ? '<img class="art-lg" src="/now_playing/image?zone_id=' + encodeURIComponent(zone.zone_id) + '&width=120&height=120" alt="">'
+          : '<div class="art-lg" style="background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#999;border:1px solid #ddd;border-radius:6px;">No Art</div>') +
         '<div class="zone-info">' +
           '<h3>' + esc(zone.zone_name) + deviceInfo + '</h3>' +
-          '<p><strong>' + track + '</strong></p>' +
-          '<p>' + artist + (album ? ' • ' + album : '') + '</p>' +
+          (supportsTrackInfo 
+            ? '<p><strong>' + track + '</strong></p><p>' + artist + (album ? ' • ' + album : '') + '</p>'
+            : '<p class="muted">Basic UPnP device - transport controls only</p>') +
           '<p class="muted">Volume: ' + vol + '</p>' +
           profileSelect +
           '<div style="display:flex;gap:1em;align-items:center;">' +
             '<div class="zone-controls">' +
-              '<button class="ctrl" data-action="previous">⏮</button>' +
+              (supportsNextPrev ? '<button class="ctrl" data-action="previous">⏮</button>' : '') +
               '<button class="ctrl" data-action="play_pause">' + playIcon + '</button>' +
-              '<button class="ctrl" data-action="next">⏭</button>' +
+              (supportsNextPrev ? '<button class="ctrl" data-action="next">⏭</button>' : '') +
             '</div>' +
             '<div style="display:flex;flex-direction:column;gap:0.2em;">' +
               '<button class="ctrl" data-action="vol_rel" data-value="1">+</button>' +
@@ -459,6 +486,9 @@ async function loadZones() {
         '</div>' +
       '</div>';
     }).join('');
+    });
+
+    document.getElementById('zones').innerHTML = html;
   } catch (e) {
     document.getElementById('zones').innerHTML = '<p class="error">Error: ' + esc(e.message) + '</p>';
   }
@@ -579,9 +609,9 @@ let initialLoad = true;
 async function loadZones() {
   const res = await fetch('/admin/status.json');
   const data = await res.json();
-  zonesData = data.bridge?.zones || [];
+  zonesData = data.zones || [];
   const nowPlaying = {};
-  (data.bridge?.now_playing || []).forEach(np => nowPlaying[np.zone_id] = np);
+  (data.now_playing || []).forEach(np => nowPlaying[np.zone_id] = np);
 
   const sel = document.getElementById('zone-select');
   sel.innerHTML = '<option value="">-- Select Zone --</option>' + zonesData.map(z =>
@@ -803,7 +833,7 @@ async function loadKnobs() {
   const res = await fetch('/admin/status.json');
   const data = await res.json();
   const knobs = data.knobs || [];
-  zonesData = data.bridge?.zones || [];
+  zonesData = data.zones || [];
 
   const tbody = document.getElementById('knobs-body');
   if (knobs.length === 0) {
