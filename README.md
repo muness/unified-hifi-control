@@ -12,7 +12,7 @@ Hi-fi software assumes you're at a computer or using vendor-specific apps. This 
 
 ## Status
 
-🚧 **In Development** — Consolidating [roon-knob](https://github.com/muness/roon-knob) bridge and [hqp-profile-switcher](https://github.com/muness/roon-extension-hqp-profile-switcher) into a unified platform.
+Stable. Works with [roon-knob](https://github.com/muness/roon-knob) for a great hifi controller you can use with Roon, OpenHome or LMS/Lyrion.
 
 ## Quick Start (Docker)
 
