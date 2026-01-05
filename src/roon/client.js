@@ -156,6 +156,10 @@ function createRoonClient(opts = {}) {
           });
           try { onZonesChanged(); } catch (e) { log.warn('onZonesChanged error:', e); }
         }
+        if (Array.isArray(data?.zones_added)) {
+          data.zones_added.forEach(updateZone);
+          try { onZonesChanged(); } catch (e) { log.warn('onZonesChanged error:', e); }
+        }
         if (Array.isArray(data?.zones_changed)) {
           data.zones_changed.forEach(updateZone);
           try { onZonesChanged(); } catch (e) { log.warn('onZonesChanged error:', e); }
