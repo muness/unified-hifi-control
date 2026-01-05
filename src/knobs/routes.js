@@ -948,6 +948,15 @@ function ago(ts) {
   return Math.floor(h / 24) + 'd ago';
 }
 
+function knobDisplayName(knob) {
+  if (knob.name) return esc(knob.name);
+  // Generate hostname-style name from knob_id (MAC address)
+  // Format matches firmware: roon-knob-XXXXXX (last 6 hex chars of MAC)
+  const id = knob.knob_id || '';
+  const suffix = id.replace(/[:-]/g, '').slice(-6).toLowerCase();
+  return suffix ? '<span class="muted">roon-knob-' + suffix + '</span>' : '<span class="muted">unnamed</span>';
+}
+
 async function loadKnobs() {
   const res = await fetch('/admin/status.json');
   const data = await res.json();
@@ -965,7 +974,7 @@ async function loadKnobs() {
     const bat = st.battery_level != null ? st.battery_level + '%' + (st.battery_charging ? ' ⚡' : '') : '—';
     const zone = st.zone_id ? esc(zonesData.find(z => z.zone_id === st.zone_id)?.zone_name || st.zone_id) : '—';
     const ip = st.ip || '—';
-    return '<tr><td><code>' + esc(k.knob_id || '') + '</code></td><td>' + (k.name ? esc(k.name) : '<span class="muted">unnamed</span>') + '</td><td>' + esc(k.version || '—') + '</td><td>' + esc(ip) + '</td><td>' + zone + '</td><td>' + bat + '</td><td>' + ago(k.last_seen) + '</td><td><button class="config-btn" data-knob-id="' + escAttr(k.knob_id) + '">Config</button></td></tr>';
+    return '<tr><td><code>' + esc(k.knob_id || '') + '</code></td><td>' + knobDisplayName(k) + '</td><td>' + esc(k.version || '—') + '</td><td>' + esc(ip) + '</td><td>' + zone + '</td><td>' + bat + '</td><td>' + ago(k.last_seen) + '</td><td><button class="config-btn" data-knob-id="' + escAttr(k.knob_id) + '">Config</button></td></tr>';
   }).join('');
 }
 
