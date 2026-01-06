@@ -106,9 +106,9 @@ Ask Claude: "What's playing right now?" or "Turn the volume down a bit" or "Swit
 
 ## Firmware Updates
 
-The bridge automatically polls GitHub for new [roon-knob](https://github.com/muness/roon-knob) firmware releases every 6 hours and downloads updates when available. Knobs check `/firmware/version` on startup and can OTA update from the bridge.
+The bridge automatically polls GitHub for new [roon-knob](https://github.com/muness/roon-knob) firmware releases every 6 hours (default, configurable) and downloads updates when available. Knobs check `/firmware/version` on startup and can OTA update from the bridge.
 
-Configure the poll interval via `FIRMWARE_POLL_INTERVAL_MS` environment variable (milliseconds).
+Configure the poll interval via `FIRMWARE_POLL_INTERVAL_MS` environment variable (in milliseconds).
 
 If MQTT is enabled, firmware version is published to `unified-hifi/firmware/version` for Home Assistant monitoring.
 
