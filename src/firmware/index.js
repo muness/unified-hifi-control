@@ -1,6 +1,7 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { MAX_REDIRECTS } = require('./lib/constants');
 
 const DEFAULT_POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const REQUEST_TIMEOUT_MS = 30000; // 30 seconds
@@ -127,7 +128,6 @@ function createFirmwareService({ logger, pollIntervalMs } = {}) {
     const file = fs.createWriteStream(tempPath);
 
     await new Promise((resolve, reject) => {
-      const MAX_REDIRECTS = 5;
       const DOWNLOAD_TIMEOUT_MS = 120000; // 2 minutes for download
       let redirectCount = 0;
       let settled = false;

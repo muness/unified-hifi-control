@@ -9,6 +9,7 @@ const DeviceClient = require('upnp-device-client');
 const http = require('http');
 const https = require('https');
 const { parseString } = require('xml2js');
+const { MAX_REDIRECTS } = require('../lib/constants');
 
 const SSDP_SEARCH_INTERVAL_MS = 30000; // Search every 30 seconds
 const OPENHOME_PRODUCT_SERVICE = 'urn:av-openhome-org:service:Product:1';
@@ -406,8 +407,6 @@ function createOpenHomeClient(opts = {}) {
       pollDeviceInfo().catch(err => log.warn('Immediate poll failed', { uuid, error: err.message }));
     }, 200);
   }
-
-  const MAX_REDIRECTS = 5;
 
   async function getImage(image_key, redirectCount = 0) {
     // image_key is direct URL for OpenHome

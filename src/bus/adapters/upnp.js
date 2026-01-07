@@ -7,6 +7,8 @@
  * - Control point role (discover/control renderers)
  */
 
+const { MAX_REDIRECTS } = require('../../lib/constants');
+
 class UPnPAdapter {
   constructor(upnpClient, { onZonesChanged } = {}) {
     this.upnp = upnpClient;
@@ -50,8 +52,6 @@ class UPnPAdapter {
   }
 
   async getImage(image_key, opts = {}, redirectCount = 0) {
-    const MAX_REDIRECTS = 5;
-
     // For OpenHome devices, image_key is a direct URL
     if (image_key && (image_key.startsWith('http://') || image_key.startsWith('https://'))) {
       if (redirectCount >= MAX_REDIRECTS) {
