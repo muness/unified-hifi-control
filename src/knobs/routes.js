@@ -257,10 +257,11 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
   });
 
   // GET /admin/status.json - Admin diagnostics
-  router.get('/admin/status.json', (req, res) => {
+  router.get('/admin/status.json', async (req, res) => {
     const busStatus = bus.getStatus();
     const zones = bus.getZones();
-    const nowPlaying = zones.map(z => bus.getNowPlaying(z.zone_id)).filter(np => np);
+    const nowPlayingResults = await Promise.all(zones.map(z => bus.getNowPlaying(z.zone_id)));
+    const nowPlaying = nowPlayingResults.filter(np => np);
 
     res.json({
       zones,

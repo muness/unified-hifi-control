@@ -1,7 +1,7 @@
 # Bus Architecture Design
 
-**Status:** Design approved, implementation pending
-**Last Updated:** 2026-01-02
+**Status:** Phases 1-3 complete (Bus foundation, Roon port, HQPlayer DSP enrichment)
+**Last Updated:** 2026-01-08
 **Context:** Multi-backend audio control abstraction
 
 ---
@@ -341,6 +341,9 @@ Bus aggregates updates but doesn't impose polling layer.
 - `/src/bus/adapters/hqp.js` - Wrap `src/hqplayer/client.js`
 - `/src/bus/adapters/upnp.js` - New UPnP implementation
 - `/src/bus/adapters/lms.js` - New LMS implementation
+
+**DSP Services:**
+- `/src/hqplayer/service.js` - HQPService for zone-to-instance mapping and enrichment
 
 **HTTP routes (refactor):**
 - `/src/server/app.js` - Update routes to call `bus.*` methods
