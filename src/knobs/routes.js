@@ -726,6 +726,7 @@ ${escapeScript}
 let selectedZone = localStorage.getItem('hifi-zone') || null;
 let zonesData = [];
 let initialLoad = true;
+let hqpEnabled = false;
 
 async function loadZones() {
   const res = await fetch('/admin/status.json');
@@ -784,9 +785,10 @@ function updateZoneDisplay(np) {
   document.getElementById('zone-art').src = '/now_playing/image?zone_id=' + encodeURIComponent(selectedZone) + '&width=120&height=120&t=' + Date.now();
   document.getElementById('play-btn').textContent = np.is_playing ? '⏸' : '▶';
 
-  // Show/hide HQPlayer section based on zone (check if output contains HQPlayer)
+  // Show/hide HQPlayer section: only show if zone uses HQPlayer AND HQP is configured
   const isHqpZone = zone && (zone.output_name || '').toLowerCase().includes('hqplayer');
-  document.getElementById('hqp-section').classList.toggle('hidden', !isHqpZone);
+  const shouldShowHqp = isHqpZone && hqpEnabled;
+  document.getElementById('hqp-section').classList.toggle('hidden', !shouldShowHqp);
 }
 
 async function ctrl(action, value) {
@@ -804,6 +806,7 @@ async function loadHqpStatus() {
   try {
     const res = await fetch('/hqp/status');
     const data = await res.json();
+    hqpEnabled = data.enabled;  // Cache for zone display visibility
     if (data.enabled) {
       document.getElementById('hqp-not-configured').classList.add('hidden');
       document.getElementById('hqp-configured').classList.remove('hidden');
@@ -812,7 +815,10 @@ async function loadHqpStatus() {
       loadHqpProfiles(data.configName);
       loadHqpPipeline();
     }
-  } catch (e) { console.error('HQPlayer status error:', e); }
+  } catch (e) {
+    hqpEnabled = false;
+    console.error('HQPlayer status error:', e);
+  }
 }
 
 async function loadHqpProfiles(configName) {
