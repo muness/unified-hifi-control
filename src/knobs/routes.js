@@ -706,7 +706,7 @@ ${navHtml('zone')}
 <div id="hqp-section" class="section hidden">
   <h3>HQPlayer DSP</h3>
   <div id="hqp-not-configured">
-    <p class="muted">HQPlayer not configured. <a href="/admin/settings">Configure in Settings</a></p>
+    <p class="muted">HQPlayer not configured. <a href="/admin/hqp">Configure HQPlayer</a></p>
   </div>
   <div id="hqp-configured" class="hidden">
     <p>Status: <span id="hqp-status">checking...</span></p>
@@ -1129,12 +1129,10 @@ ${navHtml('hqp')}
   <div id="hqp-config-form" style="display:none;">
     <p class="muted" style="margin:0.5em 0;">Filter/shaper/rate control uses native protocol (port 4321).</p>
     <div class="form-row"><label>Host:</label><input type="text" id="hqp-host" placeholder="192.168.1.x"></div>
-    <div id="hqp-embedded-fields" style="display:none;">
-      <p class="muted" style="margin:0.5em 0;">Configuration switching requires web UI credentials (Embedded only):</p>
-      <div class="form-row"><label>Port (Web UI):</label><input type="text" id="hqp-port" value="8088"></div>
-      <div class="form-row"><label>Username:</label><input type="text" id="hqp-username" placeholder="(optional)"></div>
-      <div class="form-row"><label>Password:</label><input type="password" id="hqp-password"></div>
-    </div>
+    <div class="form-row"><label>Port (Web UI):</label><input type="text" id="hqp-port" value="8088"></div>
+    <p class="muted" style="margin:0.5em 0;">Web UI credentials (optional, for profile switching on Embedded):</p>
+    <div class="form-row"><label>Username:</label><input type="text" id="hqp-username" placeholder="(optional)"></div>
+    <div class="form-row"><label>Password:</label><input type="password" id="hqp-password"></div>
     <button onclick="saveHqpConfig()">Save</button>
     <button onclick="cancelHqpConfig()">Cancel</button>
     <span id="hqp-save-msg" class="status-msg"></span>
