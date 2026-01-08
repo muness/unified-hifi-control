@@ -1,0 +1,107 @@
+[% PROCESS settings/header.html %]
+
+<div class="settingGroup">
+    <div class="prefHead" style="font-size: 1.2em; margin-bottom: 10px;">
+        [% "PLUGIN_UNIFIED_HIFI" | string %]
+    </div>
+
+    <!-- Status indicator -->
+    <div class="prefDesc" style="padding: 10px; background: #f5f5f5; border-radius: 4px; margin-bottom: 15px;">
+        <b>[% "PLUGIN_UNIFIED_HIFI_STATUS" | string %]:</b>
+        [% IF running %]
+            <span style="color: #28a745; font-weight: bold;">
+                &#9679; [% "PLUGIN_UNIFIED_HIFI_RUNNING" | string %]
+            </span>
+            &nbsp;&nbsp;
+            <a href="[% webUrl %]" target="_blank"
+               style="display: inline-block; padding: 4px 12px; background: #007bff; color: white; text-decoration: none; border-radius: 3px;">
+                [% "PLUGIN_UNIFIED_HIFI_OPENUI" | string %] &#8594;
+            </a>
+        [% ELSE %]
+            <span style="color: #dc3545; font-weight: bold;">
+                &#9679; [% "PLUGIN_UNIFIED_HIFI_STOPPED" | string %]
+            </span>
+        [% END %]
+    </div>
+
+    <!-- Manual start/stop -->
+    <div class="prefDesc" style="margin-bottom: 20px;">
+        [% IF running %]
+            <input type="submit" name="stop" value="Stop Bridge"
+                   style="padding: 6px 16px; cursor: pointer;" />
+        [% ELSE %]
+            <input type="submit" name="start" value="Start Bridge"
+                   style="padding: 6px 16px; cursor: pointer;" />
+        [% END %]
+    </div>
+</div>
+
+<div class="settingGroup">
+    <div class="prefHead">
+        [% "PLUGIN_UNIFIED_HIFI_AUTORUN" | string %]
+    </div>
+    <div class="prefDesc">
+        [% "PLUGIN_UNIFIED_HIFI_AUTORUN_DESC" | string %]
+    </div>
+    <div class="prefValue">
+        <input type="checkbox" name="pref_autorun" id="pref_autorun"
+               value="1" [% IF prefs.autorun %]checked[% END %] />
+        <label for="pref_autorun">Enable auto-start</label>
+    </div>
+</div>
+
+<div class="settingGroup">
+    <div class="prefHead">
+        [% "PLUGIN_UNIFIED_HIFI_PORT" | string %]
+    </div>
+    <div class="prefDesc">
+        [% "PLUGIN_UNIFIED_HIFI_PORT_DESC" | string %]
+    </div>
+    <div class="prefValue">
+        <input type="number" name="pref_port" id="pref_port"
+               value="[% prefs.port || 8088 %]" min="1024" max="65535"
+               style="width: 80px;" />
+    </div>
+</div>
+
+[% IF binaries.size > 1 %]
+<div class="settingGroup">
+    <div class="prefHead">
+        [% "PLUGIN_UNIFIED_HIFI_BINARY" | string %]
+    </div>
+    <div class="prefDesc">
+        [% "PLUGIN_UNIFIED_HIFI_BINARY_DESC" | string %]
+    </div>
+    <div class="prefValue">
+        <select name="pref_bin" id="pref_bin">
+            [% FOREACH bin IN binaries %]
+                <option value="[% bin %]"
+                        [% IF prefs.bin == bin %]selected[% END %]>
+                    [% bin %]
+                </option>
+            [% END %]
+        </select>
+    </div>
+</div>
+[% END %]
+
+<div class="settingGroup">
+    <div class="prefHead">
+        [% "PLUGIN_UNIFIED_HIFI_LOGLEVEL" | string %]
+    </div>
+    <div class="prefDesc">
+        [% "PLUGIN_UNIFIED_HIFI_LOGLEVEL_DESC" | string %]
+    </div>
+    <div class="prefValue">
+        <select name="pref_loglevel" id="pref_loglevel">
+            [% FOREACH level IN loglevels %]
+                <option value="[% level %]"
+                        [% IF prefs.loglevel == level %]selected[% END %]>
+                    [% level %]
+                </option>
+            [% END %]
+        </select>
+    </div>
+</div>
+
+[% PROCESS settings/footer.html %]
