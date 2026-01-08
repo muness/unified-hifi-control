@@ -18,6 +18,6 @@ module.exports = [
     },
   },
   {
-    ignores: ['node_modules/**', 'data/**', '*.log', '.superego/**'],
+    ignores: ['node_modules/**', 'data/**', '**/*.log', '.superego/**'],
   },
 ];
