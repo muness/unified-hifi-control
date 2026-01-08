@@ -709,7 +709,7 @@ ${navHtml('zone')}
   </div>
   <div id="hqp-configured" class="hidden">
     <p>Status: <span id="hqp-status">checking...</span></p>
-    <div class="form-row"><label>Configuration:</label><select id="hqp-profile" onchange="loadProfile(this.value)"></select></div>
+    <div id="hqp-profile-row" class="form-row"><label>Configuration:</label><select id="hqp-profile" onchange="loadProfile(this.value)"></select></div>
     <div class="form-row"><label>Mode:</label><select id="hqp-mode" onchange="setPipeline('mode',this.value)"></select></div>
     <div class="form-row"><label>Sample Rate:</label><select id="hqp-samplerate" onchange="setPipeline('samplerate',this.value)"></select></div>
     <div class="form-row"><label>Filter (1x):</label><select id="hqp-filter1x" onchange="setPipeline('filter1x',this.value)"></select></div>
@@ -818,6 +818,15 @@ async function loadHqpProfiles(configName) {
   const res = await fetch('/hqp/profiles');
   const data = await res.json();
   const sel = document.getElementById('hqp-profile');
+  const row = document.getElementById('hqp-profile-row');
+
+  // Hide profile dropdown if profiles aren't available
+  if (!data.enabled || !data.profiles || data.profiles.length === 0) {
+    if (row) row.classList.add('hidden');
+    return;
+  }
+
+  if (row) row.classList.remove('hidden');
   sel.innerHTML = '';
   (data.profiles || []).forEach(p => {
     const opt = document.createElement('option');
@@ -1194,35 +1203,42 @@ async function loadZoneLinks() {
     const linksArray = linksData.links || [];
     const instances = instancesData.instances || [];
 
-    // Convert array to object for lookup
-    const links = Object.fromEntries(linksArray.map(l => [l.zone_id, l.instance]));
+    // Create reverse lookup: instance -> zone_id
+    const instanceToZone = {};
+    linksArray.forEach(link => {
+      instanceToZone[link.instance] = link.zone_id;
+    });
 
     const div = document.getElementById('zone-links');
-    if (zones.length === 0) {
-      div.innerHTML = '<p class="muted">No zones available. Check that your audio sources are connected.</p>';
-      return;
-    }
-
     if (instances.length === 0) {
       div.innerHTML = '<p class="muted">No HQPlayer instances configured. Configure one above to enable zone linking.</p>';
       return;
     }
 
-    div.innerHTML = '<table><thead><tr><th>Zone</th><th>HQPlayer Instance</th><th></th></tr></thead><tbody>' +
-      zones.map(z => {
-        const linked = links[z.zone_id];
-        const instanceOptions = instances.map(i =>
-          '<option value="' + escAttr(i.name) + '"' + (linked === i.name ? ' selected' : '') + '>' + esc(i.name) + '</option>'
-        ).join('');
+    if (zones.length === 0) {
+      div.innerHTML = '<p class="muted">No zones available. Check that your audio sources are connected.</p>';
+      return;
+    }
 
-        return '<tr><td>' + esc(z.zone_name) + '<br><span class="muted" style="font-size:0.85em;">' + esc(z.zone_id) + '</span></td>' +
-          '<td>' + (linked
-            ? '<span class="success">' + esc(linked) + '</span>'
-            : '<select data-zone-id="' + escAttr(z.zone_id) + '" style="min-width:150px;">' +
-              '<option value="">-- Select Instance --</option>' + instanceOptions + '</select>') + '</td>' +
-          '<td>' + (linked
-            ? '<button onclick="unlinkZone(\'' + escAttr(z.zone_id) + '\')">Unlink</button>'
-            : '<button onclick="linkZone(\'' + escAttr(z.zone_id) + '\')">Link</button>') + '</td></tr>';
+    // Build zone options for dropdowns
+    const zoneOptions = zones.map(z =>
+      '<option value="' + escAttr(z.zone_id) + '">' + esc(z.zone_name) + '</option>'
+    ).join('');
+
+    div.innerHTML = '<table><thead><tr><th>HQPlayer Instance</th><th>Linked Zone</th><th></th></tr></thead><tbody>' +
+      instances.map(instance => {
+        const linkedZoneId = instanceToZone[instance.name];
+        const linkedZone = linkedZoneId ? zones.find(z => z.zone_id === linkedZoneId) : null;
+
+        return '<tr>' +
+          '<td><strong>' + esc(instance.name) + '</strong><br><span class="muted" style="font-size:0.85em;">' + esc(instance.host) + ':' + instance.port + '</span></td>' +
+          '<td>' + (linkedZone
+            ? '<span class="success">' + esc(linkedZone.zone_name) + '</span>'
+            : '<select data-instance="' + escAttr(instance.name) + '" style="min-width:200px;">' +
+              '<option value="">-- Select Zone --</option>' + zoneOptions + '</select>') + '</td>' +
+          '<td>' + (linkedZone
+            ? '<button onclick="unlinkByInstance(\\'' + escAttr(instance.name) + '\\')">Unlink</button>'
+            : '<button onclick="linkByInstance(\\'' + escAttr(instance.name) + '\\')">Link</button>') + '</td></tr>';
       }).join('') + '</tbody></table>';
   } catch (e) {
     document.getElementById('zone-links').innerHTML = '<p class="error">Error loading zone links: ' + esc(e.message) + '</p>';
@@ -1260,6 +1276,97 @@ async function unlinkZone(zoneId) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ zone_id: zoneId })
+    });
+
+    if (res.ok) {
+      loadZoneLinks();
+    } else {
+      alert('Error unlinking zone');
+    }
+  } catch (e) {
+    alert('Error unlinking zone: ' + e.message);
+  }
+}
+
+async function linkFromDropdowns() {
+  const zoneId = document.getElementById('zone-select').value;
+  const instance = document.getElementById('instance-select').value;
+  const msgEl = document.getElementById('link-msg');
+
+  if (!zoneId || !instance) {
+    msgEl.textContent = 'Please select both zone and instance';
+    msgEl.className = 'status-msg error';
+    setTimeout(() => msgEl.textContent = '', 3000);
+    return;
+  }
+
+  try {
+    const res = await fetch('/hqp/zones/link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zone_id: zoneId, instance: instance })
+    });
+
+    if (res.ok) {
+      msgEl.textContent = 'Zone linked successfully';
+      msgEl.className = 'status-msg success';
+      document.getElementById('zone-select').value = '';
+      document.getElementById('instance-select').value = '';
+      setTimeout(() => { msgEl.textContent = ''; loadZoneLinks(); }, 1500);
+    } else {
+      const data = await res.json();
+      msgEl.textContent = 'Error: ' + (data.error || 'Unknown error');
+      msgEl.className = 'status-msg error';
+    }
+  } catch (e) {
+    msgEl.textContent = 'Error: ' + e.message;
+    msgEl.className = 'status-msg error';
+  }
+}
+
+async function linkByInstance(instanceName) {
+  const select = document.querySelector('select[data-instance="' + instanceName + '"]');
+  const zoneId = select ? select.value : null;
+
+  if (!zoneId) {
+    alert('Please select a zone first');
+    return;
+  }
+
+  try {
+    const res = await fetch('/hqp/zones/link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zone_id: zoneId, instance: instanceName })
+    });
+
+    if (res.ok) {
+      loadZoneLinks();
+    } else {
+      const data = await res.json();
+      alert('Error: ' + (data.error || 'Failed to link'));
+    }
+  } catch (e) {
+    alert('Error linking zone: ' + e.message);
+  }
+}
+
+async function unlinkByInstance(instanceName) {
+  try {
+    // Find which zone is linked to this instance
+    const linksRes = await fetch('/hqp/zones/links');
+    const linksData = await linksRes.json();
+    const link = linksData.links.find(l => l.instance === instanceName);
+
+    if (!link) {
+      alert('No zone linked to this instance');
+      return;
+    }
+
+    const res = await fetch('/hqp/zones/unlink', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zone_id: link.zone_id })
     });
 
     if (res.ok) {
