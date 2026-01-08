@@ -50,8 +50,8 @@ stop_daemon() {
 
     echo "Stopping ${PACKAGE_NAME}..."
 
-    PID=$(cat "$PID_FILE")
-    if kill -0 "$PID" 2>/dev/null; then
+    PID=$(cat "$PID_FILE" 2>/dev/null)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
         kill "$PID"
         sleep 2
 

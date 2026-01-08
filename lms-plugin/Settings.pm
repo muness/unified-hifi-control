@@ -50,8 +50,8 @@ sub handler {
         my $needsRestart = 0;
 
         # Check if port changed
-        my $newPort = $params->{'pref_port'} || 8088;
-        if ($newPort != ($prefs->get('port') || 8088)) {
+        my $newPort = $params->{'pref_port'} // 8088;
+        if ($newPort != ($prefs->get('port') // 8088)) {
             $needsRestart = 1;
         }
 
@@ -85,7 +85,7 @@ sub handler {
         if ($needsRestart && Plugins::UnifiedHiFi::Helper->running()) {
             $log->info("Settings changed, restarting helper");
             Plugins::UnifiedHiFi::Helper->stop();
-            Plugins::UnifiedHiFi::Helper->start() if $prefs->get('autorun');
+            Plugins::UnifiedHiFi::Helper->start();
         }
     }
 
