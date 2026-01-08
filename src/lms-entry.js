@@ -6,19 +6,26 @@
  * - LMS client (for player status, artwork, control)
  * - Image processing (sharp for resizing)
  * - mDNS advertising (for client discovery)
+ * - Knob config + firmware management
  * - Unified API endpoints (/zones, /now_playing, /control, etc.)
  *
  * No web UI, no Roon/UPnP/OpenHome/HQPlayer.
  */
 
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const http = require('http');
+const https = require('https');
 const sharp = require('sharp');
 const { LMSClient } = require('./lms/client');
+const { KnobManager } = require('./knobs/manager');
 const { createLogger } = require('./lib/logger');
 const { advertise } = require('./lib/mdns');
 
 const PORT = parseInt(process.env.PORT, 10) || 9199;
+const CONFIG_DIR = process.env.CONFIG_DIR || path.join(__dirname, '..', 'data');
+const FIRMWARE_DIR = process.env.FIRMWARE_DIR || path.join(CONFIG_DIR, 'firmware');
 const log = createLogger('LMS-Plugin');
 
 log.info('Starting Unified Hi-Fi Control (LMS Plugin Mode)');
@@ -30,11 +37,25 @@ const lms = new LMSClient({
   logger: createLogger('LMS'),
 });
 
+// Knob manager for config storage
+const knobs = new KnobManager({
+  configDir: CONFIG_DIR,
+  logger: createLogger('Knobs'),
+});
+
+// Extract knob info from request headers
+function extractKnob(req) {
+  const headerId = req.headers['x-knob-id'] || req.headers['x-device-id'];
+  const version = req.headers['x-knob-version'] || req.headers['x-device-version'];
+  if (!headerId && !version) return null;
+  return { id: headerId, version };
+}
+
 // HTTP API - compatible with knob/phone/watch clients
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-knob-id, x-device-id');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-knob-id, x-device-id, x-knob-version, x-device-version');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -43,11 +64,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
-  const path = url.pathname;
+  const pathname = url.pathname;
 
   try {
     // Health check
-    if (path === '/health' || path === '/status') {
+    if (pathname === '/health' || pathname === '/status') {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({
         status: 'ok',
@@ -59,7 +80,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // GET /zones - list all LMS players as zones
-    if (path === '/zones') {
+    if (pathname === '/zones') {
       res.setHeader('Content-Type', 'application/json');
       const players = await lms.getPlayers();
       const zones = players.map(p => ({
@@ -73,16 +94,28 @@ const server = http.createServer(async (req, res) => {
     }
 
     // GET /now_playing - get current playback for a zone
-    if (path === '/now_playing') {
+    if (pathname === '/now_playing') {
       res.setHeader('Content-Type', 'application/json');
       const zoneId = url.searchParams.get('zone_id');
+      const knob = extractKnob(req);
+
       if (!zoneId) {
         res.statusCode = 400;
         res.end(JSON.stringify({ error: 'zone_id required' }));
         return;
       }
 
-      // Extract player ID from zone_id (lms:xx:xx:xx:xx:xx:xx)
+      // Update knob status
+      if (knob?.id) {
+        if (knob.version) knobs.getOrCreateKnob(knob.id, knob.version);
+        const statusUpdates = { zone_id: zoneId, ip: req.socket.remoteAddress };
+        const batteryLevel = url.searchParams.get('battery_level');
+        const batteryCharging = url.searchParams.get('battery_charging');
+        if (batteryLevel) statusUpdates.battery_level = parseInt(batteryLevel, 10);
+        if (batteryCharging !== null) statusUpdates.battery_charging = batteryCharging === '1' || batteryCharging === 'true';
+        knobs.updateKnobStatus(knob.id, statusUpdates);
+      }
+
       const playerId = zoneId.replace(/^lms:/, '');
       const status = await lms.getPlayerStatus(playerId);
 
@@ -104,19 +137,23 @@ const server = http.createServer(async (req, res) => {
         image_url: `/now_playing/image?zone_id=${encodeURIComponent(zoneId)}`,
       };
 
-      // Include zones list for client convenience
+      // Include zones list and config_sha for knob
       const players = await lms.getPlayers();
       response.zones = players.map(p => ({
         zone_id: `lms:${p.playerid}`,
         zone_name: p.name,
       }));
 
+      if (knob?.id) {
+        response.config_sha = knobs.getConfigSha(knob.id);
+      }
+
       res.end(JSON.stringify(response));
       return;
     }
 
     // GET /now_playing/image - album artwork with optional resizing
-    if (path === '/now_playing/image') {
+    if (pathname === '/now_playing/image') {
       const zoneId = url.searchParams.get('zone_id');
       const width = parseInt(url.searchParams.get('width'), 10) || 360;
       const height = parseInt(url.searchParams.get('height'), 10) || 360;
@@ -133,7 +170,6 @@ const server = http.createServer(async (req, res) => {
       const coverId = status?.artwork_track_id || status?.coverid;
 
       if (!coverId) {
-        // Return placeholder
         res.setHeader('Content-Type', 'image/svg+xml');
         res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
           <rect width="100%" height="100%" fill="#333"/>
@@ -146,7 +182,6 @@ const server = http.createServer(async (req, res) => {
         const { contentType, body } = await lms.getArtwork(coverId);
         let imageBuffer = Buffer.from(await body.arrayBuffer());
 
-        // RGB565 format for ESP32 displays
         if (format === 'rgb565') {
           const result = await sharp(imageBuffer)
             .resize(width, height, { fit: 'cover' })
@@ -174,7 +209,6 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // Resize and return JPEG
         imageBuffer = await sharp(imageBuffer)
           .resize(width, height, { fit: 'cover' })
           .jpeg({ quality: 80 })
@@ -195,7 +229,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // POST /control - transport controls
-    if (path === '/control' && req.method === 'POST') {
+    if (pathname === '/control' && req.method === 'POST') {
       res.setHeader('Content-Type', 'application/json');
       const body = await readBody(req);
       const { zone_id, action, value } = JSON.parse(body);
@@ -209,7 +243,6 @@ const server = http.createServer(async (req, res) => {
       const playerId = zone_id.replace(/^lms:/, '');
       log.info('Control command', { playerId, action, value });
 
-      // Map unified actions to LMS commands
       switch (action) {
         case 'play':
           await lms.command(playerId, ['play']);
@@ -249,13 +282,125 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // GET /config/:knob_id - Get knob configuration
+    const configMatch = pathname.match(/^\/config\/([^/]+)$/);
+    if (configMatch && req.method === 'GET') {
+      const knobId = decodeURIComponent(configMatch[1]);
+      const version = req.headers['x-knob-version'];
+      const knob = knobs.getOrCreateKnob(knobId, version);
+
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        config: { knob_id: knobId, ...knob.config, name: knob.name },
+        config_sha: knob.config_sha,
+      }));
+      return;
+    }
+
+    // PUT /config/:knob_id - Update knob configuration
+    if (configMatch && req.method === 'PUT') {
+      const knobId = decodeURIComponent(configMatch[1]);
+      const body = await readBody(req);
+      const updates = JSON.parse(body);
+      const knob = knobs.updateKnobConfig(knobId, updates);
+
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        config: { knob_id: knobId, ...knob.config, name: knob.name },
+        config_sha: knob.config_sha,
+      }));
+      return;
+    }
+
+    // GET /api/knobs - List all known knobs
+    if (pathname === '/api/knobs') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ knobs: knobs.listKnobs() }));
+      return;
+    }
+
+    // GET /firmware/version - Check firmware version
+    if (pathname === '/firmware/version') {
+      const knob = extractKnob(req);
+      log.info('Firmware version check', { knob, ip: req.socket.remoteAddress });
+
+      if (!fs.existsSync(FIRMWARE_DIR)) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'No firmware available' }));
+        return;
+      }
+
+      const versionFile = path.join(FIRMWARE_DIR, 'version.json');
+      if (!fs.existsSync(versionFile)) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'No firmware version available' }));
+        return;
+      }
+
+      const versionData = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
+      const firmwarePath = path.join(FIRMWARE_DIR, versionData.file || 'roon_knob.bin');
+
+      if (!fs.existsSync(firmwarePath)) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Firmware file not found' }));
+        return;
+      }
+
+      const stats = fs.statSync(firmwarePath);
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        version: versionData.version,
+        size: stats.size,
+        file: versionData.file || 'roon_knob.bin',
+      }));
+      return;
+    }
+
+    // GET /firmware/download - Download firmware binary
+    if (pathname === '/firmware/download') {
+      const knob = extractKnob(req);
+      log.info('Firmware download requested', { knob, ip: req.socket.remoteAddress });
+
+      if (!fs.existsSync(FIRMWARE_DIR)) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'No firmware available' }));
+        return;
+      }
+
+      let firmwareFile = 'roon_knob.bin';
+      const versionFile = path.join(FIRMWARE_DIR, 'version.json');
+      if (fs.existsSync(versionFile)) {
+        const versionData = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
+        firmwareFile = versionData.file || firmwareFile;
+      }
+
+      const firmwarePath = path.join(FIRMWARE_DIR, firmwareFile);
+      if (!fs.existsSync(firmwarePath)) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Firmware file not found' }));
+        return;
+      }
+
+      const stats = fs.statSync(firmwarePath);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', stats.size);
+      res.setHeader('Content-Disposition', `attachment; filename="${firmwareFile}"`);
+      fs.createReadStream(firmwarePath).pipe(res);
+      return;
+    }
+
     // Not found
     res.setHeader('Content-Type', 'application/json');
     res.statusCode = 404;
     res.end(JSON.stringify({ error: 'Not found' }));
 
   } catch (err) {
-    log.error('Request error', { path, error: err.message });
+    log.error('Request error', { path: pathname, error: err.message });
     res.setHeader('Content-Type', 'application/json');
     res.statusCode = 500;
     res.end(JSON.stringify({ error: err.message }));
@@ -271,7 +416,6 @@ function readBody(req) {
   });
 }
 
-// Get local IP for mDNS
 function getLocalIp() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
@@ -287,18 +431,15 @@ function getLocalIp() {
 const localIp = getLocalIp();
 let mdnsService;
 
-// Start server
 server.listen(PORT, () => {
   log.info(`LMS plugin API listening on port ${PORT}`);
 
-  // Advertise via mDNS for client discovery
   mdnsService = advertise(PORT, {
     name: 'Unified Hi-Fi Control (LMS)',
     base: `http://${localIp}:${PORT}`,
   }, createLogger('mDNS'));
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   log.info('Shutting down...');
   if (mdnsService) mdnsService.stop();
