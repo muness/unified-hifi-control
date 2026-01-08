@@ -87,7 +87,7 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
     }
 
     const sender = { ip: req.ip, user_agent: req.get('user-agent') };
-    const data = bus ? bus.getNowPlaying(zoneId, { sender }) : roon.getNowPlaying(zoneId);
+    const data = bus ? await bus.getNowPlaying(zoneId, { sender }) : roon.getNowPlaying(zoneId);
     if (!data) {
       return res.status(404).json({ error: 'zone not found' });
     }

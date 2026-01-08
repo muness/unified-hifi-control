@@ -76,7 +76,7 @@ Examples:
 
 ### List Instances
 
-```
+```http
 GET /hqp/instances
 ```
 
@@ -104,7 +104,7 @@ Returns:
 
 All HQP endpoints now support an optional `instance` parameter:
 
-```
+```http
 GET /hqp/status?instance=embedded
 GET /hqp/profiles?instance=desktop
 GET /hqp/pipeline?instance=embedded
@@ -172,7 +172,7 @@ const np = bus.getNowPlaying('hqp:embedded');
 
 ### Data Flow
 
-```
+```text
 Config File (hqp-config.json)
   ↓
 loadHQPInstances() reads config
