@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Unified Hi-Fi Control</title>
+    <organization>com.cloudatlas</organization>
+    <domains enable_localSystem="true" enable_currentUserHome="false"/>
+
+    <options customize="never" require-scripts="true" hostArchitectures="x86_64,arm64"/>
+
+    <welcome file="welcome.html"/>
+    <license file="license.html"/>
+    <conclusion file="conclusion.html"/>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.cloudatlas.unified-hifi-control.pkg"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+
+    <choice id="com.cloudatlas.unified-hifi-control.pkg"
+            visible="false"
+            title="Unified Hi-Fi Control"
+            description="Installs Unified Hi-Fi Control service">
+        <pkg-ref id="com.cloudatlas.unified-hifi-control.pkg"/>
+    </choice>
+
+    <pkg-ref id="com.cloudatlas.unified-hifi-control.pkg"
+             version="VERSION_PLACEHOLDER"
+             onConclusion="none">unified-hifi-control.pkg</pkg-ref>
+</installer-gui-script>

@@ -1,0 +1,30 @@
+[Unit]
+Description=Unified Hi-Fi Control Bridge
+Documentation=https://github.com/cloud-atlas-ai/unified-hifi-control
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/unified-hifi-control
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=PORT=8088
+Environment=CONFIG_DIR=/var/lib/unified-hifi-control
+Environment=NODE_ENV=production
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/unified-hifi-control /var/log
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=unified-hifi-control
+
+[Install]
+WantedBy=multi-user.target

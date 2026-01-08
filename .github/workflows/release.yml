@@ -1,0 +1,198 @@
+name: Build Release Installers
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., 2.4.1)'
+        required: true
+
+jobs:
+  build-binaries:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all platform binaries
+        run: npm run build:binaries
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: dist/bin/
+          retention-days: 1
+
+  build-macos:
+    name: Build macOS DMG
+    needs: build-binaries
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist/bin/
+
+      - name: Make binaries executable
+        run: chmod +x dist/bin/*
+
+      - name: Build DMG
+        run: node scripts/build-installers.js
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/installers/*.dmg
+          retention-days: 5
+
+  build-windows:
+    name: Build Windows MSI
+    needs: build-binaries
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist/bin/
+
+      - name: Install WiX Toolset
+        run: |
+          choco install wixtoolset -y
+          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $env:GITHUB_PATH
+
+      - name: Build MSI
+        run: node scripts/build-installers.js
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-msi
+          path: dist/installers/*.msi
+          retention-days: 5
+
+  build-linux:
+    name: Build Linux Packages
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist/bin/
+
+      - name: Make binaries executable
+        run: chmod +x dist/bin/*
+
+      - name: Install fpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev build-essential rpm
+          sudo gem install fpm
+
+      - name: Build deb and rpm packages
+        run: node scripts/build-installers.js
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: dist/installers/*.{deb,rpm}
+          retention-days: 5
+
+  build-lms-plugin:
+    name: Build LMS Plugin
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist/bin/
+
+      - name: Make binaries executable
+        run: chmod +x dist/bin/*
+
+      - name: Build LMS plugin
+        run: npm run build:lms-plugin
+
+      - name: Upload LMS plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: lms-plugin
+          path: dist/lms-unified-hifi-control-*.zip
+          retention-days: 5
+
+  upload-release:
+    name: Upload to Release
+    needs: [build-macos, build-windows, build-linux, build-lms-plugin]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Display structure
+        run: ls -R artifacts/
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/macos-dmg/*.dmg
+            artifacts/windows-msi/*.msi
+            artifacts/linux-packages/*.deb
+            artifacts/linux-packages/*.rpm
+            artifacts/lms-plugin/*.zip

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Pre-install script for Unified Hi-Fi Control
+
+set -e
+
+# Stop existing service if running
+launchctl stop com.cloudatlas.unified-hifi-control 2>/dev/null || true
+launchctl unload /Library/LaunchDaemons/com.cloudatlas.unified-hifi-control.plist 2>/dev/null || true
+
+exit 0

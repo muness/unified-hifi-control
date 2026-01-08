@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+
+  <?define ProductName = "Unified Hi-Fi Control" ?>
+  <?define ProductVersion = "$(var.Version)" ?>
+  <?define ProductManufacturer = "Cloud Atlas" ?>
+  <?define UpgradeCode = "A1B2C3D4-E5F6-7890-ABCD-EF1234567890" ?>
+
+  <Product Id="*"
+           Name="$(var.ProductName)"
+           Language="1033"
+           Version="$(var.ProductVersion)"
+           Manufacturer="$(var.ProductManufacturer)"
+           UpgradeCode="$(var.UpgradeCode)">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="$(var.ProductName) Installer"
+             Comments="Source-agnostic hi-fi control bridge" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of $(var.ProductName) is already installed."
+                  AllowSameVersionUpgrades="yes" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Icon -->
+    <Icon Id="AppIcon.ico" SourceFile="resources\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/cloud-atlas-ai/unified-hifi-control" />
+
+    <!-- Install directory -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="Unified Hi-Fi Control">
+          <Directory Id="DataFolder" Name="data" />
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="Unified Hi-Fi Control" />
+      </Directory>
+    </Directory>
+
+    <!-- Main component: the executable -->
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="B2C3D4E5-F6A7-8901-BCDE-F23456789012">
+        <File Id="UnifiedHiFiControlExe"
+              Source="$(var.BinaryPath)"
+              Name="unified-hifi-control.exe"
+              KeyPath="yes" />
+
+        <!-- Windows Service -->
+        <ServiceInstall Id="ServiceInstaller"
+                        Type="ownProcess"
+                        Name="UnifiedHiFiControl"
+                        DisplayName="Unified Hi-Fi Control"
+                        Description="Source-agnostic hi-fi control bridge for Roon, LMS, HQPlayer"
+                        Start="auto"
+                        Account="LocalSystem"
+                        ErrorControl="normal"
+                        Arguments="--service">
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart"
+                              RestartServiceDelayInSeconds="60" />
+        </ServiceInstall>
+
+        <ServiceControl Id="ServiceControl"
+                        Name="UnifiedHiFiControl"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+
+        <!-- Environment variable for config directory -->
+        <Environment Id="ConfigDir"
+                     Name="UNIFIED_HIFI_CONFIG_DIR"
+                     Value="[INSTALLFOLDER]data"
+                     Permanent="no"
+                     Part="all"
+                     Action="set"
+                     System="yes" />
+      </Component>
+
+      <!-- Data directory -->
+      <Component Id="DataDirectory" Guid="C3D4E5F6-A7B8-9012-CDEF-345678901234" Directory="DataFolder">
+        <CreateFolder />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Start Menu shortcuts -->
+    <ComponentGroup Id="ShortcutComponents" Directory="ApplicationProgramsFolder">
+      <Component Id="ApplicationShortcuts" Guid="D4E5F6A7-B8C9-0123-DEF0-456789012345">
+        <Shortcut Id="WebUIShortcut"
+                  Name="Unified Hi-Fi Control"
+                  Description="Open Web UI"
+                  Target="http://localhost:8088"
+                  Icon="AppIcon.ico" />
+
+        <Shortcut Id="UninstallShortcut"
+                  Name="Uninstall Unified Hi-Fi Control"
+                  Description="Uninstalls the application"
+                  Target="[System64Folder]msiexec.exe"
+                  Arguments="/x [ProductCode]" />
+
+        <RemoveFolder Id="CleanupShortcuts" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\CloudAtlas\UnifiedHiFiControl"
+                       Name="installed"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Features -->
+    <Feature Id="ProductFeature" Title="Unified Hi-Fi Control" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="ShortcutComponents" />
+    </Feature>
+
+    <!-- Custom Actions -->
+    <CustomAction Id="OpenWebUI"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="cmd.exe /c start http://localhost:8088"
+                  Return="asyncNoWait" />
+
+    <InstallExecuteSequence>
+      <Custom Action="OpenWebUI" After="InstallFinalize">NOT Installed</Custom>
+    </InstallExecuteSequence>
+
+    <!-- UI -->
+    <UIRef Id="WixUI_InstallDir" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="resources\license.rtf" />
+    <WixVariable Id="WixUIBannerBmp" Value="resources\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="resources\dialog.bmp" />
+
+  </Product>
+</Wix>
