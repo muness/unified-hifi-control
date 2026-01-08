@@ -3,17 +3,18 @@
  * Minimal entry point for LMS plugin
  *
  * Stripped down version that only includes:
- * - LMS adapter (communicates with parent LMS instance)
  * - HQPlayer client (for DSP control)
  * - Minimal HTTP API (no web UI)
+ * - mDNS advertising (for phone/watch/knob discovery)
  *
- * Designed to run as a child process of the LMS plugin, communicating
- * via localhost. No authentication needed since it's local-only.
+ * Designed to run as a child process of the LMS plugin.
  */
 
+const os = require('os');
 const http = require('http');
 const { HQPClient } = require('./hqplayer/client');
 const { createLogger } = require('./lib/logger');
+const { advertise } = require('./lib/mdns');
 
 const PORT = parseInt(process.env.PORT, 10) || 9199; // Different from main app
 const log = createLogger('LMS-Plugin');
@@ -117,13 +118,37 @@ function readBody(req) {
   });
 }
 
-server.listen(PORT, '127.0.0.1', () => {
-  log.info(`LMS plugin API listening on 127.0.0.1:${PORT}`);
+// Get local IP for mDNS
+function getLocalIp() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+const localIp = getLocalIp();
+let mdnsService;
+
+// Bind to all interfaces so clients can reach us
+server.listen(PORT, () => {
+  log.info(`LMS plugin API listening on port ${PORT}`);
+
+  // Advertise via mDNS for phone/watch/knob discovery
+  mdnsService = advertise(PORT, {
+    name: 'Unified Hi-Fi Control (LMS)',
+    base: `http://${localIp}:${PORT}`,
+  }, createLogger('mDNS'));
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   log.info('Shutting down...');
+  if (mdnsService) mdnsService.stop();
   server.close();
   process.exit(0);
 });
