@@ -17,6 +17,42 @@ function createApp(opts = {}) {
   app.use(cors());
   app.use(express.json());
   app.use(morgan('combined'));
+
+  // Log compression headers for debugging (temporary)
+  app.use((req, res, next) => {
+    if (req.path.includes('/now_playing/image')) {
+      const acceptEncoding = req.get('Accept-Encoding') || 'none';
+      log.info('Image request compression', {
+        path: req.path,
+        acceptEncoding,
+        userAgent: req.get('User-Agent'),
+        ip: req.ip
+      });
+
+      // Log response size after sending
+      const originalSend = res.send;
+      const originalEnd = res.end;
+      let responseSize = 0;
+
+      res.send = function(data) {
+        responseSize = data ? Buffer.byteLength(data) : 0;
+        return originalSend.apply(res, arguments);
+      };
+
+      res.end = function(data) {
+        if (data) responseSize = Buffer.byteLength(data);
+        const contentEncoding = res.get('Content-Encoding');
+        log.info('Image response compression', {
+          size: responseSize,
+          contentEncoding: contentEncoding || 'none',
+          compressed: !!contentEncoding
+        });
+        return originalEnd.apply(res, arguments);
+      };
+    }
+    next();
+  });
+
   app.use(compression());
 
   // Static files
