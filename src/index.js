@@ -257,6 +257,9 @@ const mqttService = createMqttService({
   logger: createLogger('MQTT'),
 });
 
+// Check if firmware auto-update is enabled (default: true)
+const FIRMWARE_AUTO_UPDATE = process.env.FIRMWARE_AUTO_UPDATE !== 'false';
+
 // Create HTTP server
 const app = createApp({
   bus,
@@ -273,7 +276,14 @@ const app = createApp({
 // Start services
 bus.start();  // Starts all registered backends (including roon)
 mqttService.connect();
-firmwareService.start();  // Start polling for firmware updates
+
+// Start firmware polling only if enabled
+if (FIRMWARE_AUTO_UPDATE) {
+  firmwareService.start();  // Start polling for firmware updates
+  log.info('Firmware auto-update enabled');
+} else {
+  log.info('Firmware auto-update disabled (set FIRMWARE_AUTO_UPDATE=true to enable)');
+}
 
 let mdnsService;
 

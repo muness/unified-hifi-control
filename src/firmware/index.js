@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { MAX_REDIRECTS } = require('../lib/constants');
 
-const DEFAULT_POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const DEFAULT_POLL_INTERVAL_MINUTES = 360; // 6 hours
+const DEFAULT_POLL_INTERVAL_MS = DEFAULT_POLL_INTERVAL_MINUTES * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 30000; // 30 seconds
 
 /**
@@ -21,7 +22,44 @@ function createFirmwareService({ logger, pollIntervalMs } = {}) {
   const CONFIG_DIR = process.env.CONFIG_DIR || path.join(__dirname, '..', '..', 'data');
   const FIRMWARE_DIR = process.env.FIRMWARE_DIR || path.join(CONFIG_DIR, 'firmware');
   const GITHUB_REPO = process.env.FIRMWARE_REPO || 'muness/roon-knob';
-  const POLL_INTERVAL = pollIntervalMs || parseInt(process.env.FIRMWARE_POLL_INTERVAL_MS, 10) || DEFAULT_POLL_INTERVAL_MS;
+
+  // Support both minutes (new, preferred) and milliseconds (legacy)
+  let POLL_INTERVAL;
+  let configSource;
+
+  if (pollIntervalMs) {
+    POLL_INTERVAL = pollIntervalMs;
+    configSource = 'constructor';
+  } else if (process.env.FIRMWARE_POLL_INTERVAL_MINUTES) {
+    const minutes = parseInt(process.env.FIRMWARE_POLL_INTERVAL_MINUTES, 10);
+    if (isNaN(minutes) || minutes <= 0) {
+      log.warn(`Invalid FIRMWARE_POLL_INTERVAL_MINUTES: "${process.env.FIRMWARE_POLL_INTERVAL_MINUTES}", using default: ${DEFAULT_POLL_INTERVAL_MINUTES} minutes`);
+      POLL_INTERVAL = DEFAULT_POLL_INTERVAL_MS;
+      configSource = 'default';
+    } else {
+      POLL_INTERVAL = minutes * 60 * 1000;
+      configSource = `env (${minutes} minutes)`;
+    }
+  } else if (process.env.FIRMWARE_POLL_INTERVAL_MS) {
+    // Legacy: still support milliseconds for backward compatibility
+    const ms = parseInt(process.env.FIRMWARE_POLL_INTERVAL_MS, 10);
+    if (isNaN(ms) || ms <= 0) {
+      log.warn(`Invalid FIRMWARE_POLL_INTERVAL_MS: "${process.env.FIRMWARE_POLL_INTERVAL_MS}", using default: ${DEFAULT_POLL_INTERVAL_MS}ms`);
+      POLL_INTERVAL = DEFAULT_POLL_INTERVAL_MS;
+      configSource = 'default';
+    } else {
+      POLL_INTERVAL = ms;
+      configSource = `env legacy (${ms}ms)`;
+    }
+  } else {
+    POLL_INTERVAL = DEFAULT_POLL_INTERVAL_MS;
+    configSource = `default (${DEFAULT_POLL_INTERVAL_MINUTES} minutes)`;
+  }
+
+  log.info('Firmware poll interval configured', {
+    interval: `${Math.round(POLL_INTERVAL / 1000 / 60)} minutes`,
+    source: configSource
+  });
 
   /**
    * Subscribe to firmware events
@@ -338,9 +376,13 @@ function createFirmwareService({ logger, pollIntervalMs } = {}) {
     }
 
     isStarted = true;
+    const intervalMinutes = Math.round(POLL_INTERVAL / 1000 / 60);
+    const intervalDisplay = intervalMinutes >= 60
+      ? `${Math.round(intervalMinutes / 60)}h`
+      : `${intervalMinutes}m`;
     log.info('FirmwareService started', {
       repo: GITHUB_REPO,
-      pollInterval: `${POLL_INTERVAL / 1000 / 60 / 60}h`,
+      pollInterval: intervalDisplay,
       firmwareDir: FIRMWARE_DIR
     });
 

@@ -33,8 +33,11 @@ services:
       # - LMS_PORT=9000
       # - LMS_USERNAME=admin
       # - LMS_PASSWORD=secret
-      # Optional: Firmware polling interval (default: 6 hours)
-      # - FIRMWARE_POLL_INTERVAL_MS=21600000
+      # Optional: Firmware auto-update (default: true)
+      # - FIRMWARE_AUTO_UPDATE=false
+      # Optional: Firmware polling interval when auto-update enabled
+      # - FIRMWARE_POLL_INTERVAL_MINUTES=360  # 6 hours (default)
+      # - FIRMWARE_POLL_INTERVAL_MINUTES=1440 # 24 hours
     restart: unless-stopped
 ```
 
@@ -162,7 +165,12 @@ Ask Claude: "What's playing right now?" or "Turn the volume down a bit" or "Swit
 
 The bridge automatically polls GitHub for new [roon-knob](https://github.com/muness/roon-knob) firmware releases every 6 hours (default, configurable) and downloads updates when available. Knobs check `/firmware/version` on startup and can OTA update from the bridge.
 
-Configure the poll interval via `FIRMWARE_POLL_INTERVAL_MS` environment variable (in milliseconds).
+**Opt-out:** Set `FIRMWARE_AUTO_UPDATE=false` to disable automatic polling and downloading. The bridge will not check GitHub for updates, but the `/firmware/version` and `/firmware/download` endpoints remain available for manual firmware management.
+
+**Configuration:**
+- `FIRMWARE_AUTO_UPDATE` - Enable/disable automatic updates (default: `true`)
+- `FIRMWARE_POLL_INTERVAL_MINUTES` - Poll interval in minutes when auto-update enabled (default: `360` minutes / 6 hours)
+- `FIRMWARE_POLL_INTERVAL_MS` - Legacy: Poll interval in milliseconds (prefer `_MINUTES` above)
 
 If MQTT is enabled, firmware version is published to `unified-hifi/firmware/version` for Home Assistant monitoring.
 
