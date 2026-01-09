@@ -18,7 +18,13 @@ function createApp(opts = {}) {
   app.use(cors());
   app.use(express.json());
   const compressionLevel = parseInt(process.env.COMPRESSION_LEVEL) || 6;
-  app.use(compression({ level: compressionLevel }));  // Gzip compression for all responses
+  app.use(compression({
+    level: compressionLevel,
+    filter: (req, res) => {
+      // Always compress if client accepts gzip (including binary octet-stream)
+      return true;
+    }
+  }));
   app.use(morgan('combined'));
   app.use(compression());
 
