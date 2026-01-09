@@ -35,7 +35,7 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
 
     if (!zoneId) {
       const zones = bus ? bus.getZones() : roon.getZones();
-      return res.status(400).json({ error: 'zone_id required', zones });
+      return res.status(400).json({ error: 'zone_id required', error_code: 'MISSING_ZONE_ID', zones });
     }
 
     // Update knob status from query params
@@ -65,7 +65,7 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
     if (!data) {
       const zones = bus ? bus.getZones() : roon.getZones();
       log.warn('now_playing miss', { zoneId, ip: req.ip });
-      return res.status(404).json({ error: 'zone not found', zones });
+      return res.status(404).json({ error: 'zone not found', error_code: 'ZONE_NOT_FOUND', zones });
     }
 
     log.debug('now_playing served', { zoneId, ip: req.ip });
@@ -83,13 +83,15 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
     const zoneId = req.query.zone_id;
 
     if (!zoneId) {
-      return res.status(400).json({ error: 'zone_id required' });
+      const zones = bus ? bus.getZones() : roon.getZones();
+      return res.status(400).json({ error: 'zone_id required', error_code: 'MISSING_ZONE_ID', zones });
     }
 
     const sender = { ip: req.ip, user_agent: req.get('user-agent') };
     const data = bus ? await bus.getNowPlaying(zoneId, { sender }) : roon.getNowPlaying(zoneId);
     if (!data) {
-      return res.status(404).json({ error: 'zone not found' });
+      const zones = bus ? bus.getZones() : roon.getZones();
+      return res.status(404).json({ error: 'zone not found', error_code: 'ZONE_NOT_FOUND', zones });
     }
 
     log.debug('now_playing image requested', { zoneId, ip: req.ip });
@@ -194,7 +196,7 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
 
     if (!zone_id || !action) {
       log.warn('control missing params', { zone_id, action, ip: req.ip });
-      return res.status(400).json({ error: 'zone_id and action required' });
+      return res.status(400).json({ error: 'zone_id and action required', error_code: 'MISSING_PARAMETERS' });
     }
 
     try {
@@ -204,7 +206,11 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
       res.json({ status: 'ok' });
     } catch (error) {
       log.error('control failed', { zone_id, action, value, ip: req.ip, error: error.message });
-      res.status(500).json({ error: error.message || 'control failed' });
+      if (error.message && error.message.includes('Zone not found')) {
+        const zones = bus ? bus.getZones() : roon.getZones();
+        return res.status(404).json({ error: 'zone not found', error_code: 'ZONE_NOT_FOUND', zones });
+      }
+      res.status(500).json({ error: error.message || 'control failed', error_code: 'CONTROL_FAILED' });
     }
   });
 
@@ -216,7 +222,7 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
 
     const knob = knobs.getOrCreateKnob(knobId, version);
     if (!knob) {
-      return res.status(400).json({ error: 'knob_id required' });
+      return res.status(400).json({ error: 'knob_id required', error_code: 'MISSING_KNOB_ID' });
     }
 
     res.json({
@@ -237,7 +243,7 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
 
     const knob = knobs.updateKnobConfig(knobId, updates);
     if (!knob) {
-      return res.status(400).json({ error: 'knob_id required' });
+      return res.status(400).json({ error: 'knob_id required', error_code: 'MISSING_KNOB_ID' });
     }
 
     res.json({
@@ -278,7 +284,7 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
 
   // GET /admin/bus - Bus debug panel
   router.get('/admin/bus', (req, res) => {
-    if (!bus) return res.status(404).send('Bus not available');
+    if (!bus) return res.status(404).json({ error: 'Bus not available', error_code: 'BUS_NOT_AVAILABLE' });
     const debug = busDebug.getDebugInfo();
     res.send(`<!DOCTYPE html><html><head><title>Bus Debug</title><meta http-equiv="refresh" content="5"><style>body{font-family:monospace;margin:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:left}.error{color:red}.sender{color:#666;font-size:10px}</style></head><body><h1>Bus (${debug.message_count} msgs, 5m)</h1><table><tr><th>Time</th><th>Type</th><th>Zone</th><th>Details</th><th>Sender</th></tr>${debug.messages.slice(-50).reverse().map(m=>{const t=new Date(m.timestamp).toLocaleTimeString();const c=m.error?'class="error"':'';const d=m.action?m.action+(m.value!==undefined?' ('+m.value+')':''):m.has_data!==undefined?'data:'+m.has_data:m.error||'';const s=m.sender?(m.sender.knob_id?'knob:'+m.sender.knob_id:m.sender.ip||''):'';return`<tr ${c}><td>${t}</td><td>${m.type}</td><td>${m.zone_id||m.backend||'-'}</td><td>${d}</td><td class="sender">${s}</td></tr>`;}).join('')}</table></body></html>`);
   });
@@ -1792,7 +1798,7 @@ loadAdapterSettings();
       const asset = releaseData.assets.find(a => a.name === 'roon_knob.bin');
 
       if (!asset) {
-        return res.status(404).json({ error: 'No roon_knob.bin in release' });
+        return res.status(404).json({ error: 'No roon_knob.bin in release', error_code: 'FIRMWARE_NOT_FOUND' });
       }
 
       // Download the firmware binary
@@ -1853,12 +1859,12 @@ loadAdapterSettings();
     log.info('Firmware version check', { knob, ip: req.ip });
 
     if (!fs.existsSync(FIRMWARE_DIR)) {
-      return res.status(404).json({ error: 'No firmware available' });
+      return res.status(404).json({ error: 'No firmware available', error_code: 'FIRMWARE_NOT_FOUND' });
     }
 
     const files = fs.readdirSync(FIRMWARE_DIR).filter(f => f.endsWith('.bin'));
     if (files.length === 0) {
-      return res.status(404).json({ error: 'No firmware available' });
+      return res.status(404).json({ error: 'No firmware available', error_code: 'FIRMWARE_NOT_FOUND' });
     }
 
     const versionFile = path.join(FIRMWARE_DIR, 'version.json');
@@ -1884,12 +1890,12 @@ loadAdapterSettings();
     }
 
     if (!version) {
-      return res.status(404).json({ error: 'No firmware version available' });
+      return res.status(404).json({ error: 'No firmware version available', error_code: 'FIRMWARE_NOT_FOUND' });
     }
 
     const firmwarePath = path.join(FIRMWARE_DIR, firmwareFile);
     if (!fs.existsSync(firmwarePath)) {
-      return res.status(404).json({ error: 'Firmware file not found' });
+      return res.status(404).json({ error: 'Firmware file not found', error_code: 'FIRMWARE_NOT_FOUND' });
     }
 
     const stats = fs.statSync(firmwarePath);
@@ -1903,7 +1909,7 @@ loadAdapterSettings();
     log.info('Firmware download requested', { knob, ip: req.ip });
 
     if (!fs.existsSync(FIRMWARE_DIR)) {
-      return res.status(404).json({ error: 'No firmware available' });
+      return res.status(404).json({ error: 'No firmware available', error_code: 'FIRMWARE_NOT_FOUND' });
     }
 
     let firmwareFile = 'roon_knob.bin';
@@ -1925,7 +1931,7 @@ loadAdapterSettings();
         firmwareFile = files[0];
         firmwarePath = path.join(FIRMWARE_DIR, firmwareFile);
       } else {
-        return res.status(404).json({ error: 'Firmware file not found' });
+        return res.status(404).json({ error: 'Firmware file not found', error_code: 'FIRMWARE_NOT_FOUND' });
       }
     }
 
