@@ -583,6 +583,7 @@ async function loadZones() {
       const playIcon = np.is_playing ? '⏸' : '▶';
       const deviceInfo = zone.device_name ? ' <span class="muted">(' + esc(zone.device_name) + ')</span>' : '';
       const isHqp = !!zone.dsp;
+      const dspBadge = isHqp ? ' <span style="font-size:0.7em;background:#6366f1;color:white;padding:0.15em 0.4em;border-radius:3px;vertical-align:middle;">DSP</span>' : '';
       const profileSelect = isHqp && hqpProfiles.length > 0 ?
         '<p class="muted" style="margin-top:0.5em;">Configuration: <select class="hqp-profile-select" style="padding:0.2em;">' +
         hqpProfiles.map(p => '<option value="' + escAttr(p.value) + '"' +
@@ -590,11 +591,11 @@ async function loadZones() {
           esc(p.title) + '</option>').join('') +
         '</select></p>' : '';
       return '<div class="zone-card" data-zone-id="' + escAttr(zone.zone_id) + '" data-step="' + step + '">' +
-        (supportsAlbumArt 
+        (supportsAlbumArt
           ? '<img class="art-lg" src="/now_playing/image?zone_id=' + encodeURIComponent(zone.zone_id) + '&width=120&height=120" alt="">'
           : '<div class="art-lg" style="background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#999;border:1px solid #ddd;border-radius:6px;">No Art</div>') +
         '<div class="zone-info">' +
-          '<h3>' + esc(zone.zone_name) + deviceInfo + '</h3>' +
+          '<h3>' + esc(zone.zone_name) + deviceInfo + dspBadge + '</h3>' +
           (supportsTrackInfo 
             ? '<p><strong>' + track + '</strong></p><p>' + artist + (album ? ' • ' + album : '') + '</p>'
             : '<p class="muted">Basic UPnP device - transport controls only</p>') +
@@ -716,6 +717,8 @@ ${navHtml('zone')}
     <p class="muted">HQPlayer not configured. <a href="/admin/hqp">Configure HQPlayer</a></p>
   </div>
   <div id="hqp-configured" class="hidden">
+    <p id="hqp-loading" class="muted">Loading DSP controls...</p>
+    <div id="hqp-controls" class="hidden">
     <p>Status: <span id="hqp-status">checking...</span></p>
     <div id="hqp-profile-row" class="form-row"><label>Configuration:</label><select id="hqp-profile" onchange="loadProfile(this.value)"></select></div>
     <div class="form-row"><label>Mode:</label><select id="hqp-mode" onchange="setPipeline('mode',this.value)"></select></div>
@@ -724,6 +727,7 @@ ${navHtml('zone')}
     <div class="form-row"><label>Filter (Nx):</label><select id="hqp-filterNx" onchange="setPipeline('filterNx',this.value)"></select></div>
     <div class="form-row"><label id="hqp-shaper-label">Shaper:</label><select id="hqp-shaper" onchange="setPipeline('shaper',this.value)"></select></div>
     <div id="hqp-msg" class="status-msg"></div>
+    </div>
   </div>
 </div>
 
@@ -867,6 +871,9 @@ async function loadHqpPipeline() {
     const modeLabel = s.mode?.selected?.label?.toLowerCase() || '';
     shaperLabel.textContent = modeLabel.includes('sdm') || modeLabel.includes('dsd') ? 'Modulator:' : 'Dither:';
   }
+  // Hide loading, show controls
+  document.getElementById('hqp-loading').classList.add('hidden');
+  document.getElementById('hqp-controls').classList.remove('hidden');
 }
 
 function popSel(id, opts, cur) {
