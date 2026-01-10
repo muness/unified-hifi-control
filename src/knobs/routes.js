@@ -748,7 +748,7 @@ async function loadZones() {
 
   const sel = document.getElementById('zone-select');
   sel.innerHTML = '<option value="">-- Select Zone --</option>' + zonesData.map(z =>
-    '<option value="' + escAttr(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + '</option>'
+    '<option value="' + escAttr(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + (z.dsp ? ' [DSP]' : '') + '</option>'
   ).join('');
 
   // Auto-restore saved zone on first load
@@ -799,7 +799,16 @@ function updateZoneDisplay(np) {
   // Show/hide HQPlayer section: only show if zone is linked to HQPlayer AND HQP is configured
   const isHqpZone = zone && !!zone.dsp;
   const shouldShowHqp = isHqpZone && hqpEnabled;
-  document.getElementById('hqp-section').classList.toggle('hidden', !shouldShowHqp);
+  const hqpSection = document.getElementById('hqp-section');
+  const wasHidden = hqpSection.classList.contains('hidden');
+  hqpSection.classList.toggle('hidden', !shouldShowHqp);
+
+  // When HQP section becomes visible, reset to loading state and fetch pipeline
+  if (shouldShowHqp && wasHidden) {
+    document.getElementById('hqp-loading').classList.remove('hidden');
+    document.getElementById('hqp-controls').classList.add('hidden');
+    loadHqpPipeline();
+  }
 }
 
 async function ctrl(action, value) {
