@@ -582,7 +582,7 @@ async function loadZones() {
       const step = np.volume_step || 2;
       const playIcon = np.is_playing ? '⏸' : '▶';
       const deviceInfo = zone.device_name ? ' <span class="muted">(' + esc(zone.device_name) + ')</span>' : '';
-      const isHqp = (zone.output_name || '').toLowerCase().includes('hqplayer');
+      const isHqp = !!zone.dsp;
       const profileSelect = isHqp && hqpProfiles.length > 0 ?
         '<p class="muted" style="margin-top:0.5em;">Configuration: <select class="hqp-profile-select" style="padding:0.2em;">' +
         hqpProfiles.map(p => '<option value="' + escAttr(p.value) + '"' +
@@ -734,7 +734,6 @@ let selectedZone = localStorage.getItem('hifi-zone') || null;
 let zonesData = [];
 let initialLoad = true;
 let hqpEnabled = false;
-let hqpZoneLinks = [];
 
 async function loadZones() {
   const res = await fetch('/admin/status.json');
@@ -794,7 +793,7 @@ function updateZoneDisplay(np) {
   document.getElementById('play-btn').textContent = np.is_playing ? '⏸' : '▶';
 
   // Show/hide HQPlayer section: only show if zone is linked to HQPlayer AND HQP is configured
-  const isHqpZone = zone && hqpZoneLinks.some(link => link.zone_id === selectedZone);
+  const isHqpZone = zone && !!zone.dsp;
   const shouldShowHqp = isHqpZone && hqpEnabled;
   document.getElementById('hqp-section').classList.toggle('hidden', !shouldShowHqp);
 }
@@ -812,14 +811,9 @@ async function ctrl(action, value) {
 // HQPlayer
 async function loadHqpStatus() {
   try {
-    const [statusRes, linksRes] = await Promise.all([
-      fetch('/hqp/status'),
-      fetch('/hqp/zones/links')
-    ]);
-    const data = await statusRes.json();
-    const linksData = await linksRes.json();
+    const res = await fetch('/hqp/status');
+    const data = await res.json();
     hqpEnabled = data.enabled;  // Cache for zone display visibility
-    hqpZoneLinks = linksData.links || [];  // Cache zone links
     if (data.enabled) {
       document.getElementById('hqp-not-configured').classList.add('hidden');
       document.getElementById('hqp-configured').classList.remove('hidden');
@@ -830,7 +824,6 @@ async function loadHqpStatus() {
     }
   } catch (e) {
     hqpEnabled = false;
-    hqpZoneLinks = [];
     console.error('HQPlayer status error:', e);
   }
 }
