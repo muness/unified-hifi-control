@@ -939,7 +939,7 @@ async function setPipeline(setting, value) {
 }
 
 loadZones();
-loadHqpStatus();
+loadHqpStatus().then(() => loadZones()); // Re-check zones after HQP status known
 setInterval(loadZones, 4000);
 </script></body></html>`);
   });
