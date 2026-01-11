@@ -1106,6 +1106,8 @@ async function openConfig(knobId) {
   const dimBat = c.dim_battery || { enabled: true, timeout_sec: 30 };
   const slpChg = c.sleep_charging || { enabled: false, timeout_sec: 0 };
   const slpBat = c.sleep_battery || { enabled: true, timeout_sec: 60 };
+  const dslpChg = c.deep_sleep_charging || { enabled: false, timeout_sec: 0 };
+  const dslpBat = c.deep_sleep_battery || { enabled: true, timeout_sec: 1200 };
 
   document.getElementById('configForm').innerHTML = '<form id="knobConfigForm">' +
     '<div class="form-row"><label>Name:</label><input type="text" name="name" value="' + escAttr(c.name || '') + '" placeholder="Living Room Knob"></div>' +
@@ -1113,19 +1115,28 @@ async function openConfig(knobId) {
     '<p class="muted" style="margin:0 0 0.8em;font-size:0.85em;">Flip the display based on how the knob is oriented. Useful if you mount it differently when docked vs handheld.</p>' +
     '<div class="form-row"><label>Charging:</label>' + rotSel('rotation_charging', c.rotation_charging ?? 180) + ' <label style="margin-left:1em;">Battery:</label>' + rotSel('rotation_not_charging', c.rotation_not_charging ?? 0) + '</div></div>' +
     '<div class="form-section"><h3>Power Timers</h3>' +
-    '<p class="muted" style="margin:0 0 0.8em;font-size:0.85em;">After inactivity, the display transitions: <strong>Art Mode</strong> (album art) → <strong>Dim</strong> (reduced brightness) → <strong>Sleep</strong> (display off). Timeout in seconds, 0 to skip.</p>' +
+    '<p class="muted" style="margin:0 0 0.8em;font-size:0.85em;">After inactivity, the display transitions: <strong>Art Mode</strong> (album art) → <strong>Dim</strong> (reduced brightness) → <strong>Sleep</strong> (display off) → <strong>Deep Sleep</strong> (low power, rotate knob to wake). Timeout in seconds; uncheck to skip a state.</p>' +
     '<table style="font-size:0.9em;"><tr><th></th><th>Charging</th><th>Battery</th></tr>' +
-    '<tr><td>Art Mode</td><td><input type="number" name="art_chg_sec" value="' + artChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_chg_on"' + (artChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="art_bat_sec" value="' + artBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="art_bat_on"' + (artBat.enabled ? ' checked' : '') + '> On</label></td></tr>' +
-    '<tr><td>Dim</td><td><input type="number" name="dim_chg_sec" value="' + dimChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_chg_on"' + (dimChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="dim_bat_sec" value="' + dimBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="dim_bat_on"' + (dimBat.enabled ? ' checked' : '') + '> On</label></td></tr>' +
-    '<tr><td>Sleep</td><td><input type="number" name="slp_chg_sec" value="' + slpChg.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_chg_on"' + (slpChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="slp_bat_sec" value="' + slpBat.timeout_sec + '" style="width:50px;"> <label><input type="checkbox" name="slp_bat_on"' + (slpBat.enabled ? ' checked' : '') + '> On</label></td></tr></table></div>' +
-    '<div class="form-section"><h3>Power Management</h3>' +
-    '<p class="muted" style="margin:0 0 0.8em;font-size:0.85em;">Battery optimization settings. May slightly increase response latency.</p>' +
-    '<div class="form-row"><label><input type="checkbox" name="wifi_ps"' + (c.wifi_power_save_enabled ? ' checked' : '') + '> WiFi Sleep</label> <span class="muted" style="font-size:0.8em;">— reduces WiFi power when idle</span></div>' +
-    '<div class="form-row"><label><input type="checkbox" name="cpu_scale"' + (c.cpu_freq_scaling_enabled ? ' checked' : '') + '> CPU Scaling</label> <span class="muted" style="font-size:0.8em;">— lowers CPU speed when idle</span></div>' +
-    '<div class="form-row" style="margin-top:0.8em;"><label>Poll interval when stopped:</label><input type="number" name="sleep_poll_stopped" value="' + (c.sleep_poll_stopped_sec ?? 60) + '" style="width:50px;"> sec <span class="muted" style="font-size:0.8em;">— how often to check for updates when nothing is playing</span></div></div>' +
+    '<tr><td>Art Mode</td><td><input type="number" name="art_chg_sec" value="' + artChg.timeout_sec + '" style="width:50px;" min="1"' + (artChg.enabled ? '' : ' disabled') + '> <label><input type="checkbox" name="art_chg_on"' + (artChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="art_bat_sec" value="' + artBat.timeout_sec + '" style="width:50px;" min="1"' + (artBat.enabled ? '' : ' disabled') + '> <label><input type="checkbox" name="art_bat_on"' + (artBat.enabled ? ' checked' : '') + '> On</label></td></tr>' +
+    '<tr><td>Dim</td><td><input type="number" name="dim_chg_sec" value="' + dimChg.timeout_sec + '" style="width:50px;" min="1"' + (dimChg.enabled ? '' : ' disabled') + '> <label><input type="checkbox" name="dim_chg_on"' + (dimChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="dim_bat_sec" value="' + dimBat.timeout_sec + '" style="width:50px;" min="1"' + (dimBat.enabled ? '' : ' disabled') + '> <label><input type="checkbox" name="dim_bat_on"' + (dimBat.enabled ? ' checked' : '') + '> On</label></td></tr>' +
+    '<tr><td>Sleep</td><td><input type="number" name="slp_chg_sec" value="' + slpChg.timeout_sec + '" style="width:50px;" min="1"' + (slpChg.enabled ? '' : ' disabled') + '> <label><input type="checkbox" name="slp_chg_on"' + (slpChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="slp_bat_sec" value="' + slpBat.timeout_sec + '" style="width:50px;" min="1"' + (slpBat.enabled ? '' : ' disabled') + '> <label><input type="checkbox" name="slp_bat_on"' + (slpBat.enabled ? ' checked' : '') + '> On</label></td></tr>' +
+    '<tr><td>Deep Sleep</td><td><input type="number" name="dslp_chg_sec" value="' + dslpChg.timeout_sec + '" style="width:50px;" min="1"' + (dslpChg.enabled ? '' : ' disabled') + '> <label><input type="checkbox" name="dslp_chg_on"' + (dslpChg.enabled ? ' checked' : '') + '> On</label></td><td><input type="number" name="dslp_bat_sec" value="' + dslpBat.timeout_sec + '" style="width:50px;" min="1"' + (dslpBat.enabled ? '' : ' disabled') + '> <label><input type="checkbox" name="dslp_bat_on"' + (dslpBat.enabled ? ' checked' : '') + '> On</label></td></tr></table></div>' +
+    '<div class="form-section"><h3>Sleep Mode Settings</h3>' +
+    '<p class="muted" style="margin:0 0 0.8em;font-size:0.85em;">Settings for Sleep mode only (display off, still connected). Deep Sleep ignores these—it fully disconnects WiFi and suspends the CPU.</p>' +
+    '<div class="form-row"><label><input type="checkbox" name="wifi_ps"' + (c.wifi_power_save_enabled ? ' checked' : '') + '> WiFi Power Save</label> <span class="muted" style="font-size:0.8em;">— reduces WiFi power while sleeping</span></div>' +
+    '<div class="form-row"><label><input type="checkbox" name="cpu_scale"' + (c.cpu_freq_scaling_enabled ? ' checked' : '') + '> CPU Scaling</label> <span class="muted" style="font-size:0.8em;">— lowers CPU speed while sleeping</span></div>' +
+    '<div class="form-row" style="margin-top:0.8em;"><label>Poll interval:</label><input type="number" name="sleep_poll_stopped" value="' + (c.sleep_poll_stopped_sec ?? 60) + '" style="width:50px;" min="1"> sec <span class="muted" style="font-size:0.8em;">— how often to check for playback updates while sleeping</span></div></div>' +
     '<div class="form-actions"><button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button><button type="submit" class="btn-primary">Save</button></div></form>';
 
   document.getElementById('knobConfigForm').addEventListener('submit', saveConfig);
+
+  // Toggle number input disabled state when checkbox changes
+  document.getElementById('knobConfigForm').addEventListener('change', function(e) {
+    if (e.target.type === 'checkbox' && e.target.closest('td')) {
+      var numInput = e.target.closest('td').querySelector('input[type=number]');
+      if (numInput) numInput.disabled = !e.target.checked;
+    }
+  });
 }
 
 async function saveConfig(e) {
@@ -1146,6 +1157,8 @@ async function saveConfig(e) {
     dim_battery: { enabled: chk('dim_bat_on'), timeout_sec: num('dim_bat_sec') },
     sleep_charging: { enabled: chk('slp_chg_on'), timeout_sec: num('slp_chg_sec') },
     sleep_battery: { enabled: chk('slp_bat_on'), timeout_sec: num('slp_bat_sec') },
+    deep_sleep_charging: { enabled: chk('dslp_chg_on'), timeout_sec: num('dslp_chg_sec') },
+    deep_sleep_battery: { enabled: chk('dslp_bat_on'), timeout_sec: num('dslp_bat_sec') },
     wifi_power_save_enabled: chk('wifi_ps'),
     cpu_freq_scaling_enabled: chk('cpu_scale'),
     sleep_poll_stopped_sec: num('sleep_poll_stopped'),

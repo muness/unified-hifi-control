@@ -18,9 +18,11 @@ const DEFAULT_CONFIG = {
   art_mode_charging: { enabled: true, timeout_sec: 60 },
   dim_charging: { enabled: true, timeout_sec: 120 },
   sleep_charging: { enabled: false, timeout_sec: 0 },
+  deep_sleep_charging: { enabled: false, timeout_sec: 0 },
   art_mode_battery: { enabled: true, timeout_sec: 30 },
   dim_battery: { enabled: true, timeout_sec: 30 },
   sleep_battery: { enabled: true, timeout_sec: 60 },
+  deep_sleep_battery: { enabled: true, timeout_sec: 1200 },
   wifi_power_save_enabled: false,
   cpu_freq_scaling_enabled: false,
   sleep_poll_stopped_sec: 60,
@@ -129,6 +131,12 @@ function createKnobsStore(opts = {}) {
     }
     if (updates.sleep_battery) {
       newConfig.sleep_battery = { ...newConfig.sleep_battery, ...updates.sleep_battery };
+    }
+    if (updates.deep_sleep_charging) {
+      newConfig.deep_sleep_charging = { ...newConfig.deep_sleep_charging, ...updates.deep_sleep_charging };
+    }
+    if (updates.deep_sleep_battery) {
+      newConfig.deep_sleep_battery = { ...newConfig.deep_sleep_battery, ...updates.deep_sleep_battery };
     }
     if (updates.wifi_power_save_enabled !== undefined) {
       newConfig.wifi_power_save_enabled = updates.wifi_power_save_enabled;
