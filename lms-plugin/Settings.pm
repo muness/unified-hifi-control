@@ -110,6 +110,10 @@ sub beforeRender {
     $params->{'loglevels'}  = ['error', 'warn', 'info', 'debug'];
     $params->{'rotations'}  = [0, 90, 180, 270];
 
+    # Binary download status
+    $params->{'binaryStatus'}   = Plugins::UnifiedHiFi::Helper->binaryStatus();
+    $params->{'binaryPlatform'} = Plugins::UnifiedHiFi::Helper->detectPlatform();
+
     # Knob status from helper
     $params->{'knobStatus'} = Plugins::UnifiedHiFi::Helper->knobStatus();
 

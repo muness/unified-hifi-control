@@ -23,8 +23,9 @@ const PKG_JSON = require(path.join(ROOT, 'package.json'));
 
 const VERSION = PKG_JSON.version;
 
-// Binary mappings for LMS plugin (use minimal LMS-specific binaries)
-// These are built from src/lms-entry.js - smaller, no web UI, HQPlayer only
+// Binary mappings for LMS plugin
+// NOTE: Binaries are now downloaded on-demand, not bundled in the plugin ZIP
+// This reduces plugin size from ~125 MB to ~50 KB
 const BINARY_MAP = [
   { src: 'unified-hifi-lms-linux-x64', dest: 'unified-hifi-linux-x86_64' },
   { src: 'unified-hifi-lms-linux-arm64', dest: 'unified-hifi-linux-aarch64' },
@@ -33,20 +34,28 @@ const BINARY_MAP = [
   { src: 'unified-hifi-lms-win-x64.exe', dest: 'unified-hifi-win64.exe' },
 ];
 
+// Set to true to bundle binaries (for testing), false for production (on-demand download)
+const BUNDLE_BINARIES = process.env.LMS_BUNDLE_BINARIES === 'true';
+
 async function main() {
   console.log(`\nBuilding LMS plugin v${VERSION}\n`);
 
-  // Verify binaries exist
-  console.log('Checking binaries...');
-  for (const { src } of BINARY_MAP) {
-    const binPath = path.join(BINARIES_DIR, src);
-    if (!fs.existsSync(binPath)) {
-      console.error(`Missing binary: ${src}`);
-      console.error('Run "npm run build:binaries" first.');
-      process.exit(1);
+  if (BUNDLE_BINARIES) {
+    // Verify binaries exist (only when bundling)
+    console.log('Checking binaries (bundle mode)...');
+    for (const { src } of BINARY_MAP) {
+      const binPath = path.join(BINARIES_DIR, src);
+      if (!fs.existsSync(binPath)) {
+        console.error(`Missing binary: ${src}`);
+        console.error('Run "npm run build:binaries" first.');
+        process.exit(1);
+      }
     }
+    console.log('  ✓ All binaries found\n');
+  } else {
+    console.log('On-demand download mode: binaries will NOT be bundled');
+    console.log('Binary will be downloaded when user first starts the bridge.\n');
   }
-  console.log('  ✓ All binaries found\n');
 
   // Verify LMS plugin source exists
   if (!fs.existsSync(LMS_PLUGIN_SRC)) {
@@ -91,13 +100,18 @@ async function main() {
 
   // Add plugin source files
   archive.directory(LMS_PLUGIN_SRC, 'UnifiedHiFi', {
-    ignore: ['Bin/**'], // We'll add binaries separately
+    ignore: ['Bin/**'], // We'll add binaries separately (or not)
   });
 
-  // Add binaries with correct names
-  for (const { src, dest } of BINARY_MAP) {
-    const srcPath = path.join(BINARIES_DIR, src);
-    archive.file(srcPath, { name: `UnifiedHiFi/Bin/${dest}` });
+  if (BUNDLE_BINARIES) {
+    // Add binaries with correct names (bundle mode)
+    for (const { src, dest } of BINARY_MAP) {
+      const srcPath = path.join(BINARIES_DIR, src);
+      archive.file(srcPath, { name: `UnifiedHiFi/Bin/${dest}` });
+    }
+  } else {
+    // Create empty Bin directory with placeholder (on-demand mode)
+    archive.append('# Binaries downloaded on first run\n', { name: 'UnifiedHiFi/Bin/.gitkeep' });
   }
 
   await archive.finalize();

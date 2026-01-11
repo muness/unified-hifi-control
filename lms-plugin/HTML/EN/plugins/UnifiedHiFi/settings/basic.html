@@ -5,6 +5,20 @@
         [% "PLUGIN_UNIFIED_HIFI" | string %]
     </div>
 
+    <!-- Binary download status -->
+    [% IF binaryStatus == 'not_downloaded' %]
+    <div class="prefDesc" style="padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; margin-bottom: 15px;">
+        <b>&#9888; Binary Required:</b> The bridge binary for <code>[% binaryPlatform %]</code> (~75 MB)
+        will be downloaded when you click "Start Bridge".
+    </div>
+    [% ELSIF binaryStatus == 'downloading' %]
+    <div class="prefDesc" style="padding: 10px; background: #cce5ff; border: 1px solid #007bff; border-radius: 4px; margin-bottom: 15px;">
+        <b>&#8635; Downloading:</b> Binary for <code>[% binaryPlatform %]</code> is being downloaded...
+        <br/><small>This may take a few minutes. Page will refresh automatically.</small>
+        <script>setTimeout(function() { location.reload(); }, 5000);</script>
+    </div>
+    [% END %]
+
     <!-- Status indicator -->
     <div class="prefDesc" style="padding: 10px; background: #f5f5f5; border-radius: 4px; margin-bottom: 15px;">
         <b>[% "PLUGIN_UNIFIED_HIFI_STATUS" | string %]:</b>

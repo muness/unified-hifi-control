@@ -1,12 +1,13 @@
 package Plugins::UnifiedHiFi::Helper;
 
 # Binary lifecycle management for Unified Hi-Fi Control
-# Handles spawning, monitoring, and restarting the helper process
+# Handles spawning, monitoring, restarting, and on-demand downloading
 
 use strict;
 use warnings;
 
 use File::Spec::Functions qw(catfile catdir);
+use File::Path qw(make_path);
 use Proc::Background;
 use JSON;
 
@@ -22,10 +23,21 @@ my $prefs = preferences('plugin.unifiedhifi');
 my $helper;       # Proc::Background instance
 my $binary;       # Path to selected binary
 my $restarts = 0; # Restart counter
+my $downloadInProgress = 0;  # Download state flag
 
 use constant HEALTH_CHECK_INTERVAL => 30;  # seconds
 use constant MAX_RESTARTS          => 5;   # before giving up
 use constant RESTART_RESET_TIME    => 300; # reset counter after 5 min stable
+
+# Binary download configuration
+use constant BINARY_BASE_URL => 'https://github.com/open-horizon-labs/unified-hifi-control/releases/download';
+use constant BINARY_MAP => {
+    'darwin-arm64'   => 'unified-hifi-darwin-arm64',
+    'darwin-x86_64'  => 'unified-hifi-darwin-x86_64',
+    'linux-x86_64'   => 'unified-hifi-linux-x86_64',
+    'linux-aarch64'  => 'unified-hifi-linux-aarch64',
+    'win64'          => 'unified-hifi-win64.exe',
+};
 
 # Detect OS and return available binaries
 sub binaries {
@@ -76,14 +88,176 @@ sub binaries {
     return @available;
 }
 
-# Get path to the selected binary
+# Detect platform for binary download
+sub detectPlatform {
+    my $class = shift;
+
+    my $os = Slim::Utils::OSDetect::OS();
+    my $details = Slim::Utils::OSDetect::details();
+    my $arch = $details->{'osArch'} || $details->{'binArch'} || 'x86_64';
+
+    if ($os eq 'mac') {
+        return $arch =~ /arm|aarch64/i ? 'darwin-arm64' : 'darwin-x86_64';
+    } elsif ($os eq 'win') {
+        return 'win64';
+    } else {
+        return $arch =~ /aarch64|arm64/i ? 'linux-aarch64' : 'linux-x86_64';
+    }
+}
+
+# Get plugin version from install.xml
+sub pluginVersion {
+    my $class = shift;
+
+    my $installXml = catfile(_pluginDataFor('basedir'), 'install.xml');
+    if (-e $installXml) {
+        open my $fh, '<', $installXml or return '0.0.0';
+        my $content = do { local $/; <$fh> };
+        close $fh;
+        if ($content =~ /version="([^"]+)"/) {
+            return $1;
+        }
+    }
+    return '0.0.0';
+}
+
+# Check if binary needs download
+sub needsBinaryDownload {
+    my $class = shift;
+
+    my $platform = $class->detectPlatform();
+    my $binaryName = BINARY_MAP->{$platform};
+    return 0 unless $binaryName;  # Unknown platform
+
+    my $bindir = catdir(_pluginDataFor('basedir'), 'Bin');
+    my $binaryPath = catfile($bindir, $binaryName);
+
+    return !(-e $binaryPath && -x $binaryPath);
+}
+
+# Get binary status for UI
+sub binaryStatus {
+    my $class = shift;
+
+    return 'downloading' if $downloadInProgress;
+    return $class->needsBinaryDownload() ? 'not_downloaded' : 'installed';
+}
+
+# Download binary for current platform (async-friendly)
+sub ensureBinary {
+    my ($class, $callback) = @_;
+
+    my $platform = $class->detectPlatform();
+    my $binaryName = BINARY_MAP->{$platform};
+
+    unless ($binaryName) {
+        $log->error("No binary available for platform: $platform");
+        $callback->(undef, "Unsupported platform: $platform") if $callback;
+        return;
+    }
+
+    my $bindir = catdir(_pluginDataFor('basedir'), 'Bin');
+    my $binaryPath = catfile($bindir, $binaryName);
+
+    # Already exists and executable
+    if (-e $binaryPath && -x $binaryPath) {
+        $callback->($binaryPath) if $callback;
+        return $binaryPath;
+    }
+
+    # Need to download
+    $log->info("Binary not found, downloading $binaryName for $platform...");
+
+    my $version = $class->pluginVersion();
+    my $url = BINARY_BASE_URL . "/v$version/$binaryName";
+
+    $class->downloadBinary($url, $binaryPath, sub {
+        my ($success, $error) = @_;
+        if ($success) {
+            chmod 0755, $binaryPath;
+            $log->info("Binary downloaded successfully: $binaryPath");
+            $callback->($binaryPath) if $callback;
+        } else {
+            $log->error("Binary download failed: $error");
+            $callback->(undef, $error) if $callback;
+        }
+    });
+
+    return;  # Async - result via callback
+}
+
+# Download binary from URL
+sub downloadBinary {
+    my ($class, $url, $dest, $callback) = @_;
+
+    $downloadInProgress = 1;
+
+    # Ensure Bin directory exists
+    my $bindir = catdir(_pluginDataFor('basedir'), 'Bin');
+    make_path($bindir) unless -d $bindir;
+
+    $log->info("Downloading binary from $url");
+
+    eval {
+        require Slim::Networking::SimpleAsyncHTTP;
+
+        my $http = Slim::Networking::SimpleAsyncHTTP->new(
+            sub {
+                my $response = shift;
+                $downloadInProgress = 0;
+
+                if ($response->code == 200) {
+                    # Write binary to file
+                    open my $fh, '>', $dest or do {
+                        $callback->(0, "Cannot write to $dest: $!") if $callback;
+                        return;
+                    };
+                    binmode $fh;
+                    print $fh $response->content;
+                    close $fh;
+
+                    $callback->(1) if $callback;
+                } else {
+                    $callback->(0, "HTTP " . $response->code . ": " . $response->message) if $callback;
+                }
+            },
+            sub {
+                my ($response, $error) = @_;
+                $downloadInProgress = 0;
+                $callback->(0, $error // "Download failed") if $callback;
+            },
+            {
+                timeout => 300,  # 5 minute timeout for large binary
+            }
+        );
+
+        $http->get($url);
+    };
+
+    if ($@) {
+        $downloadInProgress = 0;
+        $log->error("Download error: $@");
+        $callback->(0, $@) if $callback;
+    }
+}
+
+# Get path to the selected binary (downloads if needed for sync start)
 sub bin {
     my $class = shift;
 
     my $bindir = catdir(_pluginDataFor('basedir'), 'Bin');
     my @available = $class->binaries();
 
-    return unless @available;
+    # If no binaries available, check if we can use platform-specific one
+    unless (@available) {
+        my $platform = $class->detectPlatform();
+        my $binaryName = BINARY_MAP->{$platform};
+        if ($binaryName) {
+            my $path = catfile($bindir, $binaryName);
+            return $path if -e $path && -x $path;
+        }
+        return;
+    }
 
     # Use preference or default to first available
     my $selected = $prefs->get('bin') || $available[0];
@@ -102,23 +276,48 @@ sub start {
     my $class = shift;
 
     return if $helper && $helper->alive;
+    return if $downloadInProgress;  # Don't start while downloading
 
     $binary = $class->bin();
+
+    # If no binary, try to download it
     unless ($binary && -e $binary) {
+        if ($class->needsBinaryDownload()) {
+            $log->info("Binary not found, initiating download...");
+            $class->ensureBinary(sub {
+                my ($path, $error) = @_;
+                if ($path) {
+                    # Download complete, now start
+                    $class->_doStart($path);
+                } else {
+                    $log->error("Cannot start: $error");
+                }
+            });
+            return;  # Will start via callback
+        }
         $log->error("No suitable binary found for this platform");
         return;
     }
+
+    $class->_doStart($binary);
+}
+
+# Internal: actually start the helper process
+sub _doStart {
+    my ($class, $binaryPath) = @_;
+
+    return if $helper && $helper->alive;
 
     my $port = $prefs->get('port') || 8088;
     my $loglevel = $prefs->get('loglevel') || 'info';
 
     # Make executable on Unix
     if (Slim::Utils::OSDetect::OS() ne 'win') {
-        chmod 0755, $binary;
+        chmod 0755, $binaryPath;
     }
 
     # Build command line
-    my @cmd = ($binary);
+    my @cmd = ($binaryPath);
 
     # Build environment for subprocess (avoid polluting global %ENV)
     my $configDir = Slim::Utils::OSDetect::dirsFor('prefs');
@@ -133,7 +332,7 @@ sub start {
         LMS_PORT   => $lmsPort,
     );
 
-    $log->info("Starting Unified Hi-Fi Control: $binary on port $port");
+    $log->info("Starting Unified Hi-Fi Control: $binaryPath on port $port");
 
     eval {
         # Use local %ENV for subprocess only
@@ -145,6 +344,8 @@ sub start {
         $log->error("Failed to start helper: $@");
         return;
     }
+
+    $binary = $binaryPath;  # Update module-level binary path
 
     # Schedule health checks
     Slim::Utils::Timers::setTimer($class, time() + HEALTH_CHECK_INTERVAL, \&_healthCheck);
