@@ -487,6 +487,18 @@ class HQPClient {
     }
   }
 
+  async getMatrixProfiles() {
+    return this.native.getMatrixProfiles();
+  }
+
+  async getMatrixProfile() {
+    return this.native.getMatrixProfile();
+  }
+
+  async setMatrixProfile(value) {
+    return this.native.setMatrixProfile(value);
+  }
+
   async setVolume(value) {
     const pipeline = await this.fetchPipeline();
     if (!pipeline) {

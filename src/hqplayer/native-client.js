@@ -43,6 +43,7 @@ const MULTI_ITEM_COMMANDS = {
   GetRates: 'RatesItem',
   GetInputs: 'InputsItem',
   ConfigurationList: 'ConfigurationItem',
+  MatrixListProfiles: 'MatrixProfile',
 };
 
 class HQPNativeClient extends EventEmitter {
@@ -206,6 +207,9 @@ class HQPNativeClient extends EventEmitter {
       case 'ConfigurationItem':
         return { name: str('name') };
 
+      case 'MatrixProfile':
+        return { name: str('name') };
+
       default:
         return { name: str('name'), value: num('value') };
     }
@@ -274,6 +278,9 @@ class HQPNativeClient extends EventEmitter {
           enabled: bool('enabled'),
           adaptive: bool('adaptive'),
         };
+
+      case 'MatrixGetProfile':
+        return { value: str('value') };
 
       default:
         return { result: str('result') || 'OK' };
@@ -380,6 +387,22 @@ class HQPNativeClient extends EventEmitter {
     await this.ensureConnected();
     const response = await this.send('GetRates', this.buildRequest('GetRates'));
     return response.items || [];
+  }
+
+  async getMatrixProfiles() {
+    await this.ensureConnected();
+    const response = await this.send('MatrixListProfiles', this.buildRequest('MatrixListProfiles'));
+    return response.items || [];
+  }
+
+  async getMatrixProfile() {
+    await this.ensureConnected();
+    return this.send('MatrixGetProfile', this.buildRequest('MatrixGetProfile'));
+  }
+
+  async setMatrixProfile(value) {
+    await this.ensureConnected();
+    return this.send('MatrixSetProfile', this.buildRequest('MatrixSetProfile', { value }));
   }
 
   async setMode(value) {

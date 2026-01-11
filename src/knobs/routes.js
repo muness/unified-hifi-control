@@ -582,19 +582,20 @@ async function loadZones() {
       const step = np.volume_step || 2;
       const playIcon = np.is_playing ? '⏸' : '▶';
       const deviceInfo = zone.device_name ? ' <span class="muted">(' + esc(zone.device_name) + ')</span>' : '';
-      const isHqp = (zone.output_name || '').toLowerCase().includes('hqplayer');
-      const profileSelect = isHqp && hqpProfiles.length > 0 ?
+      const isHqp = zone.dsp?.type === 'hqplayer';
+      const dspBadge = isHqp ? ' <span style="font-size:0.7em;background:#6366f1;color:white;padding:0.15em 0.4em;border-radius:3px;vertical-align:middle;">HQP</span>' : '';
+      const profileSelect = zone.dsp?.profiles && hqpProfiles.length > 0 ?
         '<p class="muted" style="margin-top:0.5em;">Configuration: <select class="hqp-profile-select" style="padding:0.2em;">' +
         hqpProfiles.map(p => '<option value="' + escAttr(p.value) + '"' +
           ((hqpCurrentProfile && (p.title.toLowerCase() === hqpCurrentProfile.toLowerCase() || p.value === hqpCurrentProfile)) ? ' selected' : '') + '>' +
           esc(p.title) + '</option>').join('') +
         '</select></p>' : '';
       return '<div class="zone-card" data-zone-id="' + escAttr(zone.zone_id) + '" data-step="' + step + '">' +
-        (supportsAlbumArt 
+        (supportsAlbumArt
           ? '<img class="art-lg" src="/now_playing/image?zone_id=' + encodeURIComponent(zone.zone_id) + '&width=120&height=120" alt="">'
           : '<div class="art-lg" style="background:#f5f5f5;display:flex;align-items:center;justify-content:center;color:#999;border:1px solid #ddd;border-radius:6px;">No Art</div>') +
         '<div class="zone-info">' +
-          '<h3>' + esc(zone.zone_name) + deviceInfo + '</h3>' +
+          '<h3>' + esc(zone.zone_name) + deviceInfo + dspBadge + '</h3>' +
           (supportsTrackInfo 
             ? '<p><strong>' + track + '</strong></p><p>' + artist + (album ? ' • ' + album : '') + '</p>'
             : '<p class="muted">Basic UPnP device - transport controls only</p>') +
@@ -716,14 +717,18 @@ ${navHtml('zone')}
     <p class="muted">HQPlayer not configured. <a href="/admin/hqp">Configure HQPlayer</a></p>
   </div>
   <div id="hqp-configured" class="hidden">
+    <p id="hqp-loading" class="muted">Loading DSP controls...</p>
+    <div id="hqp-controls" class="hidden">
     <p>Status: <span id="hqp-status">checking...</span></p>
     <div id="hqp-profile-row" class="form-row"><label>Configuration:</label><select id="hqp-profile" onchange="loadProfile(this.value)"></select></div>
+    <div id="hqp-matrix-row" class="form-row hidden"><label>Matrix:</label><select id="hqp-matrix" onchange="setMatrixProfile(this.value)"></select></div>
     <div class="form-row"><label>Mode:</label><select id="hqp-mode" onchange="setPipeline('mode',this.value)"></select></div>
     <div class="form-row"><label>Sample Rate:</label><select id="hqp-samplerate" onchange="setPipeline('samplerate',this.value)"></select></div>
     <div class="form-row"><label>Filter (1x):</label><select id="hqp-filter1x" onchange="setPipeline('filter1x',this.value)"></select></div>
     <div class="form-row"><label>Filter (Nx):</label><select id="hqp-filterNx" onchange="setPipeline('filterNx',this.value)"></select></div>
     <div class="form-row"><label id="hqp-shaper-label">Shaper:</label><select id="hqp-shaper" onchange="setPipeline('shaper',this.value)"></select></div>
     <div id="hqp-msg" class="status-msg"></div>
+    </div>
   </div>
 </div>
 
@@ -734,7 +739,6 @@ let selectedZone = localStorage.getItem('hifi-zone') || null;
 let zonesData = [];
 let initialLoad = true;
 let hqpEnabled = false;
-let hqpZoneLinks = [];
 
 async function loadZones() {
   const res = await fetch('/admin/status.json');
@@ -745,7 +749,7 @@ async function loadZones() {
 
   const sel = document.getElementById('zone-select');
   sel.innerHTML = '<option value="">-- Select Zone --</option>' + zonesData.map(z =>
-    '<option value="' + escAttr(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + '</option>'
+    '<option value="' + escAttr(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + (z.dsp?.type ? ' [' + z.dsp.type.toUpperCase().replace('HQPLAYER', 'HQP') + ']' : '') + '</option>'
   ).join('');
 
   // Auto-restore saved zone on first load
@@ -782,8 +786,9 @@ function selectZone(zoneId) {
 function updateZoneDisplay(np) {
   if (!np) np = {};
   const zone = zonesData.find(z => z.zone_id === selectedZone);
-  const deviceInfo = zone?.device_name ? ' (' + zone.device_name + ')' : '';
-  document.getElementById('zone-name').textContent = (zone?.zone_name || '') + deviceInfo;
+  const deviceInfo = zone?.device_name ? ' (' + esc(zone.device_name) + ')' : '';
+  const dspBadge = zone?.dsp?.type === 'hqplayer' ? ' <span style="font-size:0.7em;background:#6366f1;color:white;padding:0.15em 0.4em;border-radius:3px;vertical-align:middle;">HQP</span>' : '';
+  document.getElementById('zone-name').innerHTML = esc(zone?.zone_name || '') + deviceInfo + dspBadge;
   const track = esc(np.line1 || 'Stopped');
   const artist = esc(np.line2 || '');
   const album = esc(np.line3 || '');
@@ -794,9 +799,20 @@ function updateZoneDisplay(np) {
   document.getElementById('play-btn').textContent = np.is_playing ? '⏸' : '▶';
 
   // Show/hide HQPlayer section: only show if zone is linked to HQPlayer AND HQP is configured
-  const isHqpZone = zone && hqpZoneLinks.some(link => link.zone_id === selectedZone);
+  const isHqpZone = zone?.dsp?.type === 'hqplayer';
   const shouldShowHqp = isHqpZone && hqpEnabled;
-  document.getElementById('hqp-section').classList.toggle('hidden', !shouldShowHqp);
+  const hqpSection = document.getElementById('hqp-section');
+  const wasHidden = hqpSection.classList.contains('hidden');
+  hqpSection.classList.toggle('hidden', !shouldShowHqp);
+
+  // When HQP section becomes visible, reset to loading state and fetch pipeline
+  if (shouldShowHqp && wasHidden) {
+    document.getElementById('hqp-loading').classList.remove('hidden');
+    document.getElementById('hqp-controls').classList.add('hidden');
+    document.getElementById('hqp-msg').textContent = '';
+    const pipelineUrl = zone?.dsp?.pipeline || '/hqp/pipeline';
+    loadHqpPipeline(pipelineUrl).catch(e => console.error('Pipeline load error:', e));
+  }
 }
 
 async function ctrl(action, value) {
@@ -812,25 +828,25 @@ async function ctrl(action, value) {
 // HQPlayer
 async function loadHqpStatus() {
   try {
-    const [statusRes, linksRes] = await Promise.all([
-      fetch('/hqp/status'),
-      fetch('/hqp/zones/links')
-    ]);
-    const data = await statusRes.json();
-    const linksData = await linksRes.json();
+    const res = await fetch('/hqp/status');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
     hqpEnabled = data.enabled;  // Cache for zone display visibility
-    hqpZoneLinks = linksData.links || [];  // Cache zone links
     if (data.enabled) {
       document.getElementById('hqp-not-configured').classList.add('hidden');
       document.getElementById('hqp-configured').classList.remove('hidden');
       document.getElementById('hqp-status').textContent = data.connected ? 'Connected' : 'Disconnected';
       document.getElementById('hqp-status').className = data.connected ? 'success' : 'error';
       loadHqpProfiles(data.configName);
-      loadHqpPipeline();
+      loadHqpPipeline().catch(e => console.error('Pipeline load error:', e));
+    } else {
+      document.getElementById('hqp-not-configured').classList.remove('hidden');
+      document.getElementById('hqp-configured').classList.add('hidden');
     }
   } catch (e) {
     hqpEnabled = false;
-    hqpZoneLinks = [];
+    document.getElementById('hqp-not-configured').classList.remove('hidden');
+    document.getElementById('hqp-configured').classList.add('hidden');
     console.error('HQPlayer status error:', e);
   }
 }
@@ -858,8 +874,9 @@ async function loadHqpProfiles(configName) {
   });
 }
 
-async function loadHqpPipeline() {
-  const res = await fetch('/hqp/pipeline');
+async function loadHqpPipeline(url = '/hqp/pipeline') {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
   const data = await res.json();
   if (!data.settings) return;
   const s = data.settings;
@@ -874,6 +891,11 @@ async function loadHqpPipeline() {
     const modeLabel = s.mode?.selected?.label?.toLowerCase() || '';
     shaperLabel.textContent = modeLabel.includes('sdm') || modeLabel.includes('dsd') ? 'Modulator:' : 'Dither:';
   }
+  // Load matrix profiles (non-blocking)
+  loadHqpMatrix();
+  // Hide loading, show controls
+  document.getElementById('hqp-loading').classList.add('hidden');
+  document.getElementById('hqp-controls').classList.remove('hidden');
 }
 
 function popSel(id, opts, cur) {
@@ -897,9 +919,57 @@ async function loadProfile(profile) {
   setTimeout(loadHqpPipeline, 2000);
 }
 
+async function loadHqpMatrix() {
+  try {
+    const res = await fetch('/hqp/matrix/profiles');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const row = document.getElementById('hqp-matrix-row');
+    const sel = document.getElementById('hqp-matrix');
+    if (!data.enabled || !data.profiles || data.profiles.length === 0) {
+      if (row) row.classList.add('hidden');
+      return;
+    }
+    if (row) row.classList.remove('hidden');
+    sel.innerHTML = '';
+    data.profiles.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.name;
+      if (data.current === p.name) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch (e) { console.debug('Matrix profiles not available:', e.message); }
+}
+
+async function setMatrixProfile(profile) {
+  if (!profile) return;
+  // Disable controls during update
+  const selects = ['hqp-mode', 'hqp-samplerate', 'hqp-filter1x', 'hqp-filterNx', 'hqp-shaper', 'hqp-profile', 'hqp-matrix'];
+  selects.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = true; });
+  const msg = document.getElementById('hqp-msg');
+  msg.textContent = 'Setting matrix...';
+  msg.className = 'status-msg';
+  document.body.style.cursor = 'wait';
+
+  try {
+    const res = await fetch('/hqp/matrix/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile }) });
+    msg.textContent = res.ok ? 'Matrix updated' : 'Error';
+    msg.className = 'status-msg ' + (res.ok ? 'success' : 'error');
+  } catch (e) {
+    msg.textContent = 'Error';
+    msg.className = 'status-msg error';
+    console.error('Matrix profile error:', e);
+  } finally {
+    // Re-enable controls
+    selects.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
+    document.body.style.cursor = 'default';
+  }
+}
+
 async function setPipeline(setting, value) {
   // Disable all HQPlayer controls and show loading
-  const selects = ['hqp-mode', 'hqp-samplerate', 'hqp-filter1x', 'hqp-filterNx', 'hqp-shaper', 'hqp-profile'];
+  const selects = ['hqp-mode', 'hqp-samplerate', 'hqp-filter1x', 'hqp-filterNx', 'hqp-shaper', 'hqp-profile', 'hqp-matrix'];
   selects.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = true;
@@ -929,8 +999,7 @@ async function setPipeline(setting, value) {
   document.body.style.cursor = 'default';
 }
 
-loadZones();
-loadHqpStatus();
+loadHqpStatus().finally(loadZones); // Load zones after HQP status known
 setInterval(loadZones, 4000);
 </script></body></html>`);
   });

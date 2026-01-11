@@ -49,6 +49,15 @@ class HQPService {
   }
 
   /**
+   * Check if an instance supports profiles (Embedded + web creds)
+   */
+  instanceSupportsProfiles(instanceName) {
+    const instance = this.instances.get(instanceName);
+    if (!instance?.client) return false;
+    return instance.client.hasWebCredentials();
+  }
+
+  /**
    * Get all zone links
    */
   getLinks() {

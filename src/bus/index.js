@@ -133,7 +133,31 @@ function createBus({ logger, hqpService } = {}) {
     if (zones.size === 0 && backends.size > 0) {
       refreshZones();
     }
-    return Array.from(zones.values()).map(({ zone }) => zone);
+    return Array.from(zones.values()).map(({ zone }) => {
+      // Enrich with DSP info if zone is linked to HQPlayer
+      if (hqp) {
+        try {
+          const instanceName = hqp.getInstanceForZone(zone.zone_id);
+          if (instanceName) {
+            const zoneParam = `zone_id=${encodeURIComponent(zone.zone_id)}`;
+            const dsp = {
+              type: 'hqplayer',
+              instance: instanceName,
+              pipeline: `/hqp/pipeline?${zoneParam}`,
+              matrix: `/hqp/matrix/profiles?${zoneParam}`,
+            };
+            // Only include profiles URL if instance supports them (Embedded + web creds)
+            if (hqp.instanceSupportsProfiles(instanceName)) {
+              dsp.profiles = `/hqp/profiles?${zoneParam}`;
+            }
+            return { ...zone, dsp };
+          }
+        } catch (err) {
+          log.error('Failed to enrich zone with DSP info', { zone_id: zone.zone_id, error: err.message });
+        }
+      }
+      return zone;
+    });
   }
 
   function getZonesSha() {
