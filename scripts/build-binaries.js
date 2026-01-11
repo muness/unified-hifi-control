@@ -100,12 +100,12 @@ async function buildTarget(target, output, entryPoint, excludeSharp = false) {
 
   const outputPath = path.join(DIST, output);
 
-  // LMS builds: use minimal pkg-lms.json config
+  // LMS builds: use pkg-lms.json config
   // Full builds: use package.json config for all assets
   let pkgArgs;
   if (excludeSharp) {
-    // LMS build - use minimal config that excludes sharp/mcp/ui
-    pkgArgs = `"${entryPoint}" --target ${target} --output "${outputPath}" --config pkg-lms.json`;
+    // LMS build - explicit entry + config
+    pkgArgs = `"${entryPoint}" --target ${target} --output "${outputPath}" --config pkg-lms.json --no-bytecode`;
   } else {
     // Full build - use package.json config for assets
     pkgArgs = `"${entryPoint}" --target ${target} --output "${outputPath}" --config package.json`;
