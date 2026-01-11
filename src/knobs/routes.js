@@ -786,7 +786,7 @@ function selectZone(zoneId) {
 function updateZoneDisplay(np) {
   if (!np) np = {};
   const zone = zonesData.find(z => z.zone_id === selectedZone);
-  const deviceInfo = zone?.device_name ? ' (' + zone.device_name + ')' : '';
+  const deviceInfo = zone?.device_name ? ' (' + esc(zone.device_name) + ')' : '';
   const dspBadge = zone?.dsp?.type === 'hqplayer' ? ' <span style="font-size:0.7em;background:#6366f1;color:white;padding:0.15em 0.4em;border-radius:3px;vertical-align:middle;">HQP</span>' : '';
   document.getElementById('zone-name').innerHTML = esc(zone?.zone_name || '') + deviceInfo + dspBadge;
   const track = esc(np.line1 || 'Stopped');
