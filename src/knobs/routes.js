@@ -583,8 +583,8 @@ async function loadZones() {
       const playIcon = np.is_playing ? '⏸' : '▶';
       const deviceInfo = zone.device_name ? ' <span class="muted">(' + esc(zone.device_name) + ')</span>' : '';
       const isHqp = zone.dsp?.type === 'hqplayer';
-      const dspBadge = isHqp ? ' <span style="font-size:0.7em;background:#6366f1;color:white;padding:0.15em 0.4em;border-radius:3px;vertical-align:middle;">DSP</span>' : '';
-      const profileSelect = isHqp && hqpProfiles.length > 0 ?
+      const dspBadge = isHqp ? ' <span style="font-size:0.7em;background:#6366f1;color:white;padding:0.15em 0.4em;border-radius:3px;vertical-align:middle;">HQP</span>' : '';
+      const profileSelect = zone.dsp?.profiles && hqpProfiles.length > 0 ?
         '<p class="muted" style="margin-top:0.5em;">Configuration: <select class="hqp-profile-select" style="padding:0.2em;">' +
         hqpProfiles.map(p => '<option value="' + escAttr(p.value) + '"' +
           ((hqpCurrentProfile && (p.title.toLowerCase() === hqpCurrentProfile.toLowerCase() || p.value === hqpCurrentProfile)) ? ' selected' : '') + '>' +
@@ -749,7 +749,7 @@ async function loadZones() {
 
   const sel = document.getElementById('zone-select');
   sel.innerHTML = '<option value="">-- Select Zone --</option>' + zonesData.map(z =>
-    '<option value="' + escAttr(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + (z.dsp ? ' [DSP]' : '') + '</option>'
+    '<option value="' + escAttr(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + (z.dsp?.type ? ' [' + z.dsp.type.toUpperCase().replace('HQPLAYER', 'HQP') + ']' : '') + '</option>'
   ).join('');
 
   // Auto-restore saved zone on first load
@@ -808,7 +808,9 @@ function updateZoneDisplay(np) {
   if (shouldShowHqp && wasHidden) {
     document.getElementById('hqp-loading').classList.remove('hidden');
     document.getElementById('hqp-controls').classList.add('hidden');
-    loadHqpPipeline();
+    document.getElementById('hqp-msg').textContent = '';
+    const pipelineUrl = zone?.dsp?.pipeline || '/hqp/pipeline';
+    loadHqpPipeline(pipelineUrl).catch(e => console.error('Pipeline load error:', e));
   }
 }
 
@@ -835,7 +837,7 @@ async function loadHqpStatus() {
       document.getElementById('hqp-status').textContent = data.connected ? 'Connected' : 'Disconnected';
       document.getElementById('hqp-status').className = data.connected ? 'success' : 'error';
       loadHqpProfiles(data.configName);
-      loadHqpPipeline();
+      loadHqpPipeline().catch(e => console.error('Pipeline load error:', e));
     } else {
       document.getElementById('hqp-not-configured').classList.remove('hidden');
       document.getElementById('hqp-configured').classList.add('hidden');
@@ -871,8 +873,8 @@ async function loadHqpProfiles(configName) {
   });
 }
 
-async function loadHqpPipeline() {
-  const res = await fetch('/hqp/pipeline');
+async function loadHqpPipeline(url = '/hqp/pipeline') {
+  const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const data = await res.json();
   if (!data.settings) return;
@@ -919,6 +921,7 @@ async function loadProfile(profile) {
 async function loadHqpMatrix() {
   try {
     const res = await fetch('/hqp/matrix/profiles');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const row = document.getElementById('hqp-matrix-row');
     const sel = document.getElementById('hqp-matrix');
@@ -948,13 +951,19 @@ async function setMatrixProfile(profile) {
   msg.className = 'status-msg';
   document.body.style.cursor = 'wait';
 
-  const res = await fetch('/hqp/matrix/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile }) });
-  msg.textContent = res.ok ? 'Matrix updated' : 'Error';
-  msg.className = 'status-msg ' + (res.ok ? 'success' : 'error');
-
-  // Re-enable controls
-  selects.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
-  document.body.style.cursor = '';
+  try {
+    const res = await fetch('/hqp/matrix/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile }) });
+    msg.textContent = res.ok ? 'Matrix updated' : 'Error';
+    msg.className = 'status-msg ' + (res.ok ? 'success' : 'error');
+  } catch (e) {
+    msg.textContent = 'Error';
+    msg.className = 'status-msg error';
+    console.error('Matrix profile error:', e);
+  } finally {
+    // Re-enable controls
+    selects.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
+    document.body.style.cursor = 'default';
+  }
 }
 
 async function setPipeline(setting, value) {
@@ -989,8 +998,7 @@ async function setPipeline(setting, value) {
   document.body.style.cursor = 'default';
 }
 
-loadZones();
-loadHqpStatus().then(() => loadZones()); // Re-check zones after HQP status known
+loadHqpStatus().finally(loadZones); // Load zones after HQP status known
 setInterval(loadZones, 4000);
 </script></body></html>`);
   });
