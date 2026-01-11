@@ -16,8 +16,8 @@ Zones are returned by `/zones`, `/admin/status.json`, and other endpoints.
     "type": "hqplayer",
     "instance": "HQP-Main",
     "pipeline": "/hqp/pipeline?zone_id=roon%3A1234",
-    "matrix": "/hqp/matrix/profiles",
-    "profiles": "/hqp/profiles"
+    "matrix": "/hqp/matrix/profiles?zone_id=roon%3A1234",
+    "profiles": "/hqp/profiles?zone_id=roon%3A1234"
   }
 }
 ```

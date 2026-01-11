@@ -139,15 +139,16 @@ function createBus({ logger, hqpService } = {}) {
         try {
           const instanceName = hqp.getInstanceForZone(zone.zone_id);
           if (instanceName) {
+            const zoneParam = `zone_id=${encodeURIComponent(zone.zone_id)}`;
             const dsp = {
               type: 'hqplayer',
               instance: instanceName,
-              pipeline: `/hqp/pipeline?zone_id=${encodeURIComponent(zone.zone_id)}`,
-              matrix: '/hqp/matrix/profiles',
+              pipeline: `/hqp/pipeline?${zoneParam}`,
+              matrix: `/hqp/matrix/profiles?${zoneParam}`,
             };
             // Only include profiles URL if instance supports them (Embedded + web creds)
             if (hqp.instanceSupportsProfiles(instanceName)) {
-              dsp.profiles = '/hqp/profiles';
+              dsp.profiles = `/hqp/profiles?${zoneParam}`;
             }
             return { ...zone, dsp };
           }

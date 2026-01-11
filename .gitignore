@@ -11,3 +11,4 @@ firmware/version.json
 
 # Superego
 .superego/
+.wm/
