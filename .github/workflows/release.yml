@@ -253,3 +253,70 @@ jobs:
             artifacts/lms-plugin/*.zip
             artifacts/synology-packages/*.spk
             artifacts/qnap-packages/*.qpkg
+
+  update-repo-xml:
+    name: Update LMS repo.xml
+    needs: upload-release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Get release version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Download LMS zip and compute SHA
+        id: sha
+        run: |
+          ZIP_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/lms-unified-hifi-control-${{ steps.version.outputs.version }}.zip"
+          echo "Downloading $ZIP_URL"
+          curl -sL "$ZIP_URL" -o lms-plugin.zip
+          SHA=$(shasum lms-plugin.zip | cut -d' ' -f1)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "Computed SHA: $SHA"
+
+      - name: Update repo.xml
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SHA="${{ steps.sha.outputs.sha }}"
+          REPO_URL="https://github.com/${{ github.repository }}"
+
+          cat > lms-plugin/repo.xml << 'REPOXML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <extensions>
+            <plugins>
+              <plugin name="UnifiedHiFi"
+                      version="VERSION_PLACEHOLDER"
+                      minTarget="8.0"
+                      maxTarget="*">
+                <title lang="EN">Unified Hi-Fi Control</title>
+                <desc lang="EN">Source-agnostic hi-fi control bridge for Roon, LMS, HQPlayer, and hardware knobs. Provides HTTP APIs, MQTT integration, and web UI for controlling your audio system from anywhere.</desc>
+                <url>URL_PLACEHOLDER</url>
+                <sha>SHA_PLACEHOLDER</sha>
+                <creator>Muness Castle</creator>
+                <link>https://forums.lyrion.org/forum/user-forums/3rd-party-hardware/1804977-roon-knob-includes-lms-support</link>
+              </plugin>
+            </plugins>
+          </extensions>
+          REPOXML
+
+          # Remove leading whitespace and substitute placeholders
+          sed -i 's/^          //' lms-plugin/repo.xml
+          sed -i "s|VERSION_PLACEHOLDER|$VERSION|" lms-plugin/repo.xml
+          sed -i "s|URL_PLACEHOLDER|${REPO_URL}/releases/download/v${VERSION}/lms-unified-hifi-control-${VERSION}.zip|" lms-plugin/repo.xml
+          sed -i "s|SHA_PLACEHOLDER|$SHA|" lms-plugin/repo.xml
+
+          cat lms-plugin/repo.xml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lms-plugin/repo.xml
+          git commit -m "chore: Update repo.xml to v${{ steps.version.outputs.version }} [skip ci]"
+          git push
