@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Post-install script for Unified Hi-Fi Control
+
+set -e
+
+# Create data directory
+mkdir -p /usr/local/var/unified-hifi-control
+mkdir -p /usr/local/var/log
+
+# Set permissions
+chmod 755 /usr/local/bin/unified-hifi-control
+
+# Load the LaunchDaemon
+launchctl load /Library/LaunchDaemons/com.cloudatlas.unified-hifi-control.plist 2>/dev/null || true
+
+# Start the service
+launchctl start com.cloudatlas.unified-hifi-control 2>/dev/null || true
+
+echo "Unified Hi-Fi Control installed successfully!"
+echo "Web UI available at: http://localhost:8088"
+
+exit 0

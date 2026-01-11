@@ -1,0 +1,16 @@
+#!/bin/bash
+
+PACKAGE_NAME="unified-hifi-control"
+PACKAGE_DIR="/var/packages/${PACKAGE_NAME}"
+TARGET_DIR="${PACKAGE_DIR}/target"
+
+# Make binary executable
+chmod +x "${TARGET_DIR}/unified-hifi-control"
+
+# Create data directory if it doesn't exist
+mkdir -p "${PACKAGE_DIR}/var"
+
+echo "Unified Hi-Fi Control installed successfully"
+echo "Access the web UI at http://$(hostname):8088"
+
+exit 0

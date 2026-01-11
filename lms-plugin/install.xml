@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+  <plugin name="PLUGIN_UNIFIED_HIFI"
+          version="2.4.1"
+          module="Plugins::UnifiedHiFi::Plugin"
+          enabled="1">
+    <creator>Muness Castle</creator>
+    <email>muness@alrubaie.net</email>
+    <name>PLUGIN_UNIFIED_HIFI</name>
+    <title lang="EN">Unified Hi-Fi Control</title>
+    <desc lang="EN">Source-agnostic hi-fi control bridge for Roon, LMS, HQPlayer, and hardware knobs. Provides HTTP APIs, MQTT integration, and web UI.</desc>
+    <minTarget>8.0</minTarget>
+    <maxTarget>*</maxTarget>
+    <settings>plugins/UnifiedHiFi/settings/basic.html</settings>
+  </plugin>
+</extensions>
