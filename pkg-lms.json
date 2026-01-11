@@ -1,0 +1,11 @@
+{
+  "scripts": [
+    "src/lms-entry.js",
+    "src/lms/**/*.js",
+    "src/lib/**/*.js",
+    "src/knobs/**/*.js"
+  ],
+  "assets": [
+    "package.json"
+  ]
+}
