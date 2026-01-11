@@ -1,4 +1,5 @@
 {
+  "main": "src/lms-entry.js",
   "scripts": [
     "src/lms-entry.js",
     "src/lms/**/*.js",
