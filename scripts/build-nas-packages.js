@@ -58,9 +58,13 @@ async function main() {
     process.exit(1);
   }
 
-  // Build packages for each architecture
+  // Build Synology packages for each architecture (uses binaries)
   for (const binary of binaries) {
     results.push(await buildSynologyPackage(binary));
+  }
+
+  // Build QNAP packages for each architecture (uses static binaries)
+  for (const binary of binaries) {
     results.push(await buildQnapPackage(binary));
   }
 
@@ -163,64 +167,51 @@ async function buildSynologyPackage(binary) {
 async function buildQnapPackage(binary) {
   const arch = QNAP_ARCHS[binary.platform];
   const result = { name: `QNAP QPKG (${arch})`, success: false };
+  let tempDir = null;
 
-  console.log(`Building QNAP package for ${arch}...`);
+  console.log(`Building QNAP package for ${arch} (static binary)...`);
 
   try {
-    const tempDir = fs.mkdtempSync(path.join(DIST, 'qnap-'));
-    const sharedDir = path.join(tempDir, 'shared');
+    tempDir = fs.mkdtempSync(path.join(DIST, 'qnap-'));
 
-    // Create shared directory
+    // Create QDK2 directory structure - shared only
+    const sharedDir = path.join(tempDir, 'shared');
     fs.mkdirSync(sharedDir, { recursive: true });
 
-    // Copy binary
+    // Copy static binary
     fs.copyFileSync(binary.path, path.join(sharedDir, 'unified-hifi-control'));
     fs.chmodSync(path.join(sharedDir, 'unified-hifi-control'), 0o755);
 
-    // Copy scripts from build/qnap/shared
-    const qnapSharedSrc = path.join(BUILD, 'qnap', 'shared');
-    const sharedFiles = fs.readdirSync(qnapSharedSrc);
-    for (const file of sharedFiles) {
-      fs.copyFileSync(path.join(qnapSharedSrc, file), path.join(sharedDir, file));
-      fs.chmodSync(path.join(sharedDir, file), 0o755);
-    }
+    // Copy service script
+    fs.copyFileSync(
+      path.join(BUILD, 'qnap', 'shared', 'unified-hifi-control.sh'),
+      path.join(sharedDir, 'unified-hifi-control.sh')
+    );
+    fs.chmodSync(path.join(sharedDir, 'unified-hifi-control.sh'), 0o755);
 
     // Copy and process qpkg.cfg
     let cfgContent = fs.readFileSync(path.join(BUILD, 'qnap', 'qpkg.cfg'), 'utf8');
     cfgContent = cfgContent.replace(/\{\{VERSION\}\}/g, VERSION);
     fs.writeFileSync(path.join(tempDir, 'qpkg.cfg'), cfgContent);
 
-    // Create data.tar.gz from shared
-    const dataTar = path.join(tempDir, 'data.tar.gz');
-    execSync(`tar -czf "${dataTar}" -C "${sharedDir}" .`, { stdio: 'pipe' });
+    // Create package_routines (empty but required by qbuild)
+    fs.writeFileSync(path.join(tempDir, 'package_routines'), '#!/bin/sh\n');
 
-    // Create control.tar.gz (empty for basic packages)
-    const controlDir = path.join(tempDir, 'control');
-    fs.mkdirSync(controlDir, { recursive: true });
-    fs.writeFileSync(path.join(controlDir, 'control'), `Package: unified-hifi-control
-Version: ${VERSION}
-Architecture: ${arch}
-Maintainer: Muness Castle
-Description: Source-agnostic hi-fi control bridge
-`);
-    const controlTar = path.join(tempDir, 'control.tar.gz');
-    execSync(`tar -czf "${controlTar}" -C "${controlDir}" .`, { stdio: 'pipe' });
-
-    // Create placeholder icon
-    createPlaceholderIcon(path.join(tempDir, 'unified-hifi-control.png'), 64);
-
-    // Build QPKG
+    // Build QPKG using Docker with qbuild
     const qpkgName = `unified-hifi-control_${VERSION}_${arch}.qpkg`;
+    const dockerCmd = `docker run --rm --platform linux/amd64 -v "${tempDir}:/src" -w /src owncloudci/qnap-qpkg-builder:latest sh -c "/usr/share/qdk2/QDK/bin/qbuild --build-dir /src/build && cp /src/build/*.qpkg /src/ && chmod 666 /src/*.qpkg && rm -rf /src/build"`;
+    console.log('  Running qbuild...');
+    execSync(dockerCmd, { stdio: 'inherit' });
+
+    // Find the generated QPKG file
+    const qpkgFiles = fs.readdirSync(tempDir).filter(f => f.endsWith('.qpkg'));
+    if (qpkgFiles.length === 0) {
+      throw new Error('qbuild did not produce a QPKG file');
+    }
+
+    // Copy to installers directory
     const qpkgPath = path.join(INSTALLERS, qpkgName);
-
-    // QPKG is essentially a shell script with embedded tar
-    // For simplicity, we'll create a tar archive (real QPKG needs qbuild tool)
-    execSync(`tar -cf "${qpkgPath}" -C "${tempDir}" qpkg.cfg data.tar.gz control.tar.gz unified-hifi-control.png`, {
-      stdio: 'pipe'
-    });
-
-    // Cleanup
-    fs.rmSync(tempDir, { recursive: true });
+    fs.copyFileSync(path.join(tempDir, qpkgFiles[0]), qpkgPath);
 
     const stats = fs.statSync(qpkgPath);
     result.success = true;
@@ -231,7 +222,18 @@ Description: Source-agnostic hi-fi control bridge
 
   } catch (err) {
     result.error = err.message;
-    console.error(`  ✗ QNAP (${arch}): ${err.message}`);
+    console.error(`  ✗ QNAP: ${err.message}`);
+  } finally {
+    // Always cleanup temp directory - use Docker to remove root-owned files
+    if (tempDir && fs.existsSync(tempDir)) {
+      try {
+        fs.rmSync(tempDir, { recursive: true });
+      } catch {
+        // If Node can't delete (root-owned files), use Docker
+        execSync(`docker run --rm -v "${tempDir}:/src" alpine rm -rf /src/*`, { stdio: 'pipe' });
+        fs.rmSync(tempDir, { recursive: true });
+      }
+    }
   }
 
   return result;

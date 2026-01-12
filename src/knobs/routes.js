@@ -1,8 +1,9 @@
 const express = require('express');
-const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
 const busDebug = require('../bus/debug');
+const { read: readImage, resize: resizeImage, encodeJpeg } = require('../lib/image');
+const { getDataDir } = require('../lib/paths');
 
 function extractKnob(req) {
   const headerId = req.get('x-knob-id') || req.get('x-device-id');
@@ -112,22 +113,22 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
           const targetWidth = parseInt(width) || 360;
           const targetHeight = parseInt(height) || 360;
 
-          const rgb565Buffer = await sharp(body)
-            .resize(targetWidth, targetHeight, { fit: 'cover' })
-            .removeAlpha()
-            .raw()
-            .toBuffer({ resolveWithObject: true });
+          // Use pure JS image processing (jpeg-js + bilinear resize)
+          const decoded = readImage(body);
+          const resized = resizeImage(decoded, targetWidth, targetHeight);
 
-          const rgb888 = rgb565Buffer.data;
+          // RGBA data (4 bytes per pixel)
+          const rgba = resized.data;
           const rgb565 = Buffer.alloc(targetWidth * targetHeight * 2);
 
-          for (let i = 0; i < rgb888.length; i += 3) {
-            const r = rgb888[i] >> 3;
-            const g = rgb888[i + 1] >> 2;
-            const b = rgb888[i + 2] >> 3;
+          for (let i = 0; i < rgba.length; i += 4) {
+            const r = rgba[i] >> 3;
+            const g = rgba[i + 1] >> 2;
+            const b = rgba[i + 2] >> 3;
+            // Skip alpha at rgba[i + 3]
 
             const rgb565Pixel = (r << 11) | (g << 5) | b;
-            const pixelIndex = (i / 3) * 2;
+            const pixelIndex = (i / 4) * 2;
 
             rgb565[pixelIndex] = rgb565Pixel & 0xFF;
             rgb565[pixelIndex + 1] = (rgb565Pixel >> 8) & 0xFF;
@@ -158,10 +159,10 @@ function createKnobRoutes({ bus, roon, knobs, adapterFactory, logger }) {
             const targetWidth = parseInt(width) || parseInt(height) || 360;
             const targetHeight = parseInt(height) || parseInt(width) || 360;
 
-            const resizedBody = await sharp(body)
-              .resize(targetWidth, targetHeight, { fit: 'cover' })
-              .jpeg({ quality: 80, progressive: false, mozjpeg: false })
-              .toBuffer();
+            // Use pure JS image processing (jpeg-js + bilinear resize)
+            const decoded = readImage(body);
+            const resized = resizeImage(decoded, targetWidth, targetHeight);
+            const resizedBody = encodeJpeg(resized, 80);
 
             log.info('Resized JPEG image', {
               originalSize: body.length,
@@ -1854,7 +1855,7 @@ loadAdapterSettings();
 
   // Firmware download config
   const https = require('https');
-  const CONFIG_DIR = process.env.CONFIG_DIR || path.join(__dirname, '..', '..', 'data');
+  const CONFIG_DIR = getDataDir();
   const FIRMWARE_DIR = process.env.FIRMWARE_DIR || path.join(CONFIG_DIR, 'firmware');
   const GITHUB_REPO = process.env.FIRMWARE_REPO || 'muness/roon-knob';
 
