@@ -1,0 +1,59 @@
+[package]
+name = "unified-hifi-control"
+version = "0.1.0"
+edition = "2021"
+description = "Source-agnostic hi-fi control bridge for hardware surfaces and Home Assistant"
+license = "MIT"
+repository = "https://github.com/open-horizon-labs/unified-hifi-control"
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace"] }
+
+# Roon API (the key discovery!)
+# Package is named "roon-api" in Cargo.toml, repo is "rust-roon-api"
+roon-api = { git = "https://github.com/TheAppgineer/rust-roon-api.git", tag = "0.2.0", features = ["transport", "image", "status"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP client (for HQPlayer)
+reqwest = { version = "0.12", features = ["json"] }
+
+# XML parsing (for HQPlayer protocol)
+quick-xml = { version = "0.37", features = ["serialize"] }
+
+# MQTT
+rumqttc = "0.24"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Config
+config = "0.14"
+directories = "6"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Async utilities
+futures = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# Cross-compilation targets for static musl builds
+# Build with: cargo build --release --target x86_64-unknown-linux-musl
+# Or use cross: cross build --release --target x86_64-unknown-linux-musl

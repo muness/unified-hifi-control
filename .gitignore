@@ -12,3 +12,5 @@ firmware/version.json
 # Superego
 .superego/
 .wm/
+/target/
+Cargo.lock
