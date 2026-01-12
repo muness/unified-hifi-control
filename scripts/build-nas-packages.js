@@ -63,8 +63,10 @@ async function main() {
     results.push(await buildSynologyPackage(binary));
   }
 
-  // Build single QNAP package (uses Node.js QPKG, architecture-independent)
-  results.push(await buildQnapPackage());
+  // Build QNAP packages for each architecture (uses static binaries)
+  for (const binary of binaries) {
+    results.push(await buildQnapPackage(binary));
+  }
 
   // Summary
   console.log(`\n${'='.repeat(50)}`);
@@ -162,19 +164,12 @@ async function buildSynologyPackage(binary) {
   return result;
 }
 
-async function buildQnapPackage() {
-  const result = { name: 'QNAP QPKG', success: false };
+async function buildQnapPackage(binary) {
+  const arch = QNAP_ARCHS[binary.platform];
+  const result = { name: `QNAP QPKG (${arch})`, success: false };
   let tempDir = null;
 
-  // Use static binary (musl-linked, no glibc dependency)
-  const x64Binary = path.join(BINARIES, 'unified-hifi-linux-x64');
-  if (!fs.existsSync(x64Binary)) {
-    result.error = 'Linux x64 binary not found. Run npm run build:binaries first.';
-    console.error(`  ✗ QNAP: ${result.error}`);
-    return result;
-  }
-
-  console.log('Building QNAP package (static binary, x86_64)...');
+  console.log(`Building QNAP package for ${arch} (static binary)...`);
 
   try {
     tempDir = fs.mkdtempSync(path.join(DIST, 'qnap-'));
@@ -184,7 +179,7 @@ async function buildQnapPackage() {
     fs.mkdirSync(sharedDir, { recursive: true });
 
     // Copy static binary
-    fs.copyFileSync(x64Binary, path.join(sharedDir, 'unified-hifi-control'));
+    fs.copyFileSync(binary.path, path.join(sharedDir, 'unified-hifi-control'));
     fs.chmodSync(path.join(sharedDir, 'unified-hifi-control'), 0o755);
 
     // Copy service script
@@ -203,7 +198,7 @@ async function buildQnapPackage() {
     fs.writeFileSync(path.join(tempDir, 'package_routines'), '#!/bin/sh\n');
 
     // Build QPKG using Docker with qbuild
-    const qpkgName = `unified-hifi-control_${VERSION}.qpkg`;
+    const qpkgName = `unified-hifi-control_${VERSION}_${arch}.qpkg`;
     const dockerCmd = `docker run --rm --platform linux/amd64 -v "${tempDir}:/src" -w /src owncloudci/qnap-qpkg-builder:latest sh -c "/usr/share/qdk2/QDK/bin/qbuild --build-dir /src/build && cp /src/build/*.qpkg /src/ && chmod 666 /src/*.qpkg && rm -rf /src/build"`;
     console.log('  Running qbuild...');
     execSync(dockerCmd, { stdio: 'inherit' });
