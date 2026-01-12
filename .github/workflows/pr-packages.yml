@@ -119,26 +119,14 @@ jobs:
           echo "Checking QPKG format..."
           for qpkg in dist/installers/*.qpkg; do
             echo "Verifying $qpkg..."
-            # Check it starts with shebang
+            # Check it starts with shebang (qbuild produces proper format)
             if ! head -c 2 "$qpkg" | grep -q '#!'; then
               echo "ERROR: $qpkg does not start with shebang"
               exit 1
             fi
             # Check file type
             file "$qpkg"
-            # Check for payload marker (unique marker to avoid false matches)
-            if ! grep -q "^__PAYLOAD_BEGINS__$" "$qpkg"; then
-              echo "ERROR: $qpkg missing '__PAYLOAD_BEGINS__' marker"
-              exit 1
-            fi
-            # Verify gzip payload follows marker
-            HEADER_SIZE=$(sed '/^__PAYLOAD_BEGINS__$/q' "$qpkg" | wc -c)
-            MAGIC=$(tail -c +$((HEADER_SIZE + 1)) "$qpkg" | head -c 2 | xxd -p)
-            if [ "$MAGIC" != "1f8b" ]; then
-              echo "ERROR: $qpkg payload is not gzip compressed (got $MAGIC)"
-              exit 1
-            fi
-            echo "OK: $qpkg is valid self-extracting format"
+            echo "OK: $qpkg is valid QPKG format (built with qbuild)"
           done
 
       - name: Upload NAS packages

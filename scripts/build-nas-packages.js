@@ -162,51 +162,57 @@ async function buildSynologyPackage(binary) {
 
 async function buildQnapPackage(binary) {
   const arch = QNAP_ARCHS[binary.platform];
+  const qdkArch = arch === 'x86_64' ? 'x86_64' : 'arm_64';
   const result = { name: `QNAP QPKG (${arch})`, success: false };
   let tempDir = null;
 
-  console.log(`Building QNAP package for ${arch}...`);
+  console.log(`Building QNAP package for ${arch} using qbuild...`);
 
   try {
     tempDir = fs.mkdtempSync(path.join(DIST, 'qnap-'));
-    const payloadDir = path.join(tempDir, 'payload');
 
-    // Create payload directory (contents that will be installed)
-    fs.mkdirSync(payloadDir, { recursive: true });
+    // Create QDK2 directory structure
+    const sharedDir = path.join(tempDir, 'shared');
+    const archDir = path.join(tempDir, qdkArch);
+    fs.mkdirSync(sharedDir, { recursive: true });
+    fs.mkdirSync(archDir, { recursive: true });
 
-    // Copy binary
-    fs.copyFileSync(binary.path, path.join(payloadDir, 'unified-hifi-control'));
-    fs.chmodSync(path.join(payloadDir, 'unified-hifi-control'), 0o755);
-
-    // Copy scripts from build/qnap/shared
+    // Copy shared scripts
     const qnapSharedSrc = path.join(BUILD, 'qnap', 'shared');
     const sharedFiles = fs.readdirSync(qnapSharedSrc);
     for (const file of sharedFiles) {
-      fs.copyFileSync(path.join(qnapSharedSrc, file), path.join(payloadDir, file));
-      fs.chmodSync(path.join(payloadDir, file), 0o755);
+      fs.copyFileSync(path.join(qnapSharedSrc, file), path.join(sharedDir, file));
+      fs.chmodSync(path.join(sharedDir, file), 0o755);
     }
 
-    // Create payload.tar.gz
-    const payloadTar = path.join(tempDir, 'payload.tar.gz');
-    execSync(`tar -czf "${payloadTar}" -C "${payloadDir}" .`, { stdio: 'pipe' });
+    // Copy binary to arch-specific directory
+    fs.copyFileSync(binary.path, path.join(archDir, 'unified-hifi-control'));
+    fs.chmodSync(path.join(archDir, 'unified-hifi-control'), 0o755);
 
-    // Read and process header template
-    let headerContent = fs.readFileSync(path.join(BUILD, 'qnap', 'qpkg_header.sh'), 'utf8');
-    headerContent = headerContent.replace(/\{\{VERSION\}\}/g, VERSION);
-    const headerPath = path.join(tempDir, 'header.sh');
-    fs.writeFileSync(headerPath, headerContent);
+    // Copy and process qpkg.cfg
+    let cfgContent = fs.readFileSync(path.join(BUILD, 'qnap', 'qpkg.cfg'), 'utf8');
+    cfgContent = cfgContent.replace(/\{\{VERSION\}\}/g, VERSION);
+    fs.writeFileSync(path.join(tempDir, 'qpkg.cfg'), cfgContent);
 
-    // Build QPKG: concatenate header + payload
-    // QPKG is a self-extracting shell script with embedded tar.gz
+    // Create package_routines (empty but required by qbuild)
+    fs.writeFileSync(path.join(tempDir, 'package_routines'), '#!/bin/sh\n');
+
+    // Build QPKG using Docker with qbuild
+    const dockerCmd = `docker run --rm -v "${tempDir}:/src" dorowu/qdk2-build qbuild --build-dir /src/build --xz ${qdkArch}`;
+    console.log(`  Running: ${dockerCmd}`);
+    execSync(dockerCmd, { stdio: 'inherit' });
+
+    // Find the generated QPKG file
+    const buildDir = path.join(tempDir, 'build');
+    const qpkgFiles = fs.readdirSync(buildDir).filter(f => f.endsWith('.qpkg'));
+    if (qpkgFiles.length === 0) {
+      throw new Error('qbuild did not produce a QPKG file');
+    }
+
+    // Copy to installers directory with our naming convention
     const qpkgName = `unified-hifi-control_${VERSION}_${arch}.qpkg`;
     const qpkgPath = path.join(INSTALLERS, qpkgName);
-
-    // Concatenate: header.sh + payload.tar.gz
-    const headerData = fs.readFileSync(headerPath);
-    const payloadData = fs.readFileSync(payloadTar);
-    const qpkgData = Buffer.concat([headerData, payloadData]);
-    fs.writeFileSync(qpkgPath, qpkgData);
-    fs.chmodSync(qpkgPath, 0o755);
+    fs.copyFileSync(path.join(buildDir, qpkgFiles[0]), qpkgPath);
 
     const stats = fs.statSync(qpkgPath);
     result.success = true;
