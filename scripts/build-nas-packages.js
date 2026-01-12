@@ -199,21 +199,21 @@ async function buildQnapPackage(binary) {
 
     // Build QPKG using Docker with qbuild
     // qbuild is at /usr/share/qdk2/QDK/bin/qbuild in the image
-    const dockerCmd = `docker run --rm --platform linux/amd64 -v "${tempDir}:/src" -w /src dorowu/qdk2-build /usr/share/qdk2/QDK/bin/qbuild --build-dir /src/build --xz ${qdkArch}`;
-    console.log(`  Running: ${dockerCmd}`);
+    // Run qbuild, copy result to /src/output, and fix permissions so host can delete
+    const qpkgName = `unified-hifi-control_${VERSION}_${arch}.qpkg`;
+    const dockerCmd = `docker run --rm --platform linux/amd64 -v "${tempDir}:/src" -w /src dorowu/qdk2-build sh -c "/usr/share/qdk2/QDK/bin/qbuild --build-dir /src/build --xz ${qdkArch} && cp /src/build/*.qpkg /src/ && chmod 666 /src/*.qpkg && rm -rf /src/build"`;
+    console.log(`  Running qbuild...`);
     execSync(dockerCmd, { stdio: 'inherit' });
 
-    // Find the generated QPKG file
-    const buildDir = path.join(tempDir, 'build');
-    const qpkgFiles = fs.readdirSync(buildDir).filter(f => f.endsWith('.qpkg'));
+    // Find the generated QPKG file in temp dir (copied there by docker command)
+    const qpkgFiles = fs.readdirSync(tempDir).filter(f => f.endsWith('.qpkg'));
     if (qpkgFiles.length === 0) {
       throw new Error('qbuild did not produce a QPKG file');
     }
 
     // Copy to installers directory with our naming convention
-    const qpkgName = `unified-hifi-control_${VERSION}_${arch}.qpkg`;
     const qpkgPath = path.join(INSTALLERS, qpkgName);
-    fs.copyFileSync(path.join(buildDir, qpkgFiles[0]), qpkgPath);
+    fs.copyFileSync(path.join(tempDir, qpkgFiles[0]), qpkgPath);
 
     const stats = fs.statSync(qpkgPath);
     result.success = true;
@@ -226,9 +226,15 @@ async function buildQnapPackage(binary) {
     result.error = err.message;
     console.error(`  ✗ QNAP (${arch}): ${err.message}`);
   } finally {
-    // Always cleanup temp directory
+    // Always cleanup temp directory - use Docker to remove root-owned files
     if (tempDir && fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true });
+      try {
+        fs.rmSync(tempDir, { recursive: true });
+      } catch {
+        // If Node can't delete (root-owned files), use Docker
+        execSync(`docker run --rm -v "${tempDir}:/src" alpine rm -rf /src/*`, { stdio: 'pipe' });
+        fs.rmSync(tempDir, { recursive: true });
+      }
     }
   }
 
