@@ -47,6 +47,7 @@ jobs:
 
   build-linux:
     name: Build Linux (musl static)
+    needs: [lint, test]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -83,6 +84,7 @@ jobs:
 
   build-macos:
     name: Build macOS
+    needs: [lint, test]
     runs-on: macos-latest
     strategy:
       matrix:
@@ -119,6 +121,7 @@ jobs:
 
   build-windows:
     name: Build Windows
+    needs: [lint, test]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
