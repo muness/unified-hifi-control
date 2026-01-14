@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use serde::Deserialize;
-use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -199,7 +198,7 @@ pub fn migrate_nodejs_configs() {
 }
 
 /// Migrate Roon config from Node.js format
-fn migrate_roon_config(data_dir: &PathBuf) {
+fn migrate_roon_config(data_dir: &std::path::Path) {
     let nodejs_path = data_dir.join("roon-config.json");
     let rust_path = data_dir.join("roon_state.json");
 
@@ -225,7 +224,7 @@ fn migrate_roon_config(data_dir: &PathBuf) {
 }
 
 /// Migrate HQPlayer config from Node.js format
-fn migrate_hqp_config(data_dir: &PathBuf) {
+fn migrate_hqp_config(data_dir: &std::path::Path) {
     let hqp_path = data_dir.join("hqp-config.json");
 
     if !hqp_path.exists() {

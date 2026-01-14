@@ -773,7 +773,7 @@ impl UPnPAdapter {
                 let url = rc_url
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("No RenderingControl URL"))?;
-                let vol = value.unwrap_or(50).max(0).min(100);
+                let vol = value.unwrap_or(50).clamp(0, 100);
                 Self::soap_call(
                     &self.http,
                     url,
@@ -800,7 +800,7 @@ impl UPnPAdapter {
                         .and_then(|r| r.volume)
                         .unwrap_or(50)
                 };
-                let new_vol = (current + delta).max(0).min(100);
+                let new_vol = (current + delta).clamp(0, 100);
 
                 Self::soap_call(
                     &self.http,

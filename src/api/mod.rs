@@ -41,6 +41,7 @@ pub struct AppState {
 }
 
 impl AppState {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         roon: RoonAdapter,
         hqplayer: Arc<HqpAdapter>,

@@ -86,16 +86,17 @@ pub struct EventBus {
     sender: broadcast::Sender<BusEvent>,
 }
 
+impl Default for EventBus {
+    fn default() -> Self {
+        Self::new(256)
+    }
+}
+
 impl EventBus {
     /// Create a new event bus with specified capacity
     pub fn new(capacity: usize) -> Self {
         let (sender, _) = broadcast::channel(capacity);
         Self { sender }
-    }
-
-    /// Create with default capacity (256 events)
-    pub fn default() -> Self {
-        Self::new(256)
     }
 
     /// Publish an event to all subscribers

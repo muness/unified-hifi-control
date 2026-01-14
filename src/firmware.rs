@@ -55,6 +55,12 @@ pub struct FirmwareService {
     state: Arc<RwLock<FirmwareState>>,
 }
 
+impl Default for FirmwareService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FirmwareService {
     pub fn new() -> Self {
         let client = Client::builder()

@@ -797,7 +797,7 @@ impl OpenHomeAdapter {
                 .await?;
             }
             "vol_abs" | "volume" => {
-                let vol = value.unwrap_or(50).max(0).min(100);
+                let vol = value.unwrap_or(50).clamp(0, 100);
                 Self::soap_call(
                     &self.http,
                     &volume_url,
@@ -818,7 +818,7 @@ impl OpenHomeAdapter {
                     let state = self.state.read().await;
                     state.devices.get(uuid).and_then(|d| d.volume).unwrap_or(50)
                 };
-                let new_vol = (current + delta).max(0).min(100);
+                let new_vol = (current + delta).clamp(0, 100);
 
                 Self::soap_call(
                     &self.http,

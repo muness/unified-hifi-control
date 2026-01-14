@@ -132,7 +132,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3);
 const PROFILE_PATH: &str = "/config/profile/load";
 /// Maximum reconnection attempts before giving up
-const MAX_RECONNECT_ATTEMPTS: u32 = 1;
+const MAX_RECONNECT_ATTEMPTS: u32 = 3;
 /// Delay between reconnection attempts
 const RECONNECT_DELAY: Duration = Duration::from_millis(200);
 
@@ -310,6 +310,7 @@ pub struct MatrixProfile {
 }
 
 /// Internal adapter state
+#[allow(dead_code)]
 struct HqpAdapterState {
     instance_name: Option<String>,
     host: Option<String>,
@@ -1570,7 +1571,7 @@ impl HqpAdapter {
         // POST with proper headers
         let mut request = self
             .http_client
-            .post(&format!("{}{}", base_url, PROFILE_PATH))
+            .post(format!("{}{}", base_url, PROFILE_PATH))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("Origin", &base_url)
             .header("Referer", &format!("{}{}", base_url, PROFILE_PATH));
@@ -1589,7 +1590,7 @@ impl HqpAdapter {
 
                     let mut request = self
                         .http_client
-                        .post(&format!("{}{}", base_url, PROFILE_PATH))
+                        .post(format!("{}{}", base_url, PROFILE_PATH))
                         .header("Content-Type", "application/x-www-form-urlencoded")
                         .header("Origin", &base_url)
                         .header("Referer", &format!("{}{}", base_url, PROFILE_PATH));

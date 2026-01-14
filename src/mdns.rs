@@ -17,7 +17,7 @@ pub fn advertise(port: u16, name: &str, base_url: &str) -> anyhow::Result<Servic
     // Create service info
     // Type is "_roonknob._tcp.local."
     let service_type = "_roonknob._tcp.local.";
-    let service_name = format!("{}.{}", name.replace(' ', "-"), service_type);
+    let _service_name = format!("{}.{}", name.replace(' ', "-"), service_type);
 
     let service_info = ServiceInfo::new(
         service_type,

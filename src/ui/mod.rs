@@ -10,8 +10,8 @@
 //! mobile-friendly design without custom CSS maintenance burden.
 
 use axum::{
-    extract::{Query, State},
-    response::{Html, IntoResponse, Json, Response},
+    extract::State,
+    response::{Html, IntoResponse},
 };
 use serde::Deserialize;
 

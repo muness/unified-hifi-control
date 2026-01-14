@@ -146,7 +146,7 @@ impl MqttAdapter {
         // Spawn event loop handler
         let state = self.state.clone();
         let bus = self.bus.clone();
-        let prefix = topic_prefix.clone();
+        let _prefix = topic_prefix.clone();
         let shutdown = self.shutdown.clone();
 
         tokio::spawn(async move {

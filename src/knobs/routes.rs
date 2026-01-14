@@ -58,7 +58,7 @@ pub struct ZonesResponse {
 /// GET /knob/zones - List all zones from all adapters
 pub async fn knob_zones_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
 ) -> Json<ZonesResponse> {
     let zones = get_all_zones_internal(&state).await;
     Json(ZonesResponse { zones })
@@ -188,16 +188,17 @@ pub async fn knob_now_playing_handler(
 
     if let Some(ref id) = knob_id {
         state.knobs.get_or_create(id, knob_version.as_deref()).await;
-        let mut status_update = KnobStatusUpdate::default();
-        status_update.zone_id = Some(zone_id.clone());
-        if let Some(level) = params.battery_level {
-            if level <= 100 {
-                status_update.battery_level = Some(level);
-            }
-        }
-        if let Some(ref charging) = params.battery_charging {
-            status_update.battery_charging = Some(charging == "1" || charging == "true");
-        }
+        let battery_level = params.battery_level.filter(|&level| level <= 100);
+        let battery_charging = params
+            .battery_charging
+            .as_ref()
+            .map(|c| c == "1" || c == "true");
+        let status_update = KnobStatusUpdate {
+            zone_id: Some(zone_id.clone()),
+            battery_level,
+            battery_charging,
+            ..Default::default()
+        };
         state.knobs.update_status(id, status_update).await;
         config_sha = state.knobs.get_config_sha(id).await;
     }
@@ -292,36 +293,27 @@ pub async fn knob_now_playing_handler(
         let state_str = device.state.clone();
 
         // Map line1/line2/line3 to title/artist/album
-        let title = np
-            .as_ref()
-            .map(|n| {
-                if n.line1.is_empty() {
-                    None
-                } else {
-                    Some(n.line1.clone())
-                }
-            })
-            .flatten();
-        let artist = np
-            .as_ref()
-            .map(|n| {
-                if n.line2.is_empty() {
-                    None
-                } else {
-                    Some(n.line2.clone())
-                }
-            })
-            .flatten();
-        let album = np
-            .as_ref()
-            .map(|n| {
-                if n.line3.is_empty() {
-                    None
-                } else {
-                    Some(n.line3.clone())
-                }
-            })
-            .flatten();
+        let title = np.as_ref().and_then(|n| {
+            if n.line1.is_empty() {
+                None
+            } else {
+                Some(n.line1.clone())
+            }
+        });
+        let artist = np.as_ref().and_then(|n| {
+            if n.line2.is_empty() {
+                None
+            } else {
+                Some(n.line2.clone())
+            }
+        });
+        let album = np.as_ref().and_then(|n| {
+            if n.line3.is_empty() {
+                None
+            } else {
+                Some(n.line3.clone())
+            }
+        });
 
         Ok(Json(NowPlayingResponse {
             zone_id: zone_id.clone(),
@@ -362,36 +354,27 @@ pub async fn knob_now_playing_handler(
         let state_str = zone.state.clone();
 
         // Map line1/line2/line3 to title/artist/album
-        let title = np
-            .as_ref()
-            .map(|n| {
-                if n.line1.is_empty() {
-                    None
-                } else {
-                    Some(n.line1.clone())
-                }
-            })
-            .flatten();
-        let artist = np
-            .as_ref()
-            .map(|n| {
-                if n.line2.is_empty() {
-                    None
-                } else {
-                    Some(n.line2.clone())
-                }
-            })
-            .flatten();
-        let album = np
-            .as_ref()
-            .map(|n| {
-                if n.line3.is_empty() {
-                    None
-                } else {
-                    Some(n.line3.clone())
-                }
-            })
-            .flatten();
+        let title = np.as_ref().and_then(|n| {
+            if n.line1.is_empty() {
+                None
+            } else {
+                Some(n.line1.clone())
+            }
+        });
+        let artist = np.as_ref().and_then(|n| {
+            if n.line2.is_empty() {
+                None
+            } else {
+                Some(n.line2.clone())
+            }
+        });
+        let album = np.as_ref().and_then(|n| {
+            if n.line3.is_empty() {
+                None
+            } else {
+                Some(n.line3.clone())
+            }
+        });
 
         Ok(Json(NowPlayingResponse {
             zone_id: zone_id.clone(),
@@ -624,7 +607,7 @@ pub struct KnobControlRequest {
 /// POST /knob/control - Send control command (routes by zone_id prefix)
 pub async fn knob_control_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Json(req): Json<KnobControlRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     // Route based on zone_id prefix

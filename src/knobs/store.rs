@@ -16,19 +16,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Power mode configuration (timeout-based state transition)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PowerModeConfig {
     pub enabled: bool,
     pub timeout_sec: u32,
-}
-
-impl Default for PowerModeConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            timeout_sec: 0,
-        }
-    }
 }
 
 /// Knob configuration (synced to device via config_sha)
@@ -153,11 +144,11 @@ impl KnobStore {
         }
     }
 
-    fn knobs_file(data_dir: &PathBuf) -> PathBuf {
+    fn knobs_file(data_dir: &std::path::Path) -> PathBuf {
         data_dir.join("knobs.json")
     }
 
-    fn load_from_disk(data_dir: &PathBuf) -> HashMap<String, Knob> {
+    fn load_from_disk(data_dir: &std::path::Path) -> HashMap<String, Knob> {
         let path = Self::knobs_file(data_dir);
         if let Ok(content) = fs::read_to_string(&path) {
             if let Ok(knobs) = serde_json::from_str(&content) {

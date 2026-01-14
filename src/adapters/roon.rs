@@ -128,6 +128,7 @@ pub struct RoonStatus {
 }
 
 /// Internal state
+#[derive(Default)]
 struct RoonState {
     connected: bool,
     core_name: Option<String>,
@@ -139,23 +140,10 @@ struct RoonState {
     pending_images: HashMap<usize, ImageRequest>,
 }
 
-impl Default for RoonState {
-    fn default() -> Self {
-        Self {
-            connected: false,
-            core_name: None,
-            core_version: None,
-            zones: HashMap::new(),
-            transport: None,
-            image: None,
-            pending_images: HashMap::new(),
-        }
-    }
-}
-
 /// Roon adapter
 pub struct RoonAdapter {
     state: Arc<RwLock<RoonState>>,
+    #[allow(dead_code)]
     bus: SharedBus,
 }
 

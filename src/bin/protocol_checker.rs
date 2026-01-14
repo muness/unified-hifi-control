@@ -12,6 +12,9 @@
 //! Types: status, roon-status, zone, zones, control-request, volume-request,
 //!        success-response, error-response, bus-event
 
+// Schema structs are used for JSON validation via Deserialize, fields read by serde
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
