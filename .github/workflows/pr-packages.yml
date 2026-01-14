@@ -2,10 +2,10 @@ name: PR Build
 
 on:
   pull_request:
-    branches: [master]
+    branches: [master, v3]
   push:
     branches:
-      - 'rust-rewrite-spike'
+      - 'v3'
       - 'feature/**'
   workflow_dispatch:
 
