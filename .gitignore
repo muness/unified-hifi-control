@@ -14,3 +14,4 @@ firmware/version.json
 .wm/
 /target/
 # Note: Cargo.lock is committed for reproducible binary builds
+dist/
