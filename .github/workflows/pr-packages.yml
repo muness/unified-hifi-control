@@ -155,11 +155,25 @@ jobs:
   docker:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [build-linux]
     permissions:
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download Linux binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*-linux-musl
+          path: binaries/
+          merge-multiple: true
+
+      - name: Prepare binaries for buildx
+        run: |
+          # Rename to match Docker TARGETARCH convention
+          mv binaries/unified-hifi-linux-x64 binaries/unified-hifi-linux-amd64
+          # arm64 name already matches
+          ls -la binaries/
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -186,12 +200,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: Dockerfile.ci
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   summary:
     name: Build Summary

@@ -1,0 +1,32 @@
+# CI Dockerfile - uses pre-built binaries from cross-compilation
+# This is much faster than building inside Docker with QEMU emulation
+
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy pre-built binary (set by build arg)
+ARG TARGETARCH
+COPY binaries/unified-hifi-linux-${TARGETARCH} /app/unified-hifi-control
+RUN chmod +x /app/unified-hifi-control
+
+# Create data directory for config persistence
+RUN mkdir -p /data
+
+# Version from build arg
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
+# Environment
+ENV PORT=8088
+ENV CONFIG_DIR=/data
+ENV RUST_LOG=info
+
+EXPOSE 8088
+
+CMD ["/app/unified-hifi-control"]
