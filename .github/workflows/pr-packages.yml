@@ -3,6 +3,7 @@ name: PR Build
 on:
   pull_request:
     branches: [master]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -206,3 +207,4 @@ jobs:
             name=$(basename "$f")
             echo "| $name | $size |" >> $GITHUB_STEP_SUMMARY
           done
+
