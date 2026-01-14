@@ -1,4 +1,4 @@
-name: Build Release Installers
+name: Build Release Artifacts
 
 on:
   release:
@@ -6,174 +6,119 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux-binaries:
-    name: Build Linux/Windows Binaries
+  build-linux:
+    name: Build Linux (musl static)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            output: unified-hifi-linux-x64
+          - target: aarch64-unknown-linux-musl
+            output: unified-hifi-linux-arm64
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
         with:
-          node-version: '18'
-          cache: 'npm'
+          targets: ${{ matrix.target }}
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Build Linux and Windows binaries
+      - name: Build with cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Rename binary
         run: |
-          node -e "
-          const { execSync } = require('child_process');
-          const fs = require('fs');
-          const path = require('path');
-          fs.mkdirSync('dist/bin', { recursive: true });
-          const targets = [
-            { target: 'node18-linux-x64', output: 'unified-hifi-linux-x64' },
-            { target: 'node18-linux-arm64', output: 'unified-hifi-linux-arm64' },
-            { target: 'node18-win-x64', output: 'unified-hifi-win-x64.exe' },
-            { target: 'node18-linux-x64', output: 'unified-hifi-linux-x86_64', lms: true },
-            { target: 'node18-linux-arm64', output: 'unified-hifi-linux-aarch64', lms: true },
-            { target: 'node18-win-x64', output: 'unified-hifi-win64.exe', lms: true },
-          ];
-          for (const { target, output, lms } of targets) {
-            console.log('Building ' + output + '...');
-            const entry = lms ? 'src/lms-entry.js' : 'src/index.js';
-            const config = lms ? 'pkg-lms.json' : 'package.json';
-            execSync('npx pkg \"' + entry + '\" --target ' + target + ' --output dist/bin/' + output + ' --config ' + config, { stdio: 'inherit' });
-          }
-          "
+          mkdir -p dist/bin
+          cp target/${{ matrix.target }}/release/unified-hifi-control dist/bin/${{ matrix.output }}
 
-      - name: Upload Linux/Windows binaries
+      - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-linux-win
-          path: dist/bin/
-          retention-days: 1
-
-  build-macos-binaries:
-    name: Build macOS Binaries
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build macOS binaries
-        run: |
-          node -e "
-          const { execSync } = require('child_process');
-          const fs = require('fs');
-          fs.mkdirSync('dist/bin', { recursive: true });
-          const targets = [
-            { target: 'node18-macos-x64', output: 'unified-hifi-macos-x64' },
-            { target: 'node18-macos-arm64', output: 'unified-hifi-macos-arm64' },
-            { target: 'node18-macos-x64', output: 'unified-hifi-darwin-x86_64', lms: true },
-            { target: 'node18-macos-arm64', output: 'unified-hifi-darwin-arm64', lms: true },
-          ];
-          for (const { target, output, lms } of targets) {
-            console.log('Building ' + output + '...');
-            const entry = lms ? 'src/lms-entry.js' : 'src/index.js';
-            const config = lms ? 'pkg-lms.json' : 'package.json';
-            execSync('npx pkg \"' + entry + '\" --target ' + target + ' --output dist/bin/' + output + ' --config ' + config, { stdio: 'inherit' });
-          }
-          "
-
-      - name: Upload macOS binaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: binaries-macos
+          name: binary-${{ matrix.target }}
           path: dist/bin/
           retention-days: 1
 
   build-macos:
-    name: Build macOS DMG
-    needs: [build-linux-binaries, build-macos-binaries]
+    name: Build macOS
     runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            output: unified-hifi-macos-x64
+          - target: aarch64-apple-darwin
+            output: unified-hifi-macos-arm64
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
         with:
-          node-version: '18'
+          targets: ${{ matrix.target }}
 
-      - name: Download macOS binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: binaries-macos
-          path: dist/bin/
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
 
-      - name: Make binaries executable
-        run: chmod +x dist/bin/*
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Build DMG
-        run: node scripts/build-installers.js
+      - name: Rename binary
+        run: |
+          mkdir -p dist/bin
+          cp target/${{ matrix.target }}/release/unified-hifi-control dist/bin/${{ matrix.output }}
 
-      - name: Upload DMG
+      - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg
-          path: dist/installers/*.dmg
-          retention-days: 5
+          name: binary-${{ matrix.target }}
+          path: dist/bin/
+          retention-days: 1
 
   build-windows:
-    name: Build Windows MSI
-    needs: [build-linux-binaries, build-macos-binaries]
+    name: Build Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
 
-      - name: Download binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: binaries-linux-win
-          path: dist/bin/
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
 
-      - name: Install WiX Toolset
+      - name: Build
+        run: cargo build --release
+
+      - name: Rename binary
+        shell: bash
         run: |
-          choco install wixtoolset -y
-          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $env:GITHUB_PATH
+          mkdir -p dist/bin
+          cp target/release/unified-hifi-control.exe dist/bin/unified-hifi-win-x64.exe
 
-      - name: Build MSI
-        run: node scripts/build-installers.js
-
-      - name: Upload MSI
+      - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: windows-msi
-          path: dist/installers/*.msi
-          retention-days: 5
+          name: binary-windows
+          path: dist/bin/
+          retention-days: 1
 
-  build-linux:
-    name: Build Linux Packages
-    needs: [build-linux-binaries, build-macos-binaries]
+  build-linux-packages:
+    name: Build Linux Packages (deb/rpm)
+    needs: [build-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Download binaries
+      - name: Download Linux binaries
         uses: actions/download-artifact@v4
         with:
-          name: binaries-linux-win
+          pattern: binary-*-linux-*
           path: dist/bin/
+          merge-multiple: true
 
       - name: Make binaries executable
         run: chmod +x dist/bin/*
@@ -184,100 +129,54 @@ jobs:
           sudo apt-get install -y ruby ruby-dev build-essential rpm
           sudo gem install fpm
 
-      - name: Build deb and rpm packages
-        run: node scripts/build-installers.js
+      - name: Get version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="0.0.0"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Generate Arch PKGBUILD
-        run: npm run build:arch
+      - name: Build deb package (x64)
+        run: |
+          fpm -s dir -t deb \
+            -n unified-hifi-control \
+            -v ${{ steps.version.outputs.version }} \
+            --description "Source-agnostic hi-fi control bridge" \
+            --url "https://github.com/open-horizon-labs/unified-hifi-control" \
+            --license MIT \
+            -a amd64 \
+            --after-install build/linux/postinst.sh \
+            dist/bin/unified-hifi-linux-x64=/usr/bin/unified-hifi-control \
+            build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
+
+      - name: Build rpm package (x64)
+        run: |
+          fpm -s dir -t rpm \
+            -n unified-hifi-control \
+            -v ${{ steps.version.outputs.version }} \
+            --description "Source-agnostic hi-fi control bridge" \
+            --url "https://github.com/open-horizon-labs/unified-hifi-control" \
+            --license MIT \
+            -a x86_64 \
+            --after-install build/linux/postinst.sh \
+            dist/bin/unified-hifi-linux-x64=/usr/bin/unified-hifi-control \
+            build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
 
       - name: Upload Linux packages
         uses: actions/upload-artifact@v4
         with:
           name: linux-packages
           path: |
-            dist/installers/*.deb
-            dist/installers/*.rpm
-          retention-days: 5
-
-      - name: Upload Arch PKGBUILD
-        uses: actions/upload-artifact@v4
-        with:
-          name: arch-pkgbuild
-          path: |
-            dist/PKGBUILD
-            build/arch/unified-hifi-control.service
-          retention-days: 5
-
-  build-lms-plugin:
-    name: Build LMS Plugin
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build LMS plugin
-        run: npm run build:lms-plugin
-
-      - name: Upload LMS plugin
-        uses: actions/upload-artifact@v4
-        with:
-          name: lms-plugin
-          path: dist/lms-unified-hifi-control-*.zip
-          retention-days: 5
-
-  build-nas-packages:
-    name: Build NAS Packages (Synology/QNAP)
-    needs: [build-linux-binaries, build-macos-binaries]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Download binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: binaries-linux-win
-          path: dist/bin/
-
-      - name: Make binaries executable
-        run: chmod +x dist/bin/*
-
-      - name: Build NAS packages
-        run: npm run build:nas
-
-      - name: Upload Synology packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: synology-packages
-          path: dist/installers/*.spk
-          retention-days: 5
-
-      - name: Upload QNAP packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: qnap-packages
-          path: dist/installers/*.qpkg
+            *.deb
+            *.rpm
           retention-days: 5
 
   upload-release:
     name: Upload to Release
-    needs: [build-linux-binaries, build-macos-binaries, build-macos, build-windows, build-linux, build-lms-plugin, build-nas-packages]
+    needs: [build-linux, build-macos, build-windows, build-linux-packages]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     permissions:
@@ -291,85 +190,38 @@ jobs:
       - name: Display structure
         run: ls -R artifacts/
 
+      - name: Flatten binaries
+        run: |
+          mkdir -p release
+          find artifacts -name "unified-hifi-*" -type f -exec cp {} release/ \;
+          find artifacts -name "*.deb" -type f -exec cp {} release/ \;
+          find artifacts -name "*.rpm" -type f -exec cp {} release/ \;
+          ls -la release/
+
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/binaries-linux-win/*
-            artifacts/binaries-macos/*
-            artifacts/macos-dmg/*.dmg
-            artifacts/windows-msi/*.msi
-            artifacts/linux-packages/*.deb
-            artifacts/linux-packages/*.rpm
-            artifacts/arch-pkgbuild/PKGBUILD
-            artifacts/arch-pkgbuild/unified-hifi-control.service
-            artifacts/lms-plugin/*.zip
-            artifacts/synology-packages/*.spk
-            artifacts/qnap-packages/*.qpkg
+          files: release/*
 
-  update-repo-xml:
-    name: Update LMS repo.xml
-    needs: upload-release
+  summary:
+    name: Build Summary
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          ref: master
+          path: artifacts/
+          pattern: binary-*
 
-      - name: Get release version
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Download LMS zip and compute SHA
-        id: sha
+      - name: Display build summary
         run: |
-          ZIP_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/lms-unified-hifi-control-${{ steps.version.outputs.version }}.zip"
-          echo "Downloading $ZIP_URL"
-          curl -sL "$ZIP_URL" -o lms-plugin.zip
-          SHA=$(shasum lms-plugin.zip | cut -d' ' -f1)
-          echo "sha=$SHA" >> $GITHUB_OUTPUT
-          echo "Computed SHA: $SHA"
-
-      - name: Update repo.xml
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          SHA="${{ steps.sha.outputs.sha }}"
-          REPO_URL="https://github.com/${{ github.repository }}"
-
-          cat > lms-plugin/repo.xml << 'REPOXML'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <extensions>
-            <plugins>
-              <plugin name="UnifiedHiFi"
-                      version="VERSION_PLACEHOLDER"
-                      minTarget="8.0"
-                      maxTarget="*">
-                <title lang="EN">Unified Hi-Fi Control</title>
-                <desc lang="EN">Source-agnostic hi-fi control bridge for Roon, LMS, HQPlayer, and hardware knobs. Provides HTTP APIs, MQTT integration, and web UI for controlling your audio system from anywhere.</desc>
-                <url>URL_PLACEHOLDER</url>
-                <sha>SHA_PLACEHOLDER</sha>
-                <creator>Muness Castle</creator>
-                <link>https://forums.lyrion.org/forum/user-forums/3rd-party-hardware/1804977-roon-knob-includes-lms-support</link>
-              </plugin>
-            </plugins>
-          </extensions>
-          REPOXML
-
-          # Remove leading whitespace and substitute placeholders
-          sed -i 's/^          //' lms-plugin/repo.xml
-          sed -i "s|VERSION_PLACEHOLDER|$VERSION|" lms-plugin/repo.xml
-          sed -i "s|URL_PLACEHOLDER|${REPO_URL}/releases/download/v${VERSION}/lms-unified-hifi-control-${VERSION}.zip|" lms-plugin/repo.xml
-          sed -i "s|SHA_PLACEHOLDER|$SHA|" lms-plugin/repo.xml
-
-          cat lms-plugin/repo.xml
-
-      - name: Commit and push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add lms-plugin/repo.xml
-          git commit -m "chore: Update repo.xml to v${{ steps.version.outputs.version }} [skip ci]"
-          git push
+          echo "## Release Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Binary | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|------|" >> $GITHUB_STEP_SUMMARY
+          find artifacts -type f -name "unified-hifi-*" | while read f; do
+            size=$(du -h "$f" | cut -f1)
+            name=$(basename "$f")
+            echo "| $name | $size |" >> $GITHUB_STEP_SUMMARY
+          done

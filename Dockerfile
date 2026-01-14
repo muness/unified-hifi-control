@@ -1,27 +1,40 @@
-FROM node:20-slim
+# Build stage
+FROM rust:1.84-slim AS builder
 
 WORKDIR /app
 
-# Install build tools and dependencies for sharp and mDNS
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    python3 \
-    libvips-dev \
-    avahi-daemon \
-    libnss-mdns \
+    pkg-config \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package files
-COPY package*.json ./
+# Copy manifests
+COPY Cargo.toml Cargo.lock ./
 
-# Install production dependencies
-RUN npm ci --omit=dev
+# Create dummy src to cache dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release && rm -rf src target/release/unified-hifi-control*
 
-# Remove build tools to reduce image size
-RUN apt-get update && apt-get remove -y build-essential python3 && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-
-# Copy source
+# Copy actual source
 COPY src/ ./src/
+
+# Build the real binary
+RUN cargo build --release
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy binary from builder
+COPY --from=builder /app/target/release/unified-hifi-control /app/
 
 # Create data directory for config persistence
 RUN mkdir -p /data
@@ -31,10 +44,10 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
 
 # Environment
-ENV NODE_ENV=production
 ENV PORT=8088
 ENV CONFIG_DIR=/data
+ENV RUST_LOG=info
 
 EXPOSE 8088
 
-CMD ["node", "src/index.js"]
+CMD ["/app/unified-hifi-control"]
