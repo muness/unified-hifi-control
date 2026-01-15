@@ -254,10 +254,12 @@ let matrixProfiles = [];
 async function loadZones() {
     const section = document.querySelector('#zones');
     try {
-        const [zones, linksRes] = await Promise.all([
-            fetch('/roon/zones').then(r => r.json()),
+        const [zonesRes, linksRes] = await Promise.all([
+            fetch('/zones').then(r => r.json()),
             fetch('/hqp/zones/links').then(r => r.json()).catch(() => ({ links: [] }))
         ]);
+        // /zones returns {zones: [...]} with zone_id and zone_name
+        const zones = zonesRes.zones || zonesRes || [];
 
         // Build HQP link lookup (API returns {links: [...]})
         const links = linksRes.links || linksRes || [];
@@ -265,31 +267,28 @@ async function loadZones() {
         links.forEach(l => { hqpZoneLinks[l.zone_id] = l.instance; });
 
         if (!zones.length) {
-            section.innerHTML = '<article>No zones available. Is Roon Core running?</article>';
+            section.innerHTML = '<article>No zones available. Check that adapters are connected.</article>';
             return;
         }
 
         section.innerHTML = '<div class="zone-grid">' + zones.map(zone => {
-            const np = zone.now_playing;
-            const imgSrc = np && np.image_key ? `/roon/image?image_key=${encodeURIComponent(np.image_key)}&width=120&height=120` : '';
-            const artHtml = imgSrc ? `<img src="${imgSrc}" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:4px;float:left;margin-right:1rem;">` : '';
-            const nowPlaying = np ? `${artHtml}<strong>${esc(np.title)}</strong><br><small>${esc(np.artist)}</small><br><small>${esc(np.album)}</small>` : '<small>Nothing playing</small>';
             const playIcon = zone.state === 'playing' ? '⏸' : '▶';
             const hqpLink = hqpZoneLinks[zone.zone_id];
             const hqpBadge = hqpLink ? `<mark style="font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;">HQP</mark>` : '';
+            const sourceBadge = zone.source ? `<mark style="font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;background:var(--pico-muted-background);">${esc(zone.source)}</mark>` : '';
 
             return `
                 <article>
                     <header>
-                        <strong>${esc(zone.display_name)}</strong>${hqpBadge}
+                        <strong>${esc(zone.zone_name)}</strong>${hqpBadge}${sourceBadge}
                         <small> (${esc(zone.state)})</small>
                     </header>
-                    <div style="min-height:80px;overflow:hidden;">${nowPlaying}</div>
+                    <div style="min-height:40px;overflow:hidden;"><small>Select zone for playback info</small></div>
                     <footer>
                         <div class="controls" data-zone-id="${esc(zone.zone_id)}">
-                            <button data-action="previous" ${zone.is_previous_allowed ? '' : 'disabled'}>◀◀</button>
+                            <button data-action="previous">◀◀</button>
                             <button data-action="play_pause">${playIcon}</button>
-                            <button data-action="next" ${zone.is_next_allowed ? '' : 'disabled'}>▶▶</button>
+                            <button data-action="next">▶▶</button>
                         </div>
                     </footer>
                 </article>
@@ -363,7 +362,7 @@ async function loadHqpDsp() {
 
 async function control(zoneId, action) {
     try {
-        await fetch('/roon/control', {
+        await fetch('/control', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ zone_id: zoneId, action })
@@ -693,7 +692,7 @@ async function loadZoneLinks() {
                         const backend = getBackend(z.zone_id);
                         return `
                         <tr data-zone-id="${esc(z.zone_id)}" data-backend="${backend}">
-                            <td>${esc(z.display_name)}</td>
+                            <td>${esc(z.zone_name)}</td>
                             <td><small>${backend}</small></td>
                             <td>
                                 ${linked
@@ -983,14 +982,16 @@ let zonesData = [];
 let zoneLinkMap = {};
 let lastHqpZone = null; // Track last zone for HQP to avoid reloading on every update
 let hqpPipelineLoaded = false;
+let nowPlayingData = null; // Current now_playing data for selected zone
 
 async function loadZones() {
     try {
-        const [zones, linksRes] = await Promise.all([
-            fetch('/roon/zones').then(r => r.json()),
+        const [zonesRes, linksRes] = await Promise.all([
+            fetch('/zones').then(r => r.json()),
             fetch('/hqp/zones/links').then(r => r.json()).catch(() => ({ links: [] }))
         ]);
-        zonesData = zones || [];
+        // /zones returns {zones: [...]} with zone_id and zone_name
+        zonesData = zonesRes.zones || zonesRes || [];
 
         // Build zone link map
         const links = linksRes.links || linksRes || [];
@@ -1001,13 +1002,14 @@ async function loadZones() {
         sel.innerHTML = '<option value="">-- Select Zone --</option>' +
             zonesData.map(z => {
                 const hqpBadge = zoneLinkMap[z.zone_id] ? ' [HQP]' : '';
-                return '<option value="' + esc(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.display_name) + hqpBadge + '</option>';
+                const source = z.source ? ' (' + z.source + ')' : '';
+                return '<option value="' + esc(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + hqpBadge + source + '</option>';
             }).join('');
 
         if (selectedZone) {
             const zone = zonesData.find(z => z.zone_id === selectedZone);
             if (zone) {
-                updateZoneDisplay(zone);
+                await loadNowPlaying(zone);
             } else {
                 selectedZone = null;
                 localStorage.removeItem('hifi-zone');
@@ -1018,12 +1020,23 @@ async function loadZones() {
     }
 }
 
-document.getElementById('zone-select').addEventListener('change', e => {
+async function loadNowPlaying(zone) {
+    try {
+        const res = await fetch('/now_playing?zone_id=' + encodeURIComponent(zone.zone_id));
+        nowPlayingData = await res.json();
+        updateZoneDisplay(zone, nowPlayingData);
+    } catch (e) {
+        console.error('Error loading now playing:', e);
+        updateZoneDisplay(zone, null);
+    }
+}
+
+document.getElementById('zone-select').addEventListener('change', async e => {
     selectedZone = e.target.value;
     if (selectedZone) {
         localStorage.setItem('hifi-zone', selectedZone);
         const zone = zonesData.find(z => z.zone_id === selectedZone);
-        if (zone) updateZoneDisplay(zone);
+        if (zone) await loadNowPlaying(zone);
     } else {
         localStorage.removeItem('hifi-zone');
         document.getElementById('zone-display').style.display = 'none';
@@ -1031,18 +1044,19 @@ document.getElementById('zone-select').addEventListener('change', e => {
     }
 });
 
-function updateZoneDisplay(zone) {
+function updateZoneDisplay(zone, np) {
     document.getElementById('zone-display').style.display = 'block';
-    document.getElementById('zone-name').textContent = zone.display_name || zone.zone_id;
-    document.getElementById('zone-state').innerHTML = '<small>' + esc(zone.state) + '</small>';
+    document.getElementById('zone-name').textContent = zone.zone_name || zone.zone_id;
+    const state = np?.is_playing ? 'playing' : 'stopped';
+    document.getElementById('zone-state').innerHTML = '<small>' + esc(state) + '</small>';
 
-    const np = zone.now_playing;
-    if (np) {
-        document.getElementById('zone-track').innerHTML = '<strong>' + esc(np.title || '—') + '</strong>';
-        document.getElementById('zone-artist').innerHTML = '<small>' + esc(np.artist || '') + '</small>';
-        document.getElementById('zone-album').innerHTML = '<small>' + esc(np.album || '') + '</small>';
-        if (np.image_key) {
-            document.getElementById('zone-art').src = '/roon/image?image_key=' + encodeURIComponent(np.image_key) + '&width=200&height=200&t=' + Date.now();
+    // Now playing from /now_playing API (uses line1/line2/line3)
+    if (np && np.line1 && np.line1 !== 'Idle') {
+        document.getElementById('zone-track').innerHTML = '<strong>' + esc(np.line1 || '—') + '</strong>';
+        document.getElementById('zone-artist').innerHTML = '<small>' + esc(np.line2 || '') + '</small>';
+        document.getElementById('zone-album').innerHTML = '<small>' + esc(np.line3 || '') + '</small>';
+        if (np.image_url) {
+            document.getElementById('zone-art').src = np.image_url + '&width=200&height=200&t=' + Date.now();
         } else {
             document.getElementById('zone-art').src = '';
         }
@@ -1053,23 +1067,19 @@ function updateZoneDisplay(zone) {
         document.getElementById('zone-art').src = '';
     }
 
-    // Volume from first output
-    if (zone.outputs && zone.outputs.length > 0) {
-        const out = zone.outputs[0];
-        if (out.volume && out.volume.value != null) {
-            const suffix = out.volume.type === 'db' ? ' dB' : '';
-            document.getElementById('zone-volume').textContent = out.volume.value + suffix;
-        } else {
-            document.getElementById('zone-volume').textContent = 'Fixed';
-        }
+    // Volume from now_playing API
+    if (np && np.volume != null) {
+        const suffix = np.volume_type === 'db' ? ' dB' : '';
+        document.getElementById('zone-volume').textContent = Math.round(np.volume) + suffix;
     } else {
         document.getElementById('zone-volume').textContent = '—';
     }
 
-    // Update button states
-    document.getElementById('btn-prev').disabled = !zone.is_previous_allowed;
-    document.getElementById('btn-next').disabled = !zone.is_next_allowed;
-    document.getElementById('btn-play').textContent = zone.state === 'playing' ? '⏸' : '▶';
+    // Update button states from now_playing API
+    const isPlaying = np?.is_playing || false;
+    document.getElementById('btn-prev').disabled = !np?.is_previous_allowed;
+    document.getElementById('btn-next').disabled = !np?.is_next_allowed;
+    document.getElementById('btn-play').textContent = isPlaying ? '⏸' : '▶';
 
     // Show/hide HQP section based on zone link
     const hqpInstance = zoneLinkMap[zone.zone_id];
@@ -1216,7 +1226,7 @@ async function setMatrixProfile(profile) {
 async function control(action) {
     if (!selectedZone) return;
     try {
-        await fetch('/roon/control', {
+        await fetch('/control', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ zone_id: selectedZone, action })
@@ -1229,14 +1239,13 @@ async function control(action) {
 
 async function volume(delta) {
     if (!selectedZone) return;
-    const zone = zonesData.find(z => z.zone_id === selectedZone);
-    if (!zone || !zone.outputs || !zone.outputs[0]) return;
-    const outputId = zone.outputs[0].output_id;
     try {
-        await fetch('/roon/volume', {
+        // Use unified control API with volume action
+        const action = delta > 0 ? 'vol_up' : 'vol_down';
+        await fetch('/control', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ output_id: outputId, value: delta, relative: true })
+            body: JSON.stringify({ zone_id: selectedZone, action, value: Math.abs(delta) })
         });
         setTimeout(loadZones, 200);
     } catch (e) {
@@ -1324,10 +1333,11 @@ async function loadKnobs() {
     try {
         const [devicesRes, zonesRes] = await Promise.all([
             fetch('/knob/devices').then(r => r.json()),
-            fetch('/roon/zones').then(r => r.json()).catch(() => [])
+            fetch('/zones').then(r => r.json()).catch(() => ({ zones: [] }))
         ]);
         const knobs = devicesRes.knobs || [];
-        zonesData = zonesRes || [];
+        // /zones returns {zones: [...]} with zone_id and zone_name
+        zonesData = zonesRes.zones || zonesRes || [];
 
         if (knobs.length === 0) {
             section.innerHTML = '<article>No knobs registered. Connect a knob to see it here.</article>';
@@ -1338,7 +1348,7 @@ async function loadKnobs() {
             knobs.map(k => {
                 const st = k.status || {};
                 const bat = st.battery_level != null ? st.battery_level + '%' + (st.battery_charging ? ' ⚡' : '') : '—';
-                const zone = st.zone_id ? esc(zonesData.find(z => z.zone_id === st.zone_id)?.display_name || st.zone_id) : '—';
+                const zone = st.zone_id ? esc(zonesData.find(z => z.zone_id === st.zone_id)?.zone_name || st.zone_id) : '—';
                 const ip = st.ip || '—';
                 return '<tr><td><code>' + esc(k.knob_id) + '</code></td><td>' + knobDisplayName(k) + '</td><td>' + esc(k.version || '—') + '</td><td>' + esc(ip) + '</td><td>' + zone + '</td><td>' + bat + '</td><td>' + ago(k.last_seen) + '</td><td><button class="outline secondary" data-knob-id="' + escAttr(k.knob_id) + '">Config</button></td></tr>';
             }).join('') + '</tbody></table></article>';
