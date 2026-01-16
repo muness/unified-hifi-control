@@ -44,7 +44,7 @@ fn html_doc(title: &str, nav_active: &str, content: &str) -> String {
         .controls button {{ margin: 0; padding: 0.5rem 1rem; }}
         small {{ color: var(--pico-muted-color); }}
         /* Black theme (OLED) - extends dark theme */
-        [data-theme="black"] {{
+        [data-theme="dark"][data-variant="black"] {{
             --pico-background-color: #000;
             --pico-card-background-color: #0a0a0a;
             --pico-card-sectioning-background-color: #0a0a0a;
@@ -55,7 +55,6 @@ fn html_doc(title: &str, nav_active: &str, content: &str) -> String {
             --pico-muted-border-color: #1a1a1a;
             --pico-form-element-background-color: #0a0a0a;
             --pico-table-border-color: #1a1a1a;
-            color-scheme: dark;
         }}
         /* Theme switcher */
         .theme-switcher {{ display: flex; gap: 0.25rem; }}
@@ -65,7 +64,9 @@ fn html_doc(title: &str, nav_active: &str, content: &str) -> String {
     <script>
         (function(){{
             const t = localStorage.getItem('hifi-theme') || 'dark';
-            document.documentElement.setAttribute('data-theme', t);
+            // Pico CSS only recognizes 'light' and 'dark'; black is dark + variant
+            document.documentElement.setAttribute('data-theme', t === 'black' ? 'dark' : t);
+            if (t === 'black') document.documentElement.setAttribute('data-variant', 'black');
         }})();
     </script>
 </head>
@@ -86,15 +87,22 @@ fn html_doc(title: &str, nav_active: &str, content: &str) -> String {
     </footer>
     <script>
         function setTheme(t) {{
-            document.documentElement.setAttribute('data-theme', t);
+            // Pico CSS only recognizes 'light' and 'dark'; black is dark + variant
+            document.documentElement.setAttribute('data-theme', t === 'black' ? 'dark' : t);
+            if (t === 'black') {{
+                document.documentElement.setAttribute('data-variant', 'black');
+            }} else {{
+                document.documentElement.removeAttribute('data-variant');
+            }}
             localStorage.setItem('hifi-theme', t);
             updateThemeButtons();
         }}
         function updateThemeButtons() {{
-            const t = document.documentElement.getAttribute('data-theme') || 'dark';
+            const variant = document.documentElement.getAttribute('data-variant');
+            const theme = variant === 'black' ? 'black' : (document.documentElement.getAttribute('data-theme') || 'dark');
             ['light','dark','black'].forEach(x => {{
                 const btn = document.getElementById('theme-' + x);
-                if (btn) btn.classList.toggle('active', x === t);
+                if (btn) btn.classList.toggle('active', x === theme);
             }});
         }}
         function applyNavVisibility() {{
@@ -107,9 +115,10 @@ fn html_doc(title: &str, nav_active: &str, content: &str) -> String {
             hide('/lms', s.showLms);
             hide('/knobs', s.showKnobs);
         }}
-        // Auto-hide LMS if not configured (check once on page load)
+        // Auto-hide LMS if not configured (only if user hasn't explicitly enabled it)
         fetch('/lms/status').then(r => r.json()).then(st => {{
-            if (!st.host) {{
+            const s = JSON.parse(localStorage.getItem('hifi-ui-settings') || '{{}}');
+            if (!st.host && s.showLms !== true) {{
                 const el = document.querySelector('nav a[href*="/lms"]');
                 if (el) el.style.display = 'none';
             }}
@@ -254,10 +263,12 @@ let matrixProfiles = [];
 async function loadZones() {
     const section = document.querySelector('#zones');
     try {
-        const [zones, linksRes] = await Promise.all([
-            fetch('/roon/zones').then(r => r.json()),
+        const [zonesRes, linksRes] = await Promise.all([
+            fetch('/zones').then(r => r.json()),
             fetch('/hqp/zones/links').then(r => r.json()).catch(() => ({ links: [] }))
         ]);
+        // /zones returns {zones: [...]} with zone_id and zone_name
+        const zones = zonesRes.zones || zonesRes || [];
 
         // Build HQP link lookup (API returns {links: [...]})
         const links = linksRes.links || linksRes || [];
@@ -265,36 +276,49 @@ async function loadZones() {
         links.forEach(l => { hqpZoneLinks[l.zone_id] = l.instance; });
 
         if (!zones.length) {
-            section.innerHTML = '<article>No zones available. Is Roon Core running?</article>';
+            section.innerHTML = '<article>No zones available. Check that adapters are connected.</article>';
             return;
         }
 
         section.innerHTML = '<div class="zone-grid">' + zones.map(zone => {
-            const np = zone.now_playing;
-            const imgSrc = np && np.image_key ? `/roon/image?image_key=${encodeURIComponent(np.image_key)}&width=120&height=120` : '';
-            const artHtml = imgSrc ? `<img src="${imgSrc}" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:4px;float:left;margin-right:1rem;">` : '';
-            const nowPlaying = np ? `${artHtml}<strong>${esc(np.title)}</strong><br><small>${esc(np.artist)}</small><br><small>${esc(np.album)}</small>` : '<small>Nothing playing</small>';
-            const playIcon = zone.state === 'playing' ? '⏸' : '▶';
+            const playIcon = zone.state === 'playing' ? '⏸︎' : '▶';
             const hqpLink = hqpZoneLinks[zone.zone_id];
             const hqpBadge = hqpLink ? `<mark style="font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;">HQP</mark>` : '';
+            const sourceBadge = zone.source ? `<mark style="font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;background:var(--pico-muted-background);">${esc(zone.source)}</mark>` : '';
 
             return `
                 <article>
                     <header>
-                        <strong>${esc(zone.display_name)}</strong>${hqpBadge}
+                        <strong>${esc(zone.zone_name)}</strong>${hqpBadge}${sourceBadge}
                         <small> (${esc(zone.state)})</small>
                     </header>
-                    <div style="min-height:80px;overflow:hidden;">${nowPlaying}</div>
+                    <div id="zone-info-${esc(zone.zone_id)}" style="min-height:40px;overflow:hidden;"><small>Loading...</small></div>
                     <footer>
                         <div class="controls" data-zone-id="${esc(zone.zone_id)}">
-                            <button data-action="previous" ${zone.is_previous_allowed ? '' : 'disabled'}>◀◀</button>
+                            <button data-action="previous">◀◀</button>
                             <button data-action="play_pause">${playIcon}</button>
-                            <button data-action="next" ${zone.is_next_allowed ? '' : 'disabled'}>▶▶</button>
+                            <button data-action="next">▶▶</button>
                         </div>
                     </footer>
                 </article>
             `;
         }).join('') + '</div>';
+
+        // Fetch now playing info for each zone
+        zones.forEach(async zone => {
+            const infoEl = document.getElementById('zone-info-' + zone.zone_id);
+            if (!infoEl) return;
+            try {
+                const np = await fetch('/now_playing?zone_id=' + encodeURIComponent(zone.zone_id)).then(r => r.json());
+                if (np && np.line1 && np.line1 !== 'Idle') {
+                    infoEl.innerHTML = '<strong style="font-size:0.9em;">' + esc(np.line1) + '</strong><br><small>' + esc(np.line2 || '') + '</small>';
+                } else {
+                    infoEl.innerHTML = '<small>Nothing playing</small>';
+                }
+            } catch (e) {
+                infoEl.innerHTML = '<small>—</small>';
+            }
+        });
 
         // Show HQP DSP section if any zone is linked
         const hasHqpLinks = Object.keys(hqpZoneLinks).length > 0;
@@ -363,7 +387,7 @@ async function loadHqpDsp() {
 
 async function control(zoneId, action) {
     try {
-        await fetch('/roon/control', {
+        await fetch('/control', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ zone_id: zoneId, action })
@@ -693,7 +717,7 @@ async function loadZoneLinks() {
                         const backend = getBackend(z.zone_id);
                         return `
                         <tr data-zone-id="${esc(z.zone_id)}" data-backend="${backend}">
-                            <td>${esc(z.display_name)}</td>
+                            <td>${esc(z.zone_name)}</td>
                             <td><small>${backend}</small></td>
                             <td>
                                 ${linked
@@ -792,12 +816,35 @@ pub async fn lms_page(State(_state): State<AppState>) -> impl IntoResponse {
     let content = r#"
 <h1>Logitech Media Server</h1>
 
-<section id="lms-status">
+<section id="lms-config">
     <hgroup>
-        <h2>Connection Status</h2>
-        <p>LMS server connection</p>
+        <h2>Server Configuration</h2>
+        <p>Configure connection to your Squeezebox server</p>
     </hgroup>
-    <article aria-busy="true">Loading...</article>
+    <article id="lms-config-card">
+        <div id="lms-status-line">Checking...</div>
+        <div id="lms-config-form" style="display:none;">
+            <div class="grid">
+                <label>Host
+                    <input type="text" id="lms-host" placeholder="192.168.1.x or hostname">
+                </label>
+                <label>Port
+                    <input type="number" id="lms-port" value="9000" min="1" max="65535">
+                </label>
+            </div>
+            <div class="grid">
+                <label>Username (optional)
+                    <input type="text" id="lms-username" placeholder="Leave blank if not required">
+                </label>
+                <label>Password (optional)
+                    <input type="password" id="lms-password" placeholder="Leave blank if not required">
+                </label>
+            </div>
+            <button onclick="saveLmsConfig()">Save & Connect</button>
+            <span id="lms-save-msg"></span>
+        </div>
+        <button id="lms-reconfig-btn" style="display:none;" onclick="showLmsForm()">Reconfigure</button>
+    </article>
 </section>
 
 <section id="lms-players">
@@ -891,9 +938,77 @@ document.querySelector('#lms-players').addEventListener('click', e => {
     lmsControl(container.dataset.playerId, btn.dataset.action);
 });
 
-loadLmsStatus();
+// LMS Config
+async function loadLmsConfig() {
+    const statusLine = document.getElementById('lms-status-line');
+    const form = document.getElementById('lms-config-form');
+    const reconfigBtn = document.getElementById('lms-reconfig-btn');
+
+    try {
+        const res = await fetch('/lms/config');
+        const data = await res.json();
+
+        if (data.configured && data.connected) {
+            statusLine.innerHTML = `<span class="status-ok">✓ Connected to ${esc(data.host)}:${data.port}</span>`;
+            form.style.display = 'none';
+            reconfigBtn.style.display = 'inline-block';
+            document.getElementById('lms-host').value = data.host || '';
+            document.getElementById('lms-port').value = data.port || 9000;
+        } else if (data.configured) {
+            statusLine.innerHTML = `<span class="status-err">✗ Configured but not connected (${esc(data.host)}:${data.port})</span>`;
+            form.style.display = 'none';
+            reconfigBtn.style.display = 'inline-block';
+        } else {
+            statusLine.textContent = 'Not configured';
+            form.style.display = 'block';
+            reconfigBtn.style.display = 'none';
+        }
+    } catch (e) {
+        statusLine.innerHTML = `<span class="status-err">Error: ${esc(e.message)}</span>`;
+        form.style.display = 'block';
+    }
+}
+
+function showLmsForm() {
+    document.getElementById('lms-config-form').style.display = 'block';
+    document.getElementById('lms-reconfig-btn').style.display = 'none';
+}
+
+async function saveLmsConfig() {
+    const msg = document.getElementById('lms-save-msg');
+    const host = document.getElementById('lms-host').value.trim();
+    const port = parseInt(document.getElementById('lms-port').value) || 9000;
+    const username = document.getElementById('lms-username').value.trim() || null;
+    const password = document.getElementById('lms-password').value || null;
+
+    if (!host) {
+        msg.innerHTML = '<span class="status-err">Host is required</span>';
+        return;
+    }
+
+    msg.textContent = 'Connecting...';
+    try {
+        const res = await fetch('/lms/configure', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host, port, username, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            msg.innerHTML = '<span class="status-ok">✓ Connected</span>';
+            setTimeout(loadLmsConfig, 500);
+            setTimeout(loadLmsPlayers, 500);
+        } else {
+            msg.innerHTML = `<span class="status-err">${esc(data.error || 'Connection failed')}</span>`;
+        }
+    } catch (e) {
+        msg.innerHTML = `<span class="status-err">Error: ${esc(e.message)}</span>`;
+    }
+}
+
+loadLmsConfig();
 loadLmsPlayers();
-setInterval(loadLmsStatus, 5000);
+setInterval(loadLmsConfig, 10000);
 setInterval(loadLmsPlayers, 4000);
 </script>
 "#;
@@ -925,9 +1040,9 @@ pub async fn zone_page(State(_state): State<AppState>) -> impl IntoResponse {
             <p id="zone-album" style="margin:0;color:var(--pico-muted-color);"><small>—</small></p>
             <hr>
             <div style="display:flex;gap:0.5rem;align-items:center;margin:1rem 0;">
-                <button id="btn-prev" style="width:3rem;">◀◀</button>
-                <button id="btn-play" style="width:3rem;">⏯</button>
-                <button id="btn-next" style="width:3rem;">▶▶</button>
+                <button id="btn-prev">◀◀</button>
+                <button id="btn-play">▶</button>
+                <button id="btn-next">▶▶</button>
                 <span style="margin-left:1rem;">Volume: <strong id="zone-volume">—</strong></span>
                 <button id="btn-vol-down" style="width:2.5rem;" title="Volume Down">−</button>
                 <button id="btn-vol-up" style="width:2.5rem;" title="Volume Up">+</button>
@@ -966,7 +1081,7 @@ pub async fn zone_page(State(_state): State<AppState>) -> impl IntoResponse {
                 </label>
             </div>
             <div class="grid">
-                <label id="hqp-shaper-label">Shaper
+                <label><span id="hqp-shaper-label">Shaper</span>
                     <select id="hqp-shaper" onchange="setPipeline('shaper', this.value)"></select>
                 </label>
             </div>
@@ -983,14 +1098,16 @@ let zonesData = [];
 let zoneLinkMap = {};
 let lastHqpZone = null; // Track last zone for HQP to avoid reloading on every update
 let hqpPipelineLoaded = false;
+let nowPlayingData = null; // Current now_playing data for selected zone
 
 async function loadZones() {
     try {
-        const [zones, linksRes] = await Promise.all([
-            fetch('/roon/zones').then(r => r.json()),
+        const [zonesRes, linksRes] = await Promise.all([
+            fetch('/zones').then(r => r.json()),
             fetch('/hqp/zones/links').then(r => r.json()).catch(() => ({ links: [] }))
         ]);
-        zonesData = zones || [];
+        // /zones returns {zones: [...]} with zone_id and zone_name
+        zonesData = zonesRes.zones || zonesRes || [];
 
         // Build zone link map
         const links = linksRes.links || linksRes || [];
@@ -1001,13 +1118,14 @@ async function loadZones() {
         sel.innerHTML = '<option value="">-- Select Zone --</option>' +
             zonesData.map(z => {
                 const hqpBadge = zoneLinkMap[z.zone_id] ? ' [HQP]' : '';
-                return '<option value="' + esc(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.display_name) + hqpBadge + '</option>';
+                const source = z.source ? ' (' + z.source + ')' : '';
+                return '<option value="' + esc(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + hqpBadge + source + '</option>';
             }).join('');
 
         if (selectedZone) {
             const zone = zonesData.find(z => z.zone_id === selectedZone);
             if (zone) {
-                updateZoneDisplay(zone);
+                await loadNowPlaying(zone);
             } else {
                 selectedZone = null;
                 localStorage.removeItem('hifi-zone');
@@ -1018,12 +1136,23 @@ async function loadZones() {
     }
 }
 
-document.getElementById('zone-select').addEventListener('change', e => {
+async function loadNowPlaying(zone) {
+    try {
+        const res = await fetch('/now_playing?zone_id=' + encodeURIComponent(zone.zone_id));
+        nowPlayingData = await res.json();
+        updateZoneDisplay(zone, nowPlayingData);
+    } catch (e) {
+        console.error('Error loading now playing:', e);
+        updateZoneDisplay(zone, null);
+    }
+}
+
+document.getElementById('zone-select').addEventListener('change', async e => {
     selectedZone = e.target.value;
     if (selectedZone) {
         localStorage.setItem('hifi-zone', selectedZone);
         const zone = zonesData.find(z => z.zone_id === selectedZone);
-        if (zone) updateZoneDisplay(zone);
+        if (zone) await loadNowPlaying(zone);
     } else {
         localStorage.removeItem('hifi-zone');
         document.getElementById('zone-display').style.display = 'none';
@@ -1031,18 +1160,21 @@ document.getElementById('zone-select').addEventListener('change', e => {
     }
 });
 
-function updateZoneDisplay(zone) {
+function updateZoneDisplay(zone, np) {
     document.getElementById('zone-display').style.display = 'block';
-    document.getElementById('zone-name').textContent = zone.display_name || zone.zone_id;
-    document.getElementById('zone-state').innerHTML = '<small>' + esc(zone.state) + '</small>';
+    document.getElementById('zone-name').textContent = zone.zone_name || zone.zone_id;
+    const state = np?.is_playing ? 'playing' : 'stopped';
+    document.getElementById('zone-state').innerHTML = '<small>' + esc(state) + '</small>';
 
-    const np = zone.now_playing;
-    if (np) {
-        document.getElementById('zone-track').innerHTML = '<strong>' + esc(np.title || '—') + '</strong>';
-        document.getElementById('zone-artist').innerHTML = '<small>' + esc(np.artist || '') + '</small>';
-        document.getElementById('zone-album').innerHTML = '<small>' + esc(np.album || '') + '</small>';
-        if (np.image_key) {
-            document.getElementById('zone-art').src = '/roon/image?image_key=' + encodeURIComponent(np.image_key) + '&width=200&height=200&t=' + Date.now();
+    // Now playing from /now_playing API (uses line1/line2/line3)
+    if (np && np.line1 && np.line1 !== 'Idle') {
+        document.getElementById('zone-track').innerHTML = '<strong>' + esc(np.line1 || '—') + '</strong>';
+        document.getElementById('zone-artist').innerHTML = '<small>' + esc(np.line2 || '') + '</small>';
+        document.getElementById('zone-album').innerHTML = '<small>' + esc(np.line3 || '') + '</small>';
+        if (np.image_url) {
+            const url = np.image_url;
+            const sep = url.includes('?') ? (url.endsWith('?') || url.endsWith('&') ? '' : '&') : '?';
+            document.getElementById('zone-art').src = url + sep + 'width=200&height=200&t=' + Date.now();
         } else {
             document.getElementById('zone-art').src = '';
         }
@@ -1053,23 +1185,19 @@ function updateZoneDisplay(zone) {
         document.getElementById('zone-art').src = '';
     }
 
-    // Volume from first output
-    if (zone.outputs && zone.outputs.length > 0) {
-        const out = zone.outputs[0];
-        if (out.volume && out.volume.value != null) {
-            const suffix = out.volume.type === 'db' ? ' dB' : '';
-            document.getElementById('zone-volume').textContent = out.volume.value + suffix;
-        } else {
-            document.getElementById('zone-volume').textContent = 'Fixed';
-        }
+    // Volume from now_playing API
+    if (np && np.volume != null) {
+        const suffix = np.volume_type === 'db' ? ' dB' : '';
+        document.getElementById('zone-volume').textContent = Math.round(np.volume) + suffix;
     } else {
         document.getElementById('zone-volume').textContent = '—';
     }
 
-    // Update button states
-    document.getElementById('btn-prev').disabled = !zone.is_previous_allowed;
-    document.getElementById('btn-next').disabled = !zone.is_next_allowed;
-    document.getElementById('btn-play').textContent = zone.state === 'playing' ? '⏸' : '▶';
+    // Update button states from now_playing API
+    const isPlaying = np?.is_playing || false;
+    document.getElementById('btn-prev').disabled = !np?.is_previous_allowed;
+    document.getElementById('btn-next').disabled = !np?.is_next_allowed;
+    document.getElementById('btn-play').textContent = isPlaying ? '⏸︎' : '▶';
 
     // Show/hide HQP section based on zone link
     const hqpInstance = zoneLinkMap[zone.zone_id];
@@ -1216,7 +1344,7 @@ async function setMatrixProfile(profile) {
 async function control(action) {
     if (!selectedZone) return;
     try {
-        await fetch('/roon/control', {
+        await fetch('/control', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ zone_id: selectedZone, action })
@@ -1229,14 +1357,13 @@ async function control(action) {
 
 async function volume(delta) {
     if (!selectedZone) return;
-    const zone = zonesData.find(z => z.zone_id === selectedZone);
-    if (!zone || !zone.outputs || !zone.outputs[0]) return;
-    const outputId = zone.outputs[0].output_id;
     try {
-        await fetch('/roon/volume', {
+        // Use unified control API with volume action
+        const action = delta > 0 ? 'vol_up' : 'vol_down';
+        await fetch('/control', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ output_id: outputId, value: delta, relative: true })
+            body: JSON.stringify({ zone_id: selectedZone, action, value: Math.abs(delta) })
         });
         setTimeout(loadZones, 200);
     } catch (e) {
@@ -1324,10 +1451,11 @@ async function loadKnobs() {
     try {
         const [devicesRes, zonesRes] = await Promise.all([
             fetch('/knob/devices').then(r => r.json()),
-            fetch('/roon/zones').then(r => r.json()).catch(() => [])
+            fetch('/zones').then(r => r.json()).catch(() => ({ zones: [] }))
         ]);
         const knobs = devicesRes.knobs || [];
-        zonesData = zonesRes || [];
+        // /zones returns {zones: [...]} with zone_id and zone_name
+        zonesData = zonesRes.zones || zonesRes || [];
 
         if (knobs.length === 0) {
             section.innerHTML = '<article>No knobs registered. Connect a knob to see it here.</article>';
@@ -1338,7 +1466,7 @@ async function loadKnobs() {
             knobs.map(k => {
                 const st = k.status || {};
                 const bat = st.battery_level != null ? st.battery_level + '%' + (st.battery_charging ? ' ⚡' : '') : '—';
-                const zone = st.zone_id ? esc(zonesData.find(z => z.zone_id === st.zone_id)?.display_name || st.zone_id) : '—';
+                const zone = st.zone_id ? esc(zonesData.find(z => z.zone_id === st.zone_id)?.zone_name || st.zone_id) : '—';
                 const ip = st.ip || '—';
                 return '<tr><td><code>' + esc(k.knob_id) + '</code></td><td>' + knobDisplayName(k) + '</td><td>' + esc(k.version || '—') + '</td><td>' + esc(ip) + '</td><td>' + zone + '</td><td>' + bat + '</td><td>' + ago(k.last_seen) + '</td><td><button class="outline secondary" data-knob-id="' + escAttr(k.knob_id) + '">Config</button></td></tr>';
             }).join('') + '</tbody></table></article>';
@@ -1512,71 +1640,6 @@ pub async fn settings_page(State(_state): State<AppState>) -> impl IntoResponse 
     let content = r#"
 <h1>Settings</h1>
 
-<section id="lms-config">
-    <hgroup>
-        <h2>Lyrion Music Server (LMS)</h2>
-        <p>Configure connection to your Squeezebox server</p>
-    </hgroup>
-    <article id="lms-config-card">
-        <div id="lms-status-line">Checking...</div>
-        <div id="lms-config-form" style="display:none;">
-            <div class="grid">
-                <label>Host
-                    <input type="text" id="lms-host" placeholder="192.168.1.x or hostname">
-                </label>
-                <label>Port
-                    <input type="number" id="lms-port" value="9000" min="1" max="65535">
-                </label>
-            </div>
-            <div class="grid">
-                <label>Username (optional)
-                    <input type="text" id="lms-username" placeholder="Leave blank if not required">
-                </label>
-                <label>Password (optional)
-                    <input type="password" id="lms-password" placeholder="Leave blank if not required">
-                </label>
-            </div>
-            <button onclick="saveLmsConfig()">Save & Connect</button>
-            <span id="lms-save-msg"></span>
-        </div>
-        <button id="lms-reconfig-btn" style="display:none;" onclick="showLmsForm()">Reconfigure</button>
-    </article>
-</section>
-
-<section id="hqp-config">
-    <hgroup>
-        <h2>HQPlayer</h2>
-        <p>Configure connection to HQPlayer for DSP control</p>
-    </hgroup>
-    <article id="hqp-config-card">
-        <div id="hqp-status-line">Checking...</div>
-        <div id="hqp-config-form" style="display:none;">
-            <div class="grid">
-                <label>Host
-                    <input type="text" id="hqp-host" placeholder="192.168.1.x or hostname">
-                </label>
-                <label>Native Port (TCP)
-                    <input type="number" id="hqp-port" value="4321" min="1" max="65535">
-                </label>
-                <label>Web Port (HTTP)
-                    <input type="number" id="hqp-web-port" value="8088" min="1" max="65535">
-                </label>
-            </div>
-            <div class="grid">
-                <label>Username (optional)
-                    <input type="text" id="hqp-username" placeholder="For web UI profile loading">
-                </label>
-                <label>Password (optional)
-                    <input type="password" id="hqp-password">
-                </label>
-            </div>
-            <button onclick="saveHqpConfig()">Save & Connect</button>
-            <span id="hqp-save-msg"></span>
-        </div>
-        <button id="hqp-reconfig-btn" style="display:none;" onclick="showHqpForm()">Reconfigure</button>
-    </article>
-</section>
-
 <section id="adapter-settings">
     <hgroup>
         <h2>Adapter Settings</h2>
@@ -1625,148 +1688,6 @@ pub async fn settings_page(State(_state): State<AppState>) -> impl IntoResponse 
 
 <script>
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
-
-// LMS Config
-async function loadLmsConfig() {
-    const statusLine = document.getElementById('lms-status-line');
-    const form = document.getElementById('lms-config-form');
-    const reconfigBtn = document.getElementById('lms-reconfig-btn');
-
-    try {
-        const res = await fetch('/lms/config');
-        const data = await res.json();
-
-        if (data.configured && data.connected) {
-            statusLine.innerHTML = `<span class="status-ok">✓ Connected to ${esc(data.host)}:${data.port}</span>`;
-            statusLine.className = '';
-            form.style.display = 'none';
-            reconfigBtn.style.display = 'inline-block';
-            document.getElementById('lms-host').value = data.host || '';
-            document.getElementById('lms-port').value = data.port || 9000;
-        } else if (data.configured) {
-            statusLine.innerHTML = `<span class="status-err">✗ Configured but not connected (${esc(data.host)}:${data.port})</span>`;
-            form.style.display = 'none';
-            reconfigBtn.style.display = 'inline-block';
-        } else {
-            statusLine.textContent = 'Not configured';
-            statusLine.className = '';
-            form.style.display = 'block';
-            reconfigBtn.style.display = 'none';
-        }
-    } catch (e) {
-        statusLine.innerHTML = `<span class="status-err">Error: ${esc(e.message)}</span>`;
-        form.style.display = 'block';
-    }
-}
-
-function showLmsForm() {
-    document.getElementById('lms-config-form').style.display = 'block';
-    document.getElementById('lms-reconfig-btn').style.display = 'none';
-}
-
-async function saveLmsConfig() {
-    const msg = document.getElementById('lms-save-msg');
-    const host = document.getElementById('lms-host').value.trim();
-    const port = parseInt(document.getElementById('lms-port').value) || 9000;
-    const username = document.getElementById('lms-username').value.trim() || null;
-    const password = document.getElementById('lms-password').value || null;
-
-    if (!host) {
-        msg.innerHTML = '<span class="status-err">Host is required</span>';
-        return;
-    }
-
-    msg.textContent = 'Connecting...';
-    try {
-        const res = await fetch('/lms/configure', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ host, port, username, password })
-        });
-        const data = await res.json();
-        if (res.ok) {
-            msg.innerHTML = '<span class="status-ok">Connected!</span>';
-            setTimeout(loadLmsConfig, 500);
-        } else {
-            msg.innerHTML = `<span class="status-err">${esc(data.error)}</span>`;
-        }
-    } catch (e) {
-        msg.innerHTML = `<span class="status-err">${esc(e.message)}</span>`;
-    }
-}
-
-// HQPlayer Config
-async function loadHqpConfig() {
-    const statusLine = document.getElementById('hqp-status-line');
-    const form = document.getElementById('hqp-config-form');
-    const reconfigBtn = document.getElementById('hqp-reconfig-btn');
-
-    try {
-        const res = await fetch('/hqplayer/config');
-        const data = await res.json();
-
-        if (data.configured && data.connected) {
-            statusLine.innerHTML = `<span class="status-ok">✓ Connected to ${esc(data.host)}:${data.port}</span>`;
-            form.style.display = 'none';
-            reconfigBtn.style.display = 'inline-block';
-            document.getElementById('hqp-host').value = data.host || '';
-            document.getElementById('hqp-port').value = data.port || 4321;
-            document.getElementById('hqp-web-port').value = data.web_port || 8088;
-        } else if (data.configured) {
-            statusLine.innerHTML = `<span class="status-err">✗ Configured but not connected (${esc(data.host)}:${data.port})</span>`;
-            form.style.display = 'none';
-            reconfigBtn.style.display = 'inline-block';
-        } else {
-            statusLine.textContent = 'Not configured';
-            form.style.display = 'block';
-            reconfigBtn.style.display = 'none';
-        }
-    } catch (e) {
-        statusLine.innerHTML = `<span class="status-err">Error: ${esc(e.message)}</span>`;
-        form.style.display = 'block';
-    }
-}
-
-function showHqpForm() {
-    document.getElementById('hqp-config-form').style.display = 'block';
-    document.getElementById('hqp-reconfig-btn').style.display = 'none';
-}
-
-async function saveHqpConfig() {
-    const msg = document.getElementById('hqp-save-msg');
-    const host = document.getElementById('hqp-host').value.trim();
-    const port = parseInt(document.getElementById('hqp-port').value) || 4321;
-    const web_port = parseInt(document.getElementById('hqp-web-port').value) || 8088;
-    const username = document.getElementById('hqp-username').value.trim() || null;
-    const password = document.getElementById('hqp-password').value || null;
-
-    if (!host) {
-        msg.innerHTML = '<span class="status-err">Host is required</span>';
-        return;
-    }
-
-    msg.textContent = 'Connecting...';
-    try {
-        const res = await fetch('/hqplayer/configure', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ host, port, web_port, username, password })
-        });
-        const data = await res.json();
-        if (res.ok) {
-            if (data.connected) {
-                msg.innerHTML = '<span class="status-ok">Connected!</span>';
-            } else {
-                msg.innerHTML = '<span class="status-err">Saved but not connected - check host</span>';
-            }
-            setTimeout(loadHqpConfig, 500);
-        } else {
-            msg.innerHTML = `<span class="status-err">${esc(data.error)}</span>`;
-        }
-    } catch (e) {
-        msg.innerHTML = `<span class="status-err">${esc(e.message)}</span>`;
-    }
-}
 
 // Discovery status
 async function loadDiscoveryStatus() {
@@ -1858,8 +1779,6 @@ function saveUiSettings() {
 }
 
 // Load all on page load
-loadLmsConfig();
-loadHqpConfig();
 loadDiscoveryStatus();
 loadAdapterSettings();
 loadUiSettings();
