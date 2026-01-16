@@ -24,9 +24,7 @@
                 &#9679; [% "PLUGIN_UNIFIED_HIFI_RUNNING" | string %]
             </span>
             &nbsp;&nbsp;
-            <a href="[% webUrl %]" target="_blank">
-                [% "PLUGIN_UNIFIED_HIFI_OPENUI" | string %] &#8594;
-            </a>
+            <input type="submit" value="[% "PLUGIN_UNIFIED_HIFI_OPENUI" | string %] &#8594;" onclick="window.open('[% webUrl %]', '_blank'); return false;" />
         [% ELSE %]
             <span style="color: #dc3545; font-weight: bold;">
                 &#9679; [% "PLUGIN_UNIFIED_HIFI_STOPPED" | string %]
@@ -79,86 +77,39 @@
 <!-- Knob Configuration Section -->
     <hr/>
     [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB" desc="" %]
-
-    [% IF knobStatus.last_seen %]
-    <div class="prefDesc" style="padding: 8px; background: #e8f5e9; border-radius: 4px; margin-bottom: 10px;">
-        <b>Status:</b> Connected
-        &nbsp;|&nbsp; <b>ID:</b> [% knobStatus.knob_id %]
-        [% IF knobStatus.version %]&nbsp;|&nbsp; <b>Firmware:</b> [% knobStatus.version %][% END %]
-        [% IF knobStatus.status.battery_level %]
-            &nbsp;|&nbsp; <b>Battery:</b> [% knobStatus.status.battery_level %]%
-            [% IF knobStatus.status.battery_charging %](charging)[% END %]
-        [% END %]
-    </div>
-    [% END %]
-
-    <div class="prefDesc">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB_DESC" | string %]
-    </div>
-    [% END %]
-
-    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB_NAME" desc="PLUGIN_UNIFIED_HIFI_KNOB_NAME_DESC" %]
-        <input type="text" name="pref_knob_name" id="pref_knob_name"
-               value="[% prefs.knob_name %]" style="width: 200px;"
-               placeholder="My Knob" />
-    [% END %]
-
-    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB_ROTATION" desc="PLUGIN_UNIFIED_HIFI_KNOB_ROTATION_DESC" %]
-    [% SET rot_charging = prefs.knob_rotation_charging.defined ? prefs.knob_rotation_charging : 180 %]
-    [% SET rot_battery = prefs.knob_rotation_battery.defined ? prefs.knob_rotation_battery : 0 %]
-        <label style="display: inline-block; width: 120px;">When charging:</label>
-        <select name="pref_knob_rotation_charging" id="pref_knob_rotation_charging">
-            [% FOREACH rot IN rotations %]
-                <option value="[% rot %]"
-                        [% IF rot_charging == rot %]selected[% END %]>
-                    [% rot %]&deg;
-                </option>
+        <style>
+            .knob-list th {
+                text-align: left;
+                padding-right: 15px;
+                font-weight: bold;
+            }
+        </style>
+        <table>
+            <tr class="knob-list">
+                <th>[% "PLUGIN_UNIFIED_HIFI_KNOB_NAME" | string %]</th>
+                <th>[% "PLUGIN_UNIFIED_HIFI_KNOB_ID"| string %]</th>
+                <th>[% "PLUGIN_UNIFIED_HIFI_KNOB_FIRMWARE"| string %]</th>
+                <th>[% "PLUGIN_UNIFIED_HIFI_KNOB_BATTERY"| string %]</th>
+                <th></th>
+            </tr>
+            [% FOREACH knob = knobStatus.knobs %]
+                <tr>
+                    <td style="vertical-align: middle; padding-right: 10px">[% knob.name | html %]</td>
+                    <td style="vertical-align: middle; padding-right: 10px">[% knob.knob_id | html %]</td>
+                    <td style="vertical-align: middle; padding-right: 10px">[% knob.version | html %]</td>
+                    <td style="vertical-align: middle; padding-right: 10px">
+                        [% IF knob.status.battery_level %]
+                            [% knob.status.battery_level %]%
+                            [% IF knob.status.battery_charging; "PLUGIN_UNIFIED_HIFI_KNOB_BATTERY_CHARGING" FILTER string; END %]
+                        [% ELSE %]
+                            N/A
+                        [% END %]
+                    </td>
+                    <td>
+                        <input type="submit" value="[% "EDIT" | string %] &#8594;" onclick="window.open('[% webUrl %]/knobs/[% knob.knob_id | uri %]', '_blank'); return false;" />
+                    </td>
+                </tr>
             [% END %]
-        </select>
-        <br/><br/>
-        <label style="display: inline-block; width: 120px;">On battery:</label>
-        <select name="pref_knob_rotation_battery" id="pref_knob_rotation_battery">
-            [% FOREACH rot IN rotations %]
-                <option value="[% rot %]"
-                        [% IF rot_battery == rot %]selected[% END %]>
-                    [% rot %]&deg;
-                </option>
-            [% END %]
-        </select>
+        </table>
     [% END %]
-
-    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB_POWER_CHARGING" desc="PLUGIN_UNIFIED_HIFI_KNOB_POWER_CHARGING_DESC" %]
-        <label style="display: inline-block; width: 120px;">Art mode after:</label>
-        <input type="number" name="pref_knob_art_mode_charging" id="pref_knob_art_mode_charging"
-               value="[% prefs.knob_art_mode_charging || 60 %]" min="0" max="3600"
-               style="width: 60px;" /> sec (0 = disabled)
-        <br/><br/>
-        <label style="display: inline-block; width: 120px;">Dim after:</label>
-        <input type="number" name="pref_knob_dim_charging" id="pref_knob_dim_charging"
-               value="[% prefs.knob_dim_charging || 120 %]" min="0" max="3600"
-               style="width: 60px;" /> sec (0 = disabled)
-        <br/><br/>
-        <label style="display: inline-block; width: 120px;">Sleep after:</label>
-        <input type="number" name="pref_knob_sleep_charging" id="pref_knob_sleep_charging"
-               value="[% prefs.knob_sleep_charging || 0 %]" min="0" max="3600"
-               style="width: 60px;" /> sec (0 = disabled)
-    [% END %]
-
-    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB_POWER_BATTERY" desc="PLUGIN_UNIFIED_HIFI_KNOB_POWER_BATTERY_DESC" %]
-        <label style="display: inline-block; width: 120px;">Art mode after:</label>
-        <input type="number" name="pref_knob_art_mode_battery" id="pref_knob_art_mode_battery"
-               value="[% prefs.knob_art_mode_battery || 30 %]" min="0" max="3600"
-               style="width: 60px;" /> sec (0 = disabled)
-        <br/><br/>
-        <label style="display: inline-block; width: 120px;">Dim after:</label>
-        <input type="number" name="pref_knob_dim_battery" id="pref_knob_dim_battery"
-               value="[% prefs.knob_dim_battery || 30 %]" min="0" max="3600"
-               style="width: 60px;" /> sec (0 = disabled)
-        <br/><br/>
-        <label style="display: inline-block; width: 120px;">Sleep after:</label>
-        <input type="number" name="pref_knob_sleep_battery" id="pref_knob_sleep_battery"
-               value="[% prefs.knob_sleep_battery || 60 %]" min="0" max="3600"
-               style="width: 60px;" /> sec (0 = disabled)
-    [% END %]
-
 [% PROCESS settings/footer.html %]

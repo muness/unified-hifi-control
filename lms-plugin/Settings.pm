@@ -27,10 +27,6 @@ sub page {
 sub prefs {
     return ($prefs, qw(
         autorun port bin loglevel
-        knob_name
-        knob_rotation_charging knob_rotation_battery
-        knob_art_mode_charging knob_dim_charging knob_sleep_charging
-        knob_art_mode_battery knob_dim_battery knob_sleep_battery
     ));
 }
 
@@ -80,19 +76,14 @@ sub handler {
 sub beforeRender {
     my ($class, $params, $client) = @_;
 
-    if ($params->{saveSettings}) {
-        # Write knob config file for binary to read
-        Plugins::UnifiedHiFi::Helper->writeKnobConfig();
-
-        if ($params->{needsRestart}) {
-            $log->info("Settings changed, restarting helper");
-            Plugins::UnifiedHiFi::Helper->stop();
-            # Always attempt start after stop to ensure service is running
-            # Small delay to allow process to fully terminate
-            Slim::Utils::Timers::setTimer(undef, time() + 1, sub {
-                Plugins::UnifiedHiFi::Helper->start();
-            });
-        }
+    if ( $params->{saveSettings} && $params->{needsRestart} ) {
+        $log->info("Settings changed, restarting helper");
+        Plugins::UnifiedHiFi::Helper->stop();
+        # Always attempt start after stop to ensure service is running
+        # Small delay to allow process to fully terminate
+        Slim::Utils::Timers::setTimer(undef, time() + 1, sub {
+            Plugins::UnifiedHiFi::Helper->start();
+        });
     }
 
     # Add template variables
@@ -102,7 +93,6 @@ sub beforeRender {
     my $platformBinary = Plugins::UnifiedHiFi::Helper::BINARY_MAP->{Plugins::UnifiedHiFi::Helper->detectPlatform()};
     $params->{'binaries'}   = $platformBinary ? [$platformBinary] : [];
     $params->{'loglevels'}  = ['error', 'warn', 'info', 'debug'];
-    $params->{'rotations'}  = [0, 90, 180, 270];
 
     # Binary download status
     $params->{'binaryStatus'}   = Plugins::UnifiedHiFi::Helper->binaryStatus();
