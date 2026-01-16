@@ -476,6 +476,17 @@ sub writeKnobConfig {
     }
 }
 
+# Notify helper of playback state change
+sub notifyPlaybackStateChange {
+    my ($class, $client) = @_;
+    return unless running() && $client;
+
+    my $zoneId = 'lms:' . $client->id;
+    # TODO: Implement notification logic (e.g., HTTP request to helper API)
+
+    $log->debug("Notified helper of playback state change for zone $zoneId");
+}
+
 # Get knob status from running helper (if available)
 sub knobStatus {
     my $class = shift;

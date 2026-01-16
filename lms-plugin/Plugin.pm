@@ -43,6 +43,8 @@ sub initPlugin {
         Plugins::UnifiedHiFi::Helper->start;
     }
 
+    Slim::Control::Request::subscribe(\&_onPlaylistEvent, [['power', 'pause', 'stop', 'mixer', 'playlist'], ['newsong', 'pause', 'stop', 'play', 'volume']]);
+
     $log->info("Unified Hi-Fi Control plugin initialized");
 }
 
@@ -56,6 +58,14 @@ sub getDisplayName {
 }
 
 sub playerMenu { }
+
+sub _onPlaylistEvent {
+    my $request = shift;
+
+    my $client = $request->client() || return;
+
+    Plugins::UnifiedHiFi::Helper->notifyPlaybackStateChange($client);
+}
 
 1;
 
