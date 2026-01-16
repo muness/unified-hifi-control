@@ -231,8 +231,6 @@ sub bin {
     my $binaryPath = catfile(binDir(), $selected);
     chmod 0755, $binaryPath if !main::ISWINDOWS && -f $binaryPath && !-x _;
 
-    main::DEBUGLOG && $log->is_debug && $log->debug("Using binary: $binaryPath");
-
     return $binaryPath;
 }
 
