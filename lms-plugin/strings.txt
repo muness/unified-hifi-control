@@ -10,6 +10,12 @@ PLUGIN_UNIFIED_HIFI_AUTORUN
 PLUGIN_UNIFIED_HIFI_AUTORUN_DESC
 	EN	Automatically start the Unified Hi-Fi Control bridge when LMS starts.
 
+PLUGIN_UNIFIED_HIFI_START_BRIDGE
+	EN	Start Bridge
+
+PLUGIN_UNIFIED_HIFI_STOP_BRIDGE
+	EN	Stop Bridge
+
 PLUGIN_UNIFIED_HIFI_PORT
 	EN	Bridge port
 
@@ -43,29 +49,17 @@ PLUGIN_UNIFIED_HIFI_STATUS
 PLUGIN_UNIFIED_HIFI_KNOB
 	EN	Knob Configuration
 
-PLUGIN_UNIFIED_HIFI_KNOB_DESC
-	EN	Configure your ESP32 hardware knob display and power management settings.
-
 PLUGIN_UNIFIED_HIFI_KNOB_NAME
 	EN	Knob name
 
-PLUGIN_UNIFIED_HIFI_KNOB_NAME_DESC
-	EN	A friendly name for your knob (for identification).
+PLUGIN_UNIFIED_HIFI_KNOB_FIRMWARE
+	EN	Firmware
 
-PLUGIN_UNIFIED_HIFI_KNOB_ROTATION
-	EN	Display rotation
+PLUGIN_UNIFIED_HIFI_KNOB_BATTERY
+	EN	Battery
 
-PLUGIN_UNIFIED_HIFI_KNOB_ROTATION_DESC
-	EN	Set the display orientation for when the knob is charging (on dock) vs on battery (handheld).
+PLUGIN_UNIFIED_HIFI_KNOB_BATTERY_CHARGING
+	EN	(charging)
 
-PLUGIN_UNIFIED_HIFI_KNOB_POWER_CHARGING
-	EN	Power timers (charging)
-
-PLUGIN_UNIFIED_HIFI_KNOB_POWER_CHARGING_DESC
-	EN	Display dimming and sleep timers when the knob is charging. Set to 0 to disable.
-
-PLUGIN_UNIFIED_HIFI_KNOB_POWER_BATTERY
-	EN	Power timers (battery)
-
-PLUGIN_UNIFIED_HIFI_KNOB_POWER_BATTERY_DESC
-	EN	Display dimming and sleep timers when the knob is on battery. Set to 0 to disable.
+PLUGIN_UNIFIED_HIFI_KNOB_ID
+	EN	ID

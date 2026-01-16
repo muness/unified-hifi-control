@@ -6,7 +6,6 @@ package Plugins::UnifiedHiFi::Helper;
 use strict;
 use warnings;
 
-use File::Slurp qw(write_file);
 use File::Spec::Functions qw(catfile catdir);
 use File::Path qw(make_path);
 use JSON::XS;
@@ -231,8 +230,6 @@ sub bin {
     my $binaryPath = catfile(binDir(), $selected);
     chmod 0755, $binaryPath if !main::ISWINDOWS && -f $binaryPath && !-x _;
 
-    main::DEBUGLOG && $log->is_debug && $log->debug("Using binary: $binaryPath");
-
     return $binaryPath;
 }
 
@@ -374,75 +371,52 @@ sub _resetRestarts {
     $restarts = 0;
 }
 
-# Write knob configuration to JSON file for binary to read
-sub writeKnobConfig {
-    my $class = shift;
-
-    my $configDir = Slim::Utils::OSDetect::dirsFor('prefs');
-    my $configFile = catfile($configDir, 'knob_config.json');
-
-    my $config = {
-        name              => $prefs->get('knob_name') || '',
-        rotation_charging     => int($prefs->get('knob_rotation_charging') // 180),
-        rotation_not_charging => int($prefs->get('knob_rotation_battery') // 0),
-        art_mode_charging => {
-            enabled     => ($prefs->get('knob_art_mode_charging') // 60) > 0,
-            timeout_sec => int($prefs->get('knob_art_mode_charging') // 60),
-        },
-        dim_charging => {
-            enabled     => ($prefs->get('knob_dim_charging') // 120) > 0,
-            timeout_sec => int($prefs->get('knob_dim_charging') // 120),
-        },
-        sleep_charging => {
-            enabled     => ($prefs->get('knob_sleep_charging') // 0) > 0,
-            timeout_sec => int($prefs->get('knob_sleep_charging') // 0),
-        },
-        art_mode_battery => {
-            enabled     => ($prefs->get('knob_art_mode_battery') // 30) > 0,
-            timeout_sec => int($prefs->get('knob_art_mode_battery') // 30),
-        },
-        dim_battery => {
-            enabled     => ($prefs->get('knob_dim_battery') // 30) > 0,
-            timeout_sec => int($prefs->get('knob_dim_battery') // 30),
-        },
-        sleep_battery => {
-            enabled     => ($prefs->get('knob_sleep_battery') // 60) > 0,
-            timeout_sec => int($prefs->get('knob_sleep_battery') // 60),
-        },
-    };
-
-    eval {
-        write_file($configFile, encode_json($config));
-        $log->debug("Wrote knob config to $configFile");
-    };
-    if ($@) {
-        $log->error("Failed to write knob config: $@");
-    }
-}
-
 # Get knob status from running helper (if available)
 sub knobStatus {
-    my $class = shift;
+    my ($class, $cb) = @_;
+    _helperAPICall('knob/devices', sub {
+        my ($data) = @_;
 
-    return {} unless $class->running();
+        # Return first knob status (single knob mode)
+        if ($data->{knobs} && @{$data->{knobs}}) {
+            $cb->($data);
+            return;
+        }
+        $cb->({});
+    });
+}
+
+sub _helperAPICall {
+    my ($endpoint, $cb) = @_;
+
+    return $cb->({}) unless __PACKAGE__->running();
 
     my $port = $prefs->get('port') || 8088;
-    my $url = "http://localhost:$port/api/knobs";
+    my $url = "http://localhost:$port/$endpoint";
 
-    eval {
-        require LWP::UserAgent;
-        my $ua = LWP::UserAgent->new(timeout => 2);
-        my $response = $ua->get($url);
-        if ($response->is_success) {
-            my $data = decode_json($response->decoded_content);
-            # Return first knob status (single knob mode)
-            if ($data->{knobs} && @{$data->{knobs}}) {
-                return $data->{knobs}[0];
+    main::DEBUGLOG && $log->is_debug && $log->debug("Calling bridge: $url");
+
+    Slim::Networking::SimpleAsyncHTTP->new(
+        sub {
+            my $response = shift;
+
+            if ($response->code == 200) {
+                my $data = eval { decode_json($response->content) };
+                $log->error("JSON decode error: $@ " . $response->content) if $@;
+                main::DEBUGLOG && $log->is_debug && $log->debug("Received response from bridge: " . encode_json($data)) unless $@;
+                return $cb->($data) if $data;
             }
-        }
-    };
 
-    return {};
+            $log->warn("Unexpected response from bridge: " . $response->code);
+            $cb->({});
+        },
+        sub {
+            my ($response, $error) = @_;
+            $log->error($error);
+            $cb->({ error => $error });
+        },
+        { timeout => 2 }
+    )->get($url);
 }
 
 1;

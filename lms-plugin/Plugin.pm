@@ -43,6 +43,8 @@ sub initPlugin {
         Plugins::UnifiedHiFi::Helper->start;
     }
 
+    $prefs->setValidate({ 'validator' => 'intlimit', 'low' => 1024, 'high' => 65535 }, 'port');
+
     $log->info("Unified Hi-Fi Control plugin initialized");
 }
 
