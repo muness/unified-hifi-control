@@ -3,8 +3,7 @@
 //! Shows all available zones with:
 //! - Zone cards in a grid layout
 //! - Now playing info for each zone
-//! - Transport controls per zone
-//! - HQPlayer DSP section for linked zones
+//! - Transport and volume controls per zone
 
 use dioxus::prelude::*;
 
@@ -13,23 +12,12 @@ use crate::ui::components::Layout;
 /// Client-side JavaScript for the Zones page.
 const ZONES_SCRIPT: &str = r#"
 
-let hqpZoneLinks = {};
-let matrixProfiles = [];
-
 async function loadZones() {
     const section = document.querySelector('#zones');
     try {
-        const [zonesRes, linksRes] = await Promise.all([
-            fetch('/zones').then(r => r.json()),
-            fetch('/hqp/zones/links').then(r => r.json()).catch(() => ({ links: [] }))
-        ]);
+        const zonesRes = await fetch('/zones').then(r => r.json());
         // /zones returns {zones: [...]} with zone_id and zone_name
         const zones = zonesRes.zones || zonesRes || [];
-
-        // Build HQP link lookup (API returns {links: [...]})
-        const links = linksRes.links || linksRes || [];
-        hqpZoneLinks = {};
-        links.forEach(l => { hqpZoneLinks[l.zone_id] = l.instance; });
 
         if (!zones.length) {
             section.innerHTML = '<article>No zones available. Check that adapters are connected.</article>';
@@ -38,31 +26,35 @@ async function loadZones() {
 
         section.innerHTML = '<div class="zone-grid">' + zones.map(zone => {
             const playIcon = zone.state === 'playing' ? '⏸︎' : '▶';
-            const hqpLink = hqpZoneLinks[zone.zone_id];
-            const hqpBadge = hqpLink ? `<mark style="font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;">HQP</mark>` : '';
             const sourceBadge = zone.source ? `<mark style="font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;background:var(--pico-muted-background);">${esc(zone.source)}</mark>` : '';
 
             return `
                 <article>
                     <header>
-                        <strong>${esc(zone.zone_name)}</strong>${hqpBadge}${sourceBadge}
+                        <strong>${esc(zone.zone_name)}</strong>${sourceBadge}
                         <small> (${esc(zone.state)})</small>
                     </header>
                     <div id="zone-info-${esc(zone.zone_id)}" style="min-height:40px;overflow:hidden;"><small>Loading...</small></div>
                     <footer>
-                        <div class="controls" data-zone-id="${esc(zone.zone_id)}">
+                        <div class="controls" data-zone-id="${esc(zone.zone_id)}" style="align-items:center;">
                             <button data-action="previous">◀◀</button>
                             <button data-action="play_pause">${playIcon}</button>
                             <button data-action="next">▶▶</button>
+                            <span style="margin-left:auto;display:flex;align-items:center;gap:0.25rem;">
+                                <button data-action="vol_down" style="padding:0.3rem 0.6rem;">−</button>
+                                <span id="zone-vol-${esc(zone.zone_id)}" style="min-width:3.5rem;text-align:center;font-size:0.9em;">—</span>
+                                <button data-action="vol_up" style="padding:0.3rem 0.6rem;">+</button>
+                            </span>
                         </div>
                     </footer>
                 </article>
             `;
         }).join('') + '</div>';
 
-        // Fetch now playing info for each zone
+        // Fetch now playing info for each zone (includes volume)
         zones.forEach(async zone => {
             const infoEl = document.getElementById('zone-info-' + zone.zone_id);
+            const volEl = document.getElementById('zone-vol-' + zone.zone_id);
             if (!infoEl) return;
             try {
                 const np = await fetch('/now_playing?zone_id=' + encodeURIComponent(zone.zone_id)).then(r => r.json());
@@ -71,73 +63,17 @@ async function loadZones() {
                 } else {
                     infoEl.innerHTML = '<small>Nothing playing</small>';
                 }
+                // Volume display
+                if (volEl && np.volume != null) {
+                    const suffix = np.volume_type === 'db' ? ' dB' : '';
+                    volEl.textContent = Math.round(np.volume) + suffix;
+                }
             } catch (e) {
                 infoEl.innerHTML = '<small>—</small>';
             }
         });
-
-        // Show HQP DSP section if any zone is linked
-        const hasHqpLinks = Object.keys(hqpZoneLinks).length > 0;
-        document.getElementById('hqp-dsp').style.display = hasHqpLinks ? 'block' : 'none';
-        if (hasHqpLinks) loadHqpDsp();
     } catch (e) {
         section.innerHTML = `<article class="status-err">Error: ${esc(e.message)}</article>`;
-    }
-}
-
-async function loadHqpDsp() {
-    const section = document.getElementById('hqp-dsp-controls');
-    try {
-        const [profiles, pipeline] = await Promise.all([
-            fetch('/hqplayer/matrix/profiles').then(r => r.json()).catch(() => []),
-            fetch('/hqplayer/pipeline').then(r => r.json()).catch(() => null)
-        ]);
-        matrixProfiles = profiles || [];
-
-        const st = pipeline?.status || {};
-        const currentProfile = st.active_convolution || st.convolution || 'None';
-
-        if (!matrixProfiles.length) {
-            section.innerHTML = '<p>No matrix profiles available. Configure HQPlayer first.</p>';
-            return;
-        }
-
-        section.innerHTML = `
-            <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
-                <label style="margin:0;">Matrix Profile:
-                    <select id="matrix-select" style="width:auto;margin-left:0.5rem;">
-                        <option value="">-- Select --</option>
-                        ${matrixProfiles.map(p => {
-                            const name = p.name || p;
-                            const selected = name === currentProfile ? ' selected' : '';
-                            return `<option value="${esc(name)}"${selected}>${esc(name)}</option>`;
-                        }).join('')}
-                    </select>
-                </label>
-                <span id="matrix-status"></span>
-            </div>
-            <p style="margin-top:0.5rem;"><small>Current: <strong>${esc(st.active_filter || 'N/A')}</strong> / <strong>${esc(st.active_shaper || 'N/A')}</strong></small></p>
-        `;
-
-        document.getElementById('matrix-select').addEventListener('change', async (e) => {
-            const profile = e.target.value;
-            if (!profile) return;
-            const statusEl = document.getElementById('matrix-status');
-            statusEl.textContent = 'Loading...';
-            try {
-                await fetch('/hqplayer/matrix/profile', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ profile })
-                });
-                statusEl.innerHTML = '<span class="status-ok">✓</span>';
-                setTimeout(loadHqpDsp, 500);
-            } catch (err) {
-                statusEl.innerHTML = '<span class="status-err">Failed</span>';
-            }
-        });
-    } catch (e) {
-        section.innerHTML = `<p class="status-err">Error: ${esc(e.message)}</p>`;
     }
 }
 
@@ -164,7 +100,25 @@ document.querySelector('#zones').addEventListener('click', e => {
 });
 
 loadZones();
-setInterval(loadZones, 4000);
+
+// SSE for real-time updates (no polling jitter)
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+    try {
+        const event = JSON.parse(e.data);
+        // Reload zones on any zone-related event
+        if (['ZoneUpdated', 'ZoneRemoved', 'NowPlayingChanged', 'VolumeChanged',
+             'RoonConnected', 'RoonDisconnected', 'LmsConnected', 'LmsDisconnected'].includes(event.type)) {
+            loadZones();
+        }
+    } catch (err) { console.error('SSE parse error:', err); }
+};
+es.onerror = () => {
+    // Fallback to polling if SSE fails
+    console.warn('SSE disconnected, falling back to polling');
+    es.close();
+    setInterval(loadZones, 4000);
+};
 "#;
 
 /// Zones listing page component.
@@ -182,17 +136,6 @@ pub fn ZonesPage() -> Element {
                 article {
                     aria_busy: "true",
                     "Loading zones..."
-                }
-            }
-
-            // HQPlayer DSP section (hidden initially, shown if zones are linked)
-            section { id: "hqp-dsp", style: "display:none;",
-                hgroup {
-                    h2 { "HQPlayer DSP" }
-                    p { "Matrix profiles for linked zones" }
-                }
-                article { id: "hqp-dsp-controls",
-                    "Loading..."
                 }
             }
         }

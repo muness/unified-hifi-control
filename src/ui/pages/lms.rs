@@ -141,8 +141,28 @@ async function saveLmsConfig() {
 
 loadLmsConfig();
 loadLmsPlayers();
-setInterval(loadLmsConfig, 10000);
-setInterval(loadLmsPlayers, 4000);
+
+// SSE for real-time updates (no polling jitter)
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+    try {
+        const event = JSON.parse(e.data);
+        // Reload on LMS-related events
+        if (['LmsConnected', 'LmsDisconnected'].includes(event.type)) {
+            loadLmsConfig();
+            loadLmsPlayers();
+        }
+        if (event.type === 'LmsPlayerStateChanged') {
+            loadLmsPlayers();
+        }
+    } catch (err) { console.error('SSE parse error:', err); }
+};
+es.onerror = () => {
+    console.warn('SSE disconnected, falling back to polling');
+    es.close();
+    setInterval(loadLmsConfig, 10000);
+    setInterval(loadLmsPlayers, 4000);
+};
 "#;
 
 /// LMS page component.

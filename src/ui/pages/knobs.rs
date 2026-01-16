@@ -217,7 +217,24 @@ document.getElementById('fetch-btn').addEventListener('click', async () => {
 
 loadKnobs();
 loadFirmwareVersion();
-setInterval(loadKnobs, 10000);
+
+// SSE for real-time updates (knobs don't have specific events yet, but zones matter for zone display)
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+    try {
+        const event = JSON.parse(e.data);
+        // Reload knobs when zones change (affects zone names in table)
+        if (['ZoneUpdated', 'ZoneRemoved', 'RoonConnected', 'RoonDisconnected',
+             'LmsConnected', 'LmsDisconnected'].includes(event.type)) {
+            loadKnobs();
+        }
+    } catch (err) { console.error('SSE parse error:', err); }
+};
+es.onerror = () => {
+    console.warn('SSE disconnected, falling back to polling');
+    es.close();
+    setInterval(loadKnobs, 10000);
+};
 "#;
 
 /// Knobs page component.

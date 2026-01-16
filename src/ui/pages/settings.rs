@@ -105,7 +105,24 @@ function saveUiSettings() {
 loadDiscoveryStatus();
 loadAdapterSettings();
 loadUiSettings();
-setInterval(loadDiscoveryStatus, 10000);
+
+// SSE for real-time updates (no polling jitter)
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+    try {
+        const event = JSON.parse(e.data);
+        // Reload discovery status on connection events
+        if (['RoonConnected', 'RoonDisconnected', 'HqpConnected', 'HqpDisconnected',
+             'LmsConnected', 'LmsDisconnected'].includes(event.type)) {
+            loadDiscoveryStatus();
+        }
+    } catch (err) { console.error('SSE parse error:', err); }
+};
+es.onerror = () => {
+    console.warn('SSE disconnected, falling back to polling');
+    es.close();
+    setInterval(loadDiscoveryStatus, 10000);
+};
 "#;
 
 /// Settings page component.

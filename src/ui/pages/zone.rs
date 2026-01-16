@@ -300,7 +300,28 @@ document.getElementById('btn-vol-down').addEventListener('click', () => volume(-
 document.getElementById('btn-vol-up').addEventListener('click', () => volume(2));
 
 loadZones();
-setInterval(loadZones, 3000);
+
+// SSE for real-time updates (no polling jitter)
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+    try {
+        const event = JSON.parse(e.data);
+        // Reload zones on zone-related events
+        if (['ZoneUpdated', 'ZoneRemoved', 'NowPlayingChanged', 'VolumeChanged',
+             'RoonConnected', 'RoonDisconnected'].includes(event.type)) {
+            loadZones();
+        }
+        // Reload HQP pipeline on HQP events
+        if (['HqpConnected', 'HqpDisconnected', 'HqpStateChanged', 'HqpPipelineChanged'].includes(event.type)) {
+            if (hqpPipelineLoaded) loadHqpPipeline();
+        }
+    } catch (err) { console.error('SSE parse error:', err); }
+};
+es.onerror = () => {
+    console.warn('SSE disconnected, falling back to polling');
+    es.close();
+    setInterval(loadZones, 3000);
+};
 "#;
 
 /// Zone page component.

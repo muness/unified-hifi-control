@@ -354,8 +354,32 @@ loadHqpStatus();
 loadHqpPipeline();
 loadHqpProfiles();
 loadZoneLinks();
-setInterval(loadHqpStatus, 5000);
-setInterval(loadHqpPipeline, 5000);
+
+// SSE for real-time updates (no polling jitter)
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+    try {
+        const event = JSON.parse(e.data);
+        // Reload HQP status/pipeline on HQP events
+        if (['HqpConnected', 'HqpDisconnected', 'HqpStateChanged'].includes(event.type)) {
+            loadHqpStatus();
+        }
+        if (['HqpConnected', 'HqpPipelineChanged'].includes(event.type)) {
+            loadHqpPipeline();
+        }
+        // Reload zone links on zone/connection events
+        if (['ZoneUpdated', 'ZoneRemoved', 'RoonConnected', 'RoonDisconnected',
+             'LmsConnected', 'LmsDisconnected'].includes(event.type)) {
+            loadZoneLinks();
+        }
+    } catch (err) { console.error('SSE parse error:', err); }
+};
+es.onerror = () => {
+    console.warn('SSE disconnected, falling back to polling');
+    es.close();
+    setInterval(loadHqpStatus, 5000);
+    setInterval(loadHqpPipeline, 5000);
+};
 "#;
 
 /// HQPlayer page component.
