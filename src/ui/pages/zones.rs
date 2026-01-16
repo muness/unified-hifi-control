@@ -26,12 +26,13 @@ async function loadZones() {
 
         section.innerHTML = '<div class="zone-grid">' + zones.map(zone => {
             const playIcon = zone.state === 'playing' ? '⏸︎' : '▶';
+            const hqpBadge = zone.dsp?.type === 'hqplayer' ? `<mark style="font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;">HQP</mark>` : '';
             const sourceBadge = zone.source ? `<mark style="font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;background:var(--pico-muted-background);">${esc(zone.source)}</mark>` : '';
 
             return `
                 <article>
                     <header>
-                        <strong>${esc(zone.zone_name)}</strong>${sourceBadge}
+                        <strong>${esc(zone.zone_name)}</strong>${hqpBadge}${sourceBadge}
                         <small> (${esc(zone.state)})</small>
                     </header>
                     <div id="zone-info-${esc(zone.zone_id)}" style="min-height:40px;overflow:hidden;"><small>Loading...</small></div>

@@ -16,29 +16,20 @@ const ZONE_SCRIPT: &str = r#"
 
 let selectedZone = localStorage.getItem('hifi-zone') || null;
 let zonesData = [];
-let zoneLinkMap = {};
 let lastHqpZone = null; // Track last zone for HQP to avoid reloading on every update
 let hqpPipelineLoaded = false;
 let nowPlayingData = null; // Current now_playing data for selected zone
 
 async function loadZones() {
     try {
-        const [zonesRes, linksRes] = await Promise.all([
-            fetch('/zones').then(r => r.json()),
-            fetch('/hqp/zones/links').then(r => r.json()).catch(() => ({ links: [] }))
-        ]);
-        // /zones returns {zones: [...]} with zone_id and zone_name
+        const zonesRes = await fetch('/zones').then(r => r.json());
+        // /zones returns {zones: [...]} with zone_id, zone_name, and optional dsp field
         zonesData = zonesRes.zones || zonesRes || [];
-
-        // Build zone link map
-        const links = linksRes.links || linksRes || [];
-        zoneLinkMap = {};
-        links.forEach(l => { zoneLinkMap[l.zone_id] = l.instance; });
 
         const sel = document.getElementById('zone-select');
         sel.innerHTML = '<option value="">-- Select Zone --</option>' +
             zonesData.map(z => {
-                const hqpBadge = zoneLinkMap[z.zone_id] ? ' [HQP]' : '';
+                const hqpBadge = z.dsp?.type === 'hqplayer' ? ' [HQP]' : '';
                 const source = z.source ? ' (' + z.source + ')' : '';
                 return '<option value="' + esc(z.zone_id) + '"' + (z.zone_id === selectedZone ? ' selected' : '') + '>' + esc(z.zone_name) + hqpBadge + source + '</option>';
             }).join('');
@@ -120,10 +111,10 @@ function updateZoneDisplay(zone, np) {
     document.getElementById('btn-next').disabled = !np?.is_next_allowed;
     document.getElementById('btn-play').textContent = isPlaying ? '⏸︎' : '▶';
 
-    // Show/hide HQP section based on zone link
-    const hqpInstance = zoneLinkMap[zone.zone_id];
+    // Show/hide HQP section based on zone.dsp field
+    const hasHqp = zone.dsp?.type === 'hqplayer';
     const hqpSection = document.getElementById('hqp-section');
-    if (hqpInstance) {
+    if (hasHqp) {
         hqpSection.style.display = 'block';
         // Only reload HQP pipeline when zone changes or not loaded yet
         if (lastHqpZone !== zone.zone_id || !hqpPipelineLoaded) {
