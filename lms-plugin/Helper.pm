@@ -420,27 +420,34 @@ sub writeKnobConfig {
 
 # Get knob status from running helper (if available)
 sub knobStatus {
-    my $class = shift;
+    my ($class, $cb) = @_;
 
-    return {} unless $class->running();
+    return $cb->({}) unless $class->running();
 
     my $port = $prefs->get('port') || 8088;
     my $url = "http://localhost:$port/api/knobs";
 
-    eval {
-        require LWP::UserAgent;
-        my $ua = LWP::UserAgent->new(timeout => 2);
-        my $response = $ua->get($url);
-        if ($response->is_success) {
-            my $data = decode_json($response->decoded_content);
-            # Return first knob status (single knob mode)
-            if ($data->{knobs} && @{$data->{knobs}}) {
-                return $data->{knobs}[0];
-            }
-        }
-    };
+    Slim::Networking::SimpleAsyncHTTP->new(
+        sub {
+            my $response = shift;
 
-    return {};
+            if ($response->code == 200) {
+                my $data = decode_json($response->contentRef);
+                # Return first knob status (single knob mode)
+                if ($data->{knobs} && @{$data->{knobs}}) {
+                    $cb->($data->{knobs}[0]);
+                    return;
+                }
+            }
+            $cb->({});
+        },
+        sub {
+            my ($response, $error) = @_;
+            $log->error($error);
+            $cb->({ error => $error });
+        },
+        { timeout => 2 }
+    )->get($url);
 }
 
 1;

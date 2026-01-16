@@ -1,10 +1,7 @@
 [% PROCESS settings/header.html %]
+    [% title = "PLUGIN_UNIFIED_HIFI" %]
 
-<div class="settingGroup">
-    <div class="prefHead" style="font-size: 1.2em; margin-bottom: 10px;">
-        [% "PLUGIN_UNIFIED_HIFI" | string %]
-    </div>
-
+    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI" desc="" %]
     <!-- Binary download status -->
     [% IF binaryStatus == 'not_downloaded' %]
     <div class="prefDesc" style="padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; margin-bottom: 15px;">
@@ -20,15 +17,14 @@
     [% END %]
 
     <!-- Status indicator -->
-    <div class="prefDesc" style="padding: 10px; background: #f5f5f5; border-radius: 4px; margin-bottom: 15px;">
+    <div class="prefDesc">
         <b>[% "PLUGIN_UNIFIED_HIFI_STATUS" | string %]:</b>
         [% IF running %]
             <span style="color: #28a745; font-weight: bold;">
                 &#9679; [% "PLUGIN_UNIFIED_HIFI_RUNNING" | string %]
             </span>
             &nbsp;&nbsp;
-            <a href="[% webUrl %]" target="_blank"
-               style="display: inline-block; padding: 4px 12px; background: #007bff; color: white; text-decoration: none; border-radius: 3px;">
+            <a href="[% webUrl %]" target="_blank">
                 [% "PLUGIN_UNIFIED_HIFI_OPENUI" | string %] &#8594;
             </a>
         [% ELSE %]
@@ -39,54 +35,26 @@
     </div>
 
     <!-- Manual start/stop -->
-    <div class="prefDesc" style="margin-bottom: 20px;">
         [% IF running %]
-            <input type="submit" name="stop" value="Stop Bridge"
-                   style="padding: 6px 16px; cursor: pointer;" />
+            <input type="submit" name="stop" value="[% "PLUGIN_UNIFIED_HIFI_STOP_BRIDGE" | string %]" />
         [% ELSE %]
-            <input type="submit" name="start" value="Start Bridge"
-                   style="padding: 6px 16px; cursor: pointer;" />
+            <input type="submit" name="start" value="[% "PLUGIN_UNIFIED_HIFI_START_BRIDGE" | string %]" />
         [% END %]
-    </div>
-</div>
+    [% END %]
 
-<div class="settingGroup">
-    <div class="prefHead">
-        [% "PLUGIN_UNIFIED_HIFI_AUTORUN" | string %]
-    </div>
-    <div class="prefDesc">
-        [% "PLUGIN_UNIFIED_HIFI_AUTORUN_DESC" | string %]
-    </div>
-    <div class="prefValue">
+    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_AUTORUN" desc="PLUGIN_UNIFIED_HIFI_AUTORUN_DESC" %]
         <input type="checkbox" name="pref_autorun" id="pref_autorun"
                value="1" [% IF prefs.autorun %]checked[% END %] />
         <label for="pref_autorun">Enable auto-start</label>
-    </div>
-</div>
+    [% END %]
 
-<div class="settingGroup">
-    <div class="prefHead">
-        [% "PLUGIN_UNIFIED_HIFI_PORT" | string %]
-    </div>
-    <div class="prefDesc">
-        [% "PLUGIN_UNIFIED_HIFI_PORT_DESC" | string %]
-    </div>
-    <div class="prefValue">
+    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_PORT" desc="PLUGIN_UNIFIED_HIFI_PORT_DESC" %]
         <input type="number" name="pref_port" id="pref_port"
                value="[% prefs.port || 8088 %]" min="1024" max="65535"
                style="width: 80px;" />
-    </div>
-</div>
+    [% END %]
 
-[% IF binaries.size > 1 %]
-<div class="settingGroup">
-    <div class="prefHead">
-        [% "PLUGIN_UNIFIED_HIFI_BINARY" | string %]
-    </div>
-    <div class="prefDesc">
-        [% "PLUGIN_UNIFIED_HIFI_BINARY_DESC" | string %]
-    </div>
-    <div class="prefValue">
+    [% IF binaries.size > 1; WRAPPER setting title="PLUGIN_UNIFIED_HIFI_BINARY" desc="PLUGIN_UNIFIED_HIFI_BINARY_DESC" %]
         <select name="pref_bin" id="pref_bin">
             [% FOREACH bin IN binaries %]
                 <option value="[% bin %]"
@@ -95,18 +63,9 @@
                 </option>
             [% END %]
         </select>
-    </div>
-</div>
-[% END %]
+    [% END; END %]
 
-<div class="settingGroup">
-    <div class="prefHead">
-        [% "PLUGIN_UNIFIED_HIFI_LOGLEVEL" | string %]
-    </div>
-    <div class="prefDesc">
-        [% "PLUGIN_UNIFIED_HIFI_LOGLEVEL_DESC" | string %]
-    </div>
-    <div class="prefValue">
+    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_LOGLEVEL" desc="PLUGIN_UNIFIED_HIFI_LOGLEVEL_DESC" %]
         <select name="pref_loglevel" id="pref_loglevel">
             [% FOREACH level IN loglevels %]
                 <option value="[% level %]"
@@ -115,14 +74,11 @@
                 </option>
             [% END %]
         </select>
-    </div>
-</div>
+    [% END %]
 
 <!-- Knob Configuration Section -->
-<div class="settingGroup" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
-    <div class="prefHead" style="font-size: 1.1em; margin-bottom: 10px;">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB" | string %]
-    </div>
+    <hr/>
+    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB" desc="" %]
 
     [% IF knobStatus.last_seen %]
     <div class="prefDesc" style="padding: 8px; background: #e8f5e9; border-radius: 4px; margin-bottom: 10px;">
@@ -139,32 +95,17 @@
     <div class="prefDesc">
         [% "PLUGIN_UNIFIED_HIFI_KNOB_DESC" | string %]
     </div>
-</div>
+    [% END %]
 
-<div class="settingGroup">
-    <div class="prefHead">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB_NAME" | string %]
-    </div>
-    <div class="prefDesc">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB_NAME_DESC" | string %]
-    </div>
-    <div class="prefValue">
+    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB_NAME" desc="PLUGIN_UNIFIED_HIFI_KNOB_NAME_DESC" %]
         <input type="text" name="pref_knob_name" id="pref_knob_name"
                value="[% prefs.knob_name %]" style="width: 200px;"
                placeholder="My Knob" />
-    </div>
-</div>
+    [% END %]
 
-<div class="settingGroup">
-    <div class="prefHead">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB_ROTATION" | string %]
-    </div>
-    <div class="prefDesc">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB_ROTATION_DESC" | string %]
-    </div>
+    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB_ROTATION" desc="PLUGIN_UNIFIED_HIFI_KNOB_ROTATION_DESC" %]
     [% SET rot_charging = prefs.knob_rotation_charging.defined ? prefs.knob_rotation_charging : 180 %]
     [% SET rot_battery = prefs.knob_rotation_battery.defined ? prefs.knob_rotation_battery : 0 %]
-    <div class="prefValue">
         <label style="display: inline-block; width: 120px;">When charging:</label>
         <select name="pref_knob_rotation_charging" id="pref_knob_rotation_charging">
             [% FOREACH rot IN rotations %]
@@ -184,17 +125,9 @@
                 </option>
             [% END %]
         </select>
-    </div>
-</div>
+    [% END %]
 
-<div class="settingGroup">
-    <div class="prefHead">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB_POWER_CHARGING" | string %]
-    </div>
-    <div class="prefDesc">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB_POWER_CHARGING_DESC" | string %]
-    </div>
-    <div class="prefValue">
+    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB_POWER_CHARGING" desc="PLUGIN_UNIFIED_HIFI_KNOB_POWER_CHARGING_DESC" %]
         <label style="display: inline-block; width: 120px;">Art mode after:</label>
         <input type="number" name="pref_knob_art_mode_charging" id="pref_knob_art_mode_charging"
                value="[% prefs.knob_art_mode_charging || 60 %]" min="0" max="3600"
@@ -209,17 +142,9 @@
         <input type="number" name="pref_knob_sleep_charging" id="pref_knob_sleep_charging"
                value="[% prefs.knob_sleep_charging || 0 %]" min="0" max="3600"
                style="width: 60px;" /> sec (0 = disabled)
-    </div>
-</div>
+    [% END %]
 
-<div class="settingGroup">
-    <div class="prefHead">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB_POWER_BATTERY" | string %]
-    </div>
-    <div class="prefDesc">
-        [% "PLUGIN_UNIFIED_HIFI_KNOB_POWER_BATTERY_DESC" | string %]
-    </div>
-    <div class="prefValue">
+    [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI_KNOB_POWER_BATTERY" desc="PLUGIN_UNIFIED_HIFI_KNOB_POWER_BATTERY_DESC" %]
         <label style="display: inline-block; width: 120px;">Art mode after:</label>
         <input type="number" name="pref_knob_art_mode_battery" id="pref_knob_art_mode_battery"
                value="[% prefs.knob_art_mode_battery || 30 %]" min="0" max="3600"
@@ -234,7 +159,6 @@
         <input type="number" name="pref_knob_sleep_battery" id="pref_knob_sleep_battery"
                value="[% prefs.knob_sleep_battery || 60 %]" min="0" max="3600"
                style="width: 60px;" /> sec (0 = disabled)
-    </div>
-</div>
+    [% END %]
 
 [% PROCESS settings/footer.html %]

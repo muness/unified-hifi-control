@@ -45,48 +45,46 @@ sub handler {
         Plugins::UnifiedHiFi::Helper->stop();
     }
 
-    # Save preferences if form submitted
+    # Check if we need to restart the helper after saving settings
+    my $needsRestart = 0;
     if ($params->{'saveSettings'}) {
-        my $needsRestart = 0;
-
-        # Check if port changed (with server-side validation)
-        my $newPort = $params->{'pref_port'} // 8088;
-        # Validate port range
-        $newPort = int($newPort);
-        $newPort = 8088 if $newPort < 1024 || $newPort > 65535;
-
-        if ($newPort != ($prefs->get('port') // 8088)) {
+        if (($params->{'pref_port'} // 8088) != ($prefs->get('port') // 8088)) {
             $needsRestart = 1;
         }
 
         # Check if binary changed
-        my $newBin = $params->{'pref_bin'};
-        if ($newBin && $newBin ne ($prefs->get('bin') // '')) {
+        elsif (($params->{'pref_bin'} // '') ne ($prefs->get('bin') // '')) {
             $needsRestart = 1;
         }
 
-        # Save preferences
-        $prefs->set('autorun',  $params->{'pref_autorun'} ? 1 : 0);
-        $prefs->set('port',     $newPort);
-        $prefs->set('bin',      $newBin) if $newBin;
-        $prefs->set('loglevel', $params->{'pref_loglevel'} || 'info');
-
-        # Save knob config
-        $prefs->set('knob_name',              $params->{'pref_knob_name'} // '');
-        $prefs->set('knob_rotation_charging', int($params->{'pref_knob_rotation_charging'} // 180));
-        $prefs->set('knob_rotation_battery',  int($params->{'pref_knob_rotation_battery'} // 0));
-        $prefs->set('knob_art_mode_charging', int($params->{'pref_knob_art_mode_charging'} // 60));
-        $prefs->set('knob_dim_charging',      int($params->{'pref_knob_dim_charging'} // 120));
-        $prefs->set('knob_sleep_charging',    int($params->{'pref_knob_sleep_charging'} // 0));
-        $prefs->set('knob_art_mode_battery',  int($params->{'pref_knob_art_mode_battery'} // 30));
-        $prefs->set('knob_dim_battery',       int($params->{'pref_knob_dim_battery'} // 30));
-        $prefs->set('knob_sleep_battery',     int($params->{'pref_knob_sleep_battery'} // 60));
-
-        # Write knob config file for binary to read
-        Plugins::UnifiedHiFi::Helper->writeKnobConfig();
+        elsif (($params->{'pref_loglevel'} // 'info') ne ($prefs->get('loglevel') // 'info')) {
+            $needsRestart = 1;
+        }
 
         # Restart if running and settings changed
         if ($needsRestart && Plugins::UnifiedHiFi::Helper->running()) {
+            $params->{needsRestart} = 1;
+        }
+    }
+
+    Plugins::UnifiedHiFi::Helper->knobStatus(sub {
+        my ($status) = @_;
+        $params->{'knobStatus'} = $status;
+        my $body = $class->SUPER::handler($client, $params);
+        $callback->($client, $params, $body, @args);
+    });
+
+    return;
+}
+
+sub beforeRender {
+    my ($class, $params, $client) = @_;
+
+    if ($params->{saveSettings}) {
+        # Write knob config file for binary to read
+        Plugins::UnifiedHiFi::Helper->writeKnobConfig();
+
+        if ($params->{needsRestart}) {
             $log->info("Settings changed, restarting helper");
             Plugins::UnifiedHiFi::Helper->stop();
             # Always attempt start after stop to ensure service is running
@@ -96,12 +94,6 @@ sub handler {
             });
         }
     }
-
-    return $class->SUPER::handler($client, $params, $callback, @args);
-}
-
-sub beforeRender {
-    my ($class, $params, $client) = @_;
 
     # Add template variables
     $params->{'running'}    = Plugins::UnifiedHiFi::Helper->running();
@@ -115,9 +107,6 @@ sub beforeRender {
     # Binary download status
     $params->{'binaryStatus'}   = Plugins::UnifiedHiFi::Helper->binaryStatus();
     $params->{'binaryPlatform'} = Plugins::UnifiedHiFi::Helper->detectPlatform();
-
-    # Knob status from helper
-    $params->{'knobStatus'} = Plugins::UnifiedHiFi::Helper->knobStatus();
 
     return $class->SUPER::beforeRender($params, $client);
 }
