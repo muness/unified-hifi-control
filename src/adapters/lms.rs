@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 
-use crate::bus::{BusEvent, SharedBus};
+use crate::bus::{BusEvent, PlaybackState, SharedBus, VolumeControl, Zone};
 use crate::config::get_config_dir;
 
 const LMS_CONFIG_FILE: &str = "lms-config.json";
@@ -682,6 +682,44 @@ impl LmsAdapter {
     }
 }
 
+/// Convert an LMS player to a unified Zone representation
+fn lms_player_to_zone(player: &LmsPlayer) -> Zone {
+    Zone {
+        zone_id: format!("lms:{}", player.playerid),
+        zone_name: player.name.clone(),
+        state: PlaybackState::from(player.state.as_str()),
+        volume_control: Some(VolumeControl {
+            value: player.volume as f32,
+            min: 0.0,
+            max: 100.0,
+            step: 1.0,
+            is_muted: false, // LMS doesn't expose mute via JSON-RPC status
+            scale: crate::bus::VolumeScale::Percentage,
+            output_id: Some(player.playerid.clone()),
+        }),
+        now_playing: if !player.title.is_empty() {
+            Some(crate::bus::NowPlaying {
+                title: player.title.clone(),
+                artist: player.artist.clone(),
+                album: player.album.clone(),
+                image_key: player.artwork_url.clone().or(player.coverid.clone()),
+                seek_position: Some(player.time),
+                duration: Some(player.duration),
+                metadata: None,
+            })
+        } else {
+            None
+        },
+        source: "lms".to_string(),
+        is_controllable: player.power && player.connected,
+        is_seekable: true,
+        last_updated: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+    }
+}
+
 /// Shared helper function for updating players from the polling task
 /// Uses LmsRpc to avoid code duplication between LmsAdapter and background task
 async fn update_players_internal(
@@ -729,15 +767,12 @@ async fn update_players_internal(
         let added: Vec<_> = current_ids.difference(&previous_ids).cloned().collect();
         let removed: Vec<_> = previous_ids.difference(&current_ids).cloned().collect();
 
-        // Emit zone added events
+        // Emit zone discovered events for new players
         for player_id in &added {
             if let Some(player) = state.read().await.players.get(player_id) {
-                tracing::debug!("LMS player added: {}", player_id);
-                bus.publish(BusEvent::ZoneUpdated {
-                    zone_id: format!("lms:{}", player_id),
-                    display_name: player.name.clone(),
-                    state: player.state.clone(),
-                });
+                tracing::debug!("LMS player discovered: {}", player_id);
+                let zone = lms_player_to_zone(player);
+                bus.publish(BusEvent::ZoneDiscovered { zone });
             }
         }
 
