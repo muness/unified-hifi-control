@@ -15,8 +15,10 @@ use tokio::sync::RwLock;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
 
+use crate::adapters::traits::Startable;
 use crate::bus::{BusEvent, PlaybackState, SharedBus, VolumeControl, Zone};
 use crate::config::get_config_dir;
+use async_trait::async_trait;
 
 const LMS_CONFIG_FILE: &str = "lms-config.json";
 
@@ -786,4 +788,27 @@ async fn update_players_internal(
     }
 
     Ok(())
+}
+
+// =============================================================================
+// Startable trait implementation
+// =============================================================================
+
+#[async_trait]
+impl Startable for LmsAdapter {
+    fn name(&self) -> &'static str {
+        "lms"
+    }
+
+    async fn start(&self) -> Result<()> {
+        LmsAdapter::start(self).await
+    }
+
+    async fn stop(&self) {
+        LmsAdapter::stop(self).await
+    }
+
+    async fn can_start(&self) -> bool {
+        self.is_configured().await
+    }
 }

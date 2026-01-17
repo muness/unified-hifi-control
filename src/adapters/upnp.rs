@@ -4,7 +4,10 @@
 //! Pure UPnP/DLNA has limited metadata support compared to OpenHome.
 //! Specifically, next/previous track are NOT supported by pure UPnP.
 
+use crate::adapters::traits::Startable;
 use crate::bus::{BusEvent, PlaybackState, SharedBus, VolumeControl as BusVolumeControl, Zone};
+use anyhow::Result;
+use async_trait::async_trait;
 use futures::StreamExt;
 use quick_xml::de::from_str as xml_from_str;
 use regex::Regex;
@@ -885,5 +888,24 @@ fn upnp_renderer_to_zone(renderer: &UPnPRenderer) -> Zone {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64,
+    }
+}
+
+// =============================================================================
+// Startable trait implementation
+// =============================================================================
+
+#[async_trait]
+impl Startable for UPnPAdapter {
+    fn name(&self) -> &'static str {
+        "upnp"
+    }
+
+    async fn start(&self) -> Result<()> {
+        UPnPAdapter::start(self).await
+    }
+
+    async fn stop(&self) {
+        UPnPAdapter::stop(self).await
     }
 }

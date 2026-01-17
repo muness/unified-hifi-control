@@ -4,6 +4,30 @@ use tokio_util::sync::CancellationToken;
 
 use crate::bus::SharedBus;
 
+// =============================================================================
+// Startable - Uniform adapter lifecycle trait
+// =============================================================================
+
+/// Trait for adapters that can be started/stopped uniformly.
+/// This enables the coordinator to manage all adapters through a single codepath.
+#[async_trait]
+pub trait Startable: Send + Sync {
+    /// Adapter name/prefix (e.g., "lms", "openhome")
+    fn name(&self) -> &'static str;
+
+    /// Start the adapter. No-op if already running or can't start.
+    async fn start(&self) -> Result<()>;
+
+    /// Stop the adapter gracefully.
+    async fn stop(&self);
+
+    /// Whether this adapter can be started (e.g., has required config).
+    /// Default: true (most adapters can always start).
+    async fn can_start(&self) -> bool {
+        true
+    }
+}
+
 /// Context passed to adapter logic during execution
 pub struct AdapterContext {
     /// Event bus for publishing events

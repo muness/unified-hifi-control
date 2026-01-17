@@ -4,7 +4,10 @@
 //! OpenHome is an extension of UPnP that provides richer metadata and more
 //! control actions (next/previous track, playlists, etc.)
 
+use crate::adapters::traits::Startable;
 use crate::bus::{BusEvent, PlaybackState, SharedBus, VolumeControl as BusVolumeControl, Zone};
+use anyhow::Result;
+use async_trait::async_trait;
 use futures::StreamExt;
 use quick_xml::de::from_str as xml_from_str;
 use reqwest::Client;
@@ -925,5 +928,24 @@ fn openhome_device_to_zone(device: &OpenHomeDevice) -> Zone {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64,
+    }
+}
+
+// =============================================================================
+// Startable trait implementation
+// =============================================================================
+
+#[async_trait]
+impl Startable for OpenHomeAdapter {
+    fn name(&self) -> &'static str {
+        "openhome"
+    }
+
+    async fn start(&self) -> Result<()> {
+        OpenHomeAdapter::start(self).await
+    }
+
+    async fn stop(&self) {
+        OpenHomeAdapter::stop(self).await
     }
 }
