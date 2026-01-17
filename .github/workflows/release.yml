@@ -304,27 +304,86 @@ jobs:
           path: dist/lms-unified-hifi-control-*.zip
           retention-days: 5
 
-  build-nas-packages:
-    name: Build NAS Packages (Synology/QNAP)
+  build-synology-packages:
+    name: Build Synology Packages
     needs: [build-linux]
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-musl
+            binary: unified-hifi-linux-x64
+          - arch: rtd1296
+            target: aarch64-unknown-linux-musl
+            binary: unified-hifi-linux-arm64
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Download Linux binaries
+      - name: Download Linux binary
         uses: actions/download-artifact@v4
         with:
-          pattern: binary-*-linux-musl
-          path: dist/bin/
-          merge-multiple: true
+          name: binary-${{ matrix.target }}
+          path: build/synology/package/
 
-      - name: Make binaries executable
-        run: chmod +x dist/bin/*
+      - name: Rename binary
+        run: |
+          mv build/synology/package/${{ matrix.binary }} build/synology/package/unified-hifi-control
+          chmod +x build/synology/package/unified-hifi-control
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="0.0.0"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          # Update package.json version
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" build/synology/package.json
+
+      - name: Build Synology SPK
+        uses: tomgrv/synology-package-builder@v1
+        with:
+          dsm: '7.0'
+          arch: ${{ matrix.arch }}
+          projects: ./build/synology
+          output: ./dist/installers
+
+      - name: Upload Synology package
+        uses: actions/upload-artifact@v4
+        with:
+          name: synology-${{ matrix.arch }}
+          path: dist/installers/*.spk
+          retention-days: 5
+
+  build-qnap-packages:
+    name: Build QNAP Packages
+    needs: [build-linux]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-musl
+            binary: unified-hifi-linux-x64
+          - arch: arm_64
+            target: aarch64-unknown-linux-musl
+            binary: unified-hifi-linux-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/bin/
+
+      - name: Make binary executable
+        run: |
+          mv dist/bin/${{ matrix.binary }} dist/bin/unified-hifi-linux-${{ matrix.arch == 'arm_64' && 'arm64' || 'x64' }}
+          chmod +x dist/bin/*
 
       - name: Get version
         id: version
@@ -336,42 +395,38 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build NAS packages
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: node scripts/build-nas-packages.js
+      - name: Prepare QNAP package
+        run: |
+          mkdir -p qnap-build/shared
+          cp dist/bin/unified-hifi-linux-* qnap-build/shared/unified-hifi-control
+          chmod +x qnap-build/shared/unified-hifi-control
+          cp build/qnap/shared/*.sh qnap-build/shared/
+          chmod +x qnap-build/shared/*.sh
+          sed "s/{{VERSION}}/${{ steps.version.outputs.version }}/" build/qnap/qpkg.cfg > qnap-build/qpkg.cfg
+          echo '#!/bin/sh' > qnap-build/package_routines
 
-      - name: Upload Synology x86_64 package
+      - name: Build QPKG with Docker
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -v "$(pwd)/qnap-build:/src" \
+            owncloudci/qnap-qpkg-builder:latest \
+            sh -c '/usr/share/qdk2/QDK/bin/qbuild --build-dir /src/build && cp /src/build/*.qpkg /src/ && chmod 666 /src/*.qpkg'
+
+      - name: Move QPKG to dist
+        run: |
+          mkdir -p dist/installers
+          mv qnap-build/*.qpkg dist/installers/unified-hifi-control_${{ steps.version.outputs.version }}_${{ matrix.arch }}.qpkg
+
+      - name: Upload QNAP package
         uses: actions/upload-artifact@v4
         with:
-          name: synology-x86_64
-          path: dist/installers/*-x86_64.spk
-          retention-days: 5
-
-      - name: Upload Synology aarch64 package
-        uses: actions/upload-artifact@v4
-        with:
-          name: synology-aarch64
-          path: dist/installers/*-aarch64.spk
-          retention-days: 5
-
-      - name: Upload QNAP x86_64 package
-        uses: actions/upload-artifact@v4
-        with:
-          name: qnap-x86_64
-          path: dist/installers/*_x86_64.qpkg
-          retention-days: 5
-
-      - name: Upload QNAP arm64 package
-        uses: actions/upload-artifact@v4
-        with:
-          name: qnap-arm_64
-          path: dist/installers/*_arm_64.qpkg
+          name: qnap-${{ matrix.arch }}
+          path: dist/installers/*.qpkg
           retention-days: 5
 
   upload-release:
     name: Upload to Release
-    needs: [build-linux, build-macos, build-windows, build-linux-packages, build-lms-plugin, build-nas-packages]
+    needs: [build-linux, build-macos, build-windows, build-linux-packages, build-lms-plugin, build-synology-packages, build-qnap-packages]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     permissions:
