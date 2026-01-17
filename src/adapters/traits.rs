@@ -4,6 +4,84 @@ use tokio_util::sync::CancellationToken;
 
 use crate::bus::SharedBus;
 
+// =============================================================================
+// Startable - Uniform adapter lifecycle trait
+// =============================================================================
+
+/// Trait for adapters that can be started/stopped uniformly.
+/// This enables the coordinator to manage all adapters through a single codepath.
+#[async_trait]
+pub trait Startable: Send + Sync {
+    /// Adapter name/prefix (e.g., "lms", "openhome")
+    fn name(&self) -> &'static str;
+
+    /// Start the adapter. No-op if already running or can't start.
+    async fn start(&self) -> Result<()>;
+
+    /// Stop the adapter gracefully.
+    async fn stop(&self);
+
+    /// Whether this adapter can be started (e.g., has required config).
+    /// Default: true (most adapters can always start).
+    async fn can_start(&self) -> bool {
+        true
+    }
+}
+
+/// Macro to implement Startable trait with minimal boilerplate.
+///
+/// Adapters must implement:
+/// - `async fn start_internal(&self) -> Result<()>`
+/// - `async fn stop_internal(&self)`
+/// - Optionally: custom `can_start` method (pass as third arg)
+///
+/// Usage:
+/// ```ignore
+/// impl_startable!(OpenHomeAdapter, "openhome");
+/// impl_startable!(LmsAdapter, "lms", is_configured);  // custom can_start
+/// ```
+#[macro_export]
+macro_rules! impl_startable {
+    // With custom can_start method
+    ($adapter:ty, $name:literal, $can_start:ident) => {
+        #[async_trait::async_trait]
+        impl $crate::adapters::Startable for $adapter {
+            fn name(&self) -> &'static str {
+                $name
+            }
+
+            async fn start(&self) -> anyhow::Result<()> {
+                self.start_internal().await
+            }
+
+            async fn stop(&self) {
+                self.stop_internal().await
+            }
+
+            async fn can_start(&self) -> bool {
+                self.$can_start().await
+            }
+        }
+    };
+    // Default can_start (always true)
+    ($adapter:ty, $name:literal) => {
+        #[async_trait::async_trait]
+        impl $crate::adapters::Startable for $adapter {
+            fn name(&self) -> &'static str {
+                $name
+            }
+
+            async fn start(&self) -> anyhow::Result<()> {
+                self.start_internal().await
+            }
+
+            async fn stop(&self) {
+                self.stop_internal().await
+            }
+        }
+    };
+}
+
 /// Context passed to adapter logic during execution
 pub struct AdapterContext {
     /// Event bus for publishing events

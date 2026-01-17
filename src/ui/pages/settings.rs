@@ -12,8 +12,8 @@ use crate::ui::components::Layout;
 /// Client-side JavaScript for the Settings page.
 const SETTINGS_SCRIPT: &str = r#"
 
-// Discovery status
-async function loadDiscoveryStatus() {
+// Discovery status - needs adapter settings to know what's enabled
+async function loadDiscoveryStatus(adapterSettings) {
     const tbody = document.getElementById('discovery-table');
     try {
         const [openhome, upnp, roon] = await Promise.all([
@@ -22,21 +22,35 @@ async function loadDiscoveryStatus() {
             fetch('/roon/status').then(r => r.json()).catch(() => ({ connected: false }))
         ]);
 
+        // Determine status text based on enabled state
+        const roonEnabled = adapterSettings?.roon !== false;
+        const openhomeEnabled = adapterSettings?.openhome === true;
+        const upnpEnabled = adapterSettings?.upnp === true;
+
+        function getDiscoveryStatus(enabled, hasDevices, activeText) {
+            if (!enabled) return '<span class="status-disabled">Disabled</span>';
+            if (hasDevices) return '<span class="status-ok">✓ ' + activeText + '</span>';
+            return 'Searching...';
+        }
+
         tbody.innerHTML = `
             <tr>
                 <td>Roon</td>
-                <td class="${roon.connected ? 'status-ok' : 'status-err'}">${roon.connected ? '✓ Connected' : '✗ Not connected'}</td>
+                <td class="${roon.connected ? 'status-ok' : 'status-err'}">${
+                    !roonEnabled ? '<span class="status-disabled">Disabled</span>' :
+                    roon.connected ? '✓ Connected' : '✗ Not connected'
+                }</td>
                 <td>${roon.connected ? esc(roon.core_name || 'Core') : '-'}</td>
             </tr>
             <tr>
                 <td>OpenHome</td>
-                <td class="${openhome.device_count > 0 ? 'status-ok' : ''}">${openhome.device_count > 0 ? '✓ Active' : 'Searching...'}</td>
-                <td>${openhome.device_count} device${openhome.device_count !== 1 ? 's' : ''}</td>
+                <td>${getDiscoveryStatus(openhomeEnabled, openhome.device_count > 0, 'Active')}</td>
+                <td>${openhomeEnabled ? openhome.device_count + ' device' + (openhome.device_count !== 1 ? 's' : '') : '-'}</td>
             </tr>
             <tr>
                 <td>UPnP/DLNA</td>
-                <td class="${upnp.renderer_count > 0 ? 'status-ok' : ''}">${upnp.renderer_count > 0 ? '✓ Active' : 'Searching...'}</td>
-                <td>${upnp.renderer_count} renderer${upnp.renderer_count !== 1 ? 's' : ''}</td>
+                <td>${getDiscoveryStatus(upnpEnabled, upnp.renderer_count > 0, 'Active')}</td>
+                <td>${upnpEnabled ? upnp.renderer_count + ' renderer' + (upnp.renderer_count !== 1 ? 's' : '') : '-'}</td>
             </tr>
         `;
     } catch (e) {
@@ -44,7 +58,7 @@ async function loadDiscoveryStatus() {
     }
 }
 
-// Adapter Settings
+// Adapter Settings - returns adapters object for use by loadDiscoveryStatus
 async function loadAdapterSettings() {
     try {
         const res = await fetch('/api/settings');
@@ -54,8 +68,10 @@ async function loadAdapterSettings() {
         document.getElementById('adapter-lms').checked = adapters.lms === true;
         document.getElementById('adapter-openhome').checked = adapters.openhome === true;
         document.getElementById('adapter-upnp').checked = adapters.upnp === true;
+        return adapters;
     } catch (e) {
         console.error('Failed to load adapter settings:', e);
+        return {};
     }
 }
 
@@ -74,6 +90,9 @@ async function saveAdapterSettings() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(settings)
         });
+        // Update local state and refresh discovery status
+        currentAdapterSettings = settings.adapters;
+        loadDiscoveryStatus(currentAdapterSettings);
     } catch (e) {
         console.error('Failed to save adapter settings:', e);
     }
@@ -101,10 +120,16 @@ function saveUiSettings() {
     localStorage.setItem('hifi-ui-settings', JSON.stringify(settings));
 }
 
+// Store adapter settings for use by discovery status
+let currentAdapterSettings = {};
+
 // Load all on page load
-loadDiscoveryStatus();
-loadAdapterSettings();
-loadUiSettings();
+async function initPage() {
+    currentAdapterSettings = await loadAdapterSettings();
+    loadDiscoveryStatus(currentAdapterSettings);
+    loadUiSettings();
+}
+initPage();
 
 // SSE for real-time updates (no polling jitter)
 const es = new EventSource('/events');
@@ -114,14 +139,14 @@ es.onmessage = (e) => {
         // Reload discovery status on connection events
         if (['RoonConnected', 'RoonDisconnected', 'HqpConnected', 'HqpDisconnected',
              'LmsConnected', 'LmsDisconnected'].includes(event.type)) {
-            loadDiscoveryStatus();
+            loadDiscoveryStatus(currentAdapterSettings);
         }
     } catch (err) { console.error('SSE parse error:', err); }
 };
 es.onerror = () => {
     console.warn('SSE disconnected, falling back to polling');
     es.close();
-    setInterval(loadDiscoveryStatus, 10000);
+    setInterval(() => loadDiscoveryStatus(currentAdapterSettings), 10000);
 };
 "#;
 

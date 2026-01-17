@@ -148,9 +148,13 @@ struct RoonState {
 #[derive(Clone)]
 pub struct RoonAdapter {
     state: Arc<RwLock<RoonState>>,
-    #[allow(dead_code)]
     bus: SharedBus,
-    shutdown: CancellationToken,
+    /// Wrapped in RwLock to allow creating fresh token on restart
+    shutdown: Arc<RwLock<CancellationToken>>,
+    /// Base URL for Roon extension display (e.g., "http://hostname:3000")
+    base_url: Arc<RwLock<Option<String>>>,
+    /// Whether the adapter has been started
+    started: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Initial reconnection delay
@@ -161,30 +165,61 @@ const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
 use std::time::Duration;
 
 impl RoonAdapter {
-    /// Create a disconnected Roon adapter (used when initialization fails)
+    /// Create a disconnected Roon adapter (stub, used when disabled)
     pub fn new_disconnected(bus: SharedBus) -> Self {
         Self {
             state: Arc::new(RwLock::new(RoonState::default())),
             bus,
-            shutdown: CancellationToken::new(),
+            shutdown: Arc::new(RwLock::new(CancellationToken::new())),
+            base_url: Arc::new(RwLock::new(None)),
+            started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
-    /// Stop the Roon adapter
-    pub fn stop(&self) {
-        self.shutdown.cancel();
-        tracing::info!("Roon adapter stopped");
-    }
-
-    /// Create and start Roon adapter
+    /// Create Roon adapter ready to start
     ///
     /// `base_url` is shown in Roon Settings → Extensions (e.g., "http://hostname:3000")
+    pub fn new_configured(bus: SharedBus, base_url: String) -> Self {
+        Self {
+            state: Arc::new(RwLock::new(RoonState::default())),
+            bus,
+            shutdown: Arc::new(RwLock::new(CancellationToken::new())),
+            base_url: Arc::new(RwLock::new(Some(base_url))),
+            started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    /// Create and immediately start Roon adapter (legacy API for compatibility)
     pub async fn new(bus: SharedBus, base_url: String) -> Result<Self> {
-        let state = Arc::new(RwLock::new(RoonState::default()));
-        let state_clone = state.clone();
-        let bus_clone = bus.clone();
-        let shutdown = CancellationToken::new();
-        let shutdown_clone = shutdown.clone();
+        let adapter = Self::new_configured(bus, base_url);
+        adapter.start_internal().await?;
+        Ok(adapter)
+    }
+
+    /// Start the Roon event loop (internal - use Startable trait)
+    async fn start_internal(&self) -> Result<()> {
+        use std::sync::atomic::Ordering;
+
+        // Check if already started
+        if self.started.swap(true, Ordering::SeqCst) {
+            return Ok(()); // Already started
+        }
+
+        let base_url = {
+            let url = self.base_url.read().await;
+            url.clone()
+                .ok_or_else(|| anyhow::anyhow!("Roon base_url not configured"))?
+        };
+
+        // Create fresh cancellation token for this run (previous token may be cancelled)
+        let shutdown_clone = {
+            let mut token = self.shutdown.write().await;
+            *token = CancellationToken::new();
+            token.clone()
+        };
+
+        let state_clone = self.state.clone();
+        let bus_clone = self.bus.clone();
 
         // Spawn Roon event loop with reconnection logic
         tokio::spawn(async move {
@@ -193,8 +228,18 @@ impl RoonAdapter {
             loop {
                 tracing::info!("Starting Roon discovery loop...");
 
-                match run_roon_loop(state_clone.clone(), bus_clone.clone(), base_url.clone()).await
-                {
+                // Wrap run_roon_loop in select! to allow cancellation during execution
+                let loop_result = tokio::select! {
+                    _ = shutdown_clone.cancelled() => {
+                        tracing::info!("Roon adapter shutdown requested during discovery");
+                        break;
+                    }
+                    result = run_roon_loop(state_clone.clone(), bus_clone.clone(), base_url.clone()) => {
+                        result
+                    }
+                };
+
+                match loop_result {
                     Ok(()) => {
                         tracing::info!("Roon event loop ended normally");
                     }
@@ -227,11 +272,25 @@ impl RoonAdapter {
             }
         });
 
-        Ok(Self {
-            state,
-            bus,
-            shutdown,
-        })
+        Ok(())
+    }
+
+    /// Stop the Roon adapter (internal - use Startable trait)
+    async fn stop_internal(&self) {
+        use std::sync::atomic::Ordering;
+
+        // Cancel background tasks
+        self.shutdown.read().await.cancel();
+
+        // Reset started flag so we can restart later
+        self.started.store(false, Ordering::SeqCst);
+
+        tracing::info!("Roon adapter stopped");
+    }
+
+    /// Check if adapter is configured (has base_url)
+    async fn is_configured(&self) -> bool {
+        self.base_url.read().await.is_some()
     }
 
     /// Get connection status
@@ -751,3 +810,6 @@ async fn run_roon_loop(
 
     Ok(())
 }
+
+// Startable trait implementation via macro
+crate::impl_startable!(RoonAdapter, "roon", is_configured);

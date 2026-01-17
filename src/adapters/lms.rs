@@ -308,6 +308,7 @@ struct LmsState {
     username: Option<String>,
     password: Option<String>,
     connected: bool,
+    running: bool,
     players: HashMap<String, LmsPlayer>,
 }
 
@@ -319,6 +320,7 @@ impl Default for LmsState {
             username: None,
             password: None,
             connected: false,
+            running: false,
             players: HashMap::new(),
         }
     }
@@ -329,7 +331,8 @@ pub struct LmsAdapter {
     state: Arc<RwLock<LmsState>>,
     rpc: LmsRpc,
     bus: SharedBus,
-    shutdown: CancellationToken,
+    /// Wrapped in RwLock to allow creating fresh token on restart
+    shutdown: Arc<RwLock<CancellationToken>>,
 }
 
 impl LmsAdapter {
@@ -344,7 +347,7 @@ impl LmsAdapter {
             state,
             rpc,
             bus,
-            shutdown: CancellationToken::new(),
+            shutdown: Arc::new(RwLock::new(CancellationToken::new())),
         };
         // Load saved config synchronously at startup
         adapter.load_config_sync();
@@ -462,14 +465,27 @@ impl LmsAdapter {
         self.rpc.get_player_status(player_id).await
     }
 
-    /// Start polling for player updates
-    pub async fn start(&self) -> Result<()> {
+    /// Start polling for player updates (internal - use Startable trait)
+    async fn start_internal(&self) -> Result<()> {
         if !self.is_configured().await {
             return Err(anyhow!("LMS not configured"));
         }
 
-        // Initial update
-        self.update_players().await?;
+        // Check if already running to prevent double-start
+        {
+            let mut state = self.state.write().await;
+            if state.running {
+                return Ok(());
+            }
+            state.running = true;
+        }
+
+        // Initial update - reset running flag on failure so we can retry
+        if let Err(e) = self.update_players().await {
+            let mut state = self.state.write().await;
+            state.running = false;
+            return Err(e);
+        }
 
         {
             let mut state = self.state.write().await;
@@ -485,11 +501,17 @@ impl LmsAdapter {
         self.bus
             .publish(BusEvent::LmsConnected { host: host.clone() });
 
+        // Create fresh cancellation token for this run (previous token may be cancelled)
+        let shutdown = {
+            let mut token = self.shutdown.write().await;
+            *token = CancellationToken::new();
+            token.clone()
+        };
+
         // Spawn polling task using shared RPC
         let state = self.state.clone();
         let bus = self.bus.clone();
         let rpc = self.rpc.clone();
-        let shutdown = self.shutdown.clone();
 
         tokio::spawn(async move {
             let mut poll_interval = interval(POLL_INTERVAL);
@@ -519,14 +541,15 @@ impl LmsAdapter {
         update_players_internal(&self.rpc, &self.state, &self.bus).await
     }
 
-    /// Stop polling
-    pub async fn stop(&self) {
+    /// Stop polling (internal - use Startable trait)
+    async fn stop_internal(&self) {
         // Cancel background tasks first
-        self.shutdown.cancel();
+        self.shutdown.read().await.cancel();
 
         let host = {
             let mut state = self.state.write().await;
             state.connected = false;
+            state.running = false;
             state.host.clone()
         };
 
@@ -787,3 +810,6 @@ async fn update_players_internal(
 
     Ok(())
 }
+
+// Startable trait implementation via macro
+crate::impl_startable!(LmsAdapter, "lms", is_configured);

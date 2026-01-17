@@ -1,4 +1,7 @@
 //! AdapterCoordinator - Centralized lifecycle management for adapters
+//!
+//! The coordinator serves as a registry of all available adapters and manages their lifecycle.
+//! It tracks which adapters are enabled and handles starting/stopping them uniformly.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -9,7 +12,14 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
+use crate::adapters::Startable;
+use crate::api::AdapterSettings;
 use crate::bus::{BusEvent, SharedBus};
+use std::sync::Arc;
+
+/// All available adapters in the system.
+/// This is the single source of truth for what adapters exist.
+pub const AVAILABLE_ADAPTERS: &[&str] = &["roon", "lms", "openhome", "upnp"];
 
 /// Registered adapter with its spawn function
 struct RegisteredAdapter {
@@ -54,6 +64,54 @@ impl AdapterCoordinator {
             bus,
             shutdown: CancellationToken::new(),
             shutdown_timeout: timeout,
+        }
+    }
+
+    /// Register all available adapters using settings to determine enabled state.
+    /// This is the primary way to initialize the coordinator.
+    pub async fn register_from_settings(&self, settings: &AdapterSettings) {
+        for &name in AVAILABLE_ADAPTERS {
+            let enabled = match name {
+                "roon" => settings.roon,
+                "lms" => settings.lms,
+                "openhome" => settings.openhome,
+                "upnp" => settings.upnp,
+                _ => false,
+            };
+            self.register(name, enabled).await;
+            if enabled {
+                info!("Adapter {} enabled", name);
+            } else {
+                info!("Adapter {} disabled", name);
+            }
+        }
+    }
+
+    /// Start all enabled adapters from the provided list.
+    /// This is the single codepath for starting adapters.
+    pub async fn start_all_enabled(&self, adapters: &[Arc<dyn Startable>]) {
+        for adapter in adapters {
+            let name = adapter.name();
+            if !self.is_enabled(name).await {
+                debug!("Adapter {} is disabled, skipping", name);
+                continue;
+            }
+            if !adapter.can_start().await {
+                debug!("Adapter {} cannot start (not configured?), skipping", name);
+                continue;
+            }
+            match adapter.start().await {
+                Ok(()) => info!("Started adapter: {}", name),
+                Err(e) => warn!("Failed to start adapter {}: {}", name, e),
+            }
+        }
+    }
+
+    /// Stop all adapters from the provided list.
+    pub async fn stop_all(&self, adapters: &[Arc<dyn Startable>]) {
+        for adapter in adapters {
+            adapter.stop().await;
+            debug!("Stopped adapter: {}", adapter.name());
         }
     }
 

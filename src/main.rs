@@ -2,7 +2,15 @@
 //!
 //! A source-agnostic hi-fi control bridge for hardware surfaces and Home Assistant.
 
-use unified_hifi_control::{adapters, aggregator, api, bus, config, firmware, knobs, mdns, ui};
+use unified_hifi_control::{
+    adapters, aggregator, api, bus, config, coordinator, firmware, knobs, mdns, ui,
+};
+
+// Import Startable trait for adapter lifecycle methods
+use adapters::Startable;
+
+// Import load_app_settings for checking adapter enabled state
+use api::load_app_settings;
 
 use anyhow::Result;
 use axum::{
@@ -43,6 +51,12 @@ async fn main() -> Result<()> {
     let bus = bus::create_bus();
     tracing::info!("Event bus initialized");
 
+    // Load app settings and create adapter coordinator (single source of truth for lifecycle)
+    let app_settings = load_app_settings();
+    let coord = Arc::new(coordinator::AdapterCoordinator::new(bus.clone()));
+    coord.register_from_settings(&app_settings.adapters).await;
+    tracing::info!("Adapter coordinator initialized");
+
     // Construct base URL for display in Roon and mDNS
     let base_url = format!(
         "http://{}:{}",
@@ -50,22 +64,17 @@ async fn main() -> Result<()> {
         config.port
     );
 
-    // Initialize Roon adapter (optional - service continues without Roon)
-    let roon = match adapters::roon::RoonAdapter::new(bus.clone(), base_url.clone()).await {
-        Ok(adapter) => {
-            tracing::info!("Roon adapter initialized");
-            adapter
-        }
-        Err(e) => {
-            tracing::warn!(
-                "Failed to initialize Roon adapter: {}. Continuing without Roon.",
-                e
-            );
-            adapters::roon::RoonAdapter::new_disconnected(bus.clone())
-        }
-    };
+    // =========================================================================
+    // Create all adapter instances (needed for API handlers regardless of state)
+    // =========================================================================
 
-    // Initialize HQPlayer instance manager (multi-instance support)
+    // Roon adapter - coordinator handles starting based on enabled state
+    let roon = Arc::new(adapters::roon::RoonAdapter::new_configured(
+        bus.clone(),
+        base_url.clone(),
+    ));
+
+    // HQPlayer instance manager (multi-instance support, no settings toggle)
     let hqp_instances = Arc::new(adapters::hqplayer::HqpInstanceManager::new(bus.clone()));
     hqp_instances.load_from_config().await;
     let instance_count = hqp_instances.instance_count().await;
@@ -78,7 +87,6 @@ async fn main() -> Result<()> {
 
     // Create default HQPlayer adapter for backward compatibility
     let hqplayer = hqp_instances.get_default().await;
-    // Config file takes precedence over persisted disk config
     if let Some(ref hqp_config) = config.hqplayer {
         hqplayer
             .configure(
@@ -101,7 +109,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Initialize HQP zone link service
+    // HQP zone link service
     let hqp_zone_links = Arc::new(adapters::hqplayer::HqpZoneLinkService::new(
         hqp_instances.clone(),
     ));
@@ -111,9 +119,8 @@ async fn main() -> Result<()> {
         tracing::info!("HQPlayer: {} zone link(s) active", link_count);
     }
 
-    // Initialize LMS adapter (may have config loaded from disk)
+    // LMS adapter
     let lms = Arc::new(adapters::lms::LmsAdapter::new(bus.clone()));
-    // Config file takes precedence over persisted disk config
     if let Some(ref lms_config) = config.lms {
         lms.configure(
             lms_config.host.clone(),
@@ -123,33 +130,23 @@ async fn main() -> Result<()> {
         )
         .await;
     }
-    // Start LMS if configured (from config file or persisted disk config)
-    if lms.is_configured().await {
-        if let Err(e) = lms.start().await {
-            tracing::warn!("Failed to start LMS adapter: {}", e);
-        } else {
-            let status = lms.get_status().await;
-            if let Some(host) = status.host {
-                tracing::info!("LMS adapter started for {}:{}", host, status.port);
-            }
-        }
-    }
 
-    // Initialize OpenHome adapter (SSDP discovery)
+    // OpenHome adapter
     let openhome = Arc::new(adapters::openhome::OpenHomeAdapter::new(bus.clone()));
-    if let Err(e) = openhome.start().await {
-        tracing::warn!("Failed to start OpenHome adapter: {}", e);
-    } else {
-        tracing::info!("OpenHome adapter started (SSDP discovery active)");
-    }
 
-    // Initialize UPnP adapter (SSDP discovery)
+    // UPnP adapter
     let upnp = Arc::new(adapters::upnp::UPnPAdapter::new(bus.clone()));
-    if let Err(e) = upnp.start().await {
-        tracing::warn!("Failed to start UPnP adapter: {}", e);
-    } else {
-        tracing::info!("UPnP adapter started (SSDP discovery active)");
-    }
+
+    // =========================================================================
+    // Start enabled adapters (single codepath using coordinator)
+    // =========================================================================
+
+    // Build list of startable adapters
+    let startable_adapters: Vec<Arc<dyn adapters::Startable>> =
+        vec![roon.clone(), lms.clone(), openhome.clone(), upnp.clone()];
+
+    // Single loop to start all enabled adapters
+    coord.start_all_enabled(&startable_adapters).await;
 
     // Initialize ZoneAggregator for unified zone state
     let zone_aggregator = Arc::new(aggregator::ZoneAggregator::new(bus.clone()));
@@ -179,6 +176,8 @@ async fn main() -> Result<()> {
         knob_store,
         bus.clone(),
         zone_aggregator,
+        coord.clone(),
+        startable_adapters.clone(),
     );
 
     // Build API routes
@@ -386,7 +385,7 @@ async fn main() -> Result<()> {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Stop adapters
-    roon_for_shutdown.stop();
+    roon_for_shutdown.stop().await;
     if let Some(ref fw) = firmware_service {
         fw.stop();
     }
