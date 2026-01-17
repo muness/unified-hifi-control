@@ -66,42 +66,37 @@ pub struct LayoutProps {
 #[component]
 pub fn Layout(props: LayoutProps) -> Element {
     let version = env!("CARGO_PKG_VERSION");
+    let full_title = format!("{} - Unified Hi-Fi Control", props.title);
 
     rsx! {
-        head {
-            meta { charset: "utf-8" }
-            meta { name: "viewport", content: "width=device-width, initial-scale=1" }
-            title { "{props.title} - Unified Hi-Fi Control" }
-            link {
-                rel: "stylesheet",
-                href: "https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+        // Head elements using Dioxus document components
+        document::Title { "{full_title}" }
+        document::Link { rel: "stylesheet", href: "https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" }
+        document::Style { {CUSTOM_STYLES} }
+        document::Script { {THEME_SCRIPT} }
+        document::Script { {SHARED_JS} }
+
+        // Body content (no body tag - Dioxus handles document structure)
+        header { class: "container",
+            Nav {
+                active: props.nav_active.clone(),
+                hide_hqp: props.hide_hqp,
+                hide_lms: props.hide_lms,
+                hide_knobs: props.hide_knobs,
             }
-            style { {CUSTOM_STYLES} }
-            script { dangerous_inner_html: THEME_SCRIPT }
-            script { dangerous_inner_html: SHARED_JS }
         }
-        body {
-            header { class: "container",
-                Nav {
-                    active: props.nav_active.clone(),
-                    hide_hqp: props.hide_hqp,
-                    hide_lms: props.hide_lms,
-                    hide_knobs: props.hide_knobs,
-                }
-            }
-            main { class: "container",
-                {props.children}
-            }
-            footer {
-                class: "container",
-                style: "display:flex;justify-content:space-between;align-items:center;",
-                small { "Unified Hi-Fi Control v{version}" }
-                ThemeSwitcher {}
-            }
-            script { dangerous_inner_html: THEME_FUNCTIONS }
-            if let Some(scripts) = props.scripts {
-                script { dangerous_inner_html: "{scripts}" }
-            }
+        main { class: "container",
+            {props.children}
+        }
+        footer {
+            class: "container",
+            style: "display:flex;justify-content:space-between;align-items:center;",
+            small { "Unified Hi-Fi Control v{version}" }
+            ThemeSwitcher {}
+        }
+        document::Script { {THEME_FUNCTIONS} }
+        if let Some(scripts) = props.scripts {
+            document::Script { {scripts} }
         }
     }
 }
