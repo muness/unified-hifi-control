@@ -60,6 +60,8 @@ jobs:
             output: unified-hifi-linux-x64
           - target: aarch64-unknown-linux-musl
             output: unified-hifi-linux-arm64
+          - target: armv7-unknown-linux-musleabihf
+            output: unified-hifi-linux-armv7
     steps:
       - uses: actions/checkout@v4
 
@@ -172,6 +174,7 @@ jobs:
         run: |
           # Rename to match Docker TARGETARCH convention
           mv binaries/unified-hifi-linux-x64 binaries/unified-hifi-linux-amd64
+          mv binaries/unified-hifi-linux-armv7 binaries/unified-hifi-linux-arm
           # arm64 name already matches
           ls -la binaries/
 
@@ -201,7 +204,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.ci
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
