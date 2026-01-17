@@ -91,31 +91,15 @@ This bridge doesn't handle audio routing - it exposes DSP controls for HQPlayer 
 
 ### Setup
 
-Edit `data/hqp-config.json`:
-```json
-[
-  {
-    "name": "embedded",
-    "host": "192.168.1.100",
-    "port": 8088,
-    "username": "admin",
-    "password": "secret"
-  },
-  {
-    "name": "desktop",
-    "host": "192.168.1.101",
-    "port": 8088,
-    "username": "",
-    "password": ""
-  }
-]
-```
-
-Restart server after editing config file.
+Configure HQPlayer via the web UI at `/hqplayer`:
+1. Enter your HQPlayer host IP address
+2. Set the native port (default: 4321) and web port (default: 8088)
+3. Optionally add web credentials for profile switching (HQPlayer Embedded)
+4. Click Save — connection status updates automatically
 
 ### Zone Linking
 
-Use web UI at `/hqp` to link your zones:
+Use web UI at `/hqplayer` to link your zones:
 1. Select a zone (e.g., "Living Room" Roon zone that outputs to HQPlayer)
 2. Choose which HQPlayer instance handles its DSP
 3. Zone's now-playing data now includes HQPlayer pipeline info
@@ -126,8 +110,6 @@ Use web UI at `/hqp` to link your zones:
 - **Zone enrichment:** Primary zones show HQPlayer DSP status in `backend_data.hqp`
 - **Profile switching:** Load HQPlayer Embedded profiles via web UI or MCP tools
 - **Pipeline control:** Adjust filter, shaper, and dither settings
-
-See [HQPLAYER-MULTI-INSTANCE.md](HQPLAYER-MULTI-INSTANCE.md) for advanced configuration.
 
 ## Architecture
 
