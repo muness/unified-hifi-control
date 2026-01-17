@@ -39,10 +39,10 @@ use tower::ServiceExt;
 
 use unified_hifi_control::adapters::hqplayer::{HqpInstanceManager, HqpZoneLinkService};
 use unified_hifi_control::adapters::lms::LmsAdapter;
-use unified_hifi_control::adapters::mqtt::MqttAdapter;
 use unified_hifi_control::adapters::openhome::OpenHomeAdapter;
 use unified_hifi_control::adapters::roon::RoonAdapter;
 use unified_hifi_control::adapters::upnp::UPnPAdapter;
+use unified_hifi_control::aggregator::ZoneAggregator;
 use unified_hifi_control::api::AppState;
 use unified_hifi_control::bus::create_bus;
 use unified_hifi_control::knobs::{self, KnobStore};
@@ -170,22 +170,22 @@ async fn create_test_app() -> Router {
     let hqplayer = hqp_instances.get_default().await;
     let hqp_zone_links = Arc::new(HqpZoneLinkService::new(hqp_instances.clone()));
     let lms = Arc::new(LmsAdapter::new(bus.clone()));
-    let mqtt = Arc::new(MqttAdapter::new(bus.clone()));
     let openhome = Arc::new(OpenHomeAdapter::new(bus.clone()));
     let upnp = Arc::new(UPnPAdapter::new(bus.clone()));
     let knob_store = KnobStore::new(std::env::temp_dir());
 
+    let aggregator = Arc::new(ZoneAggregator::new(bus.clone()));
     let state = AppState::new(
         roon,
         hqplayer,
         hqp_instances,
         hqp_zone_links,
         lms,
-        mqtt,
         openhome,
         upnp,
         knob_store,
         bus,
+        aggregator,
     );
 
     // Build router with all routes (same as main.rs)

@@ -11,9 +11,11 @@
 //! - Web UI for daily control (Pico CSS)
 
 pub mod adapters;
+pub mod aggregator;
 pub mod api;
 pub mod bus;
 pub mod config;
+pub mod coordinator;
 pub mod firmware;
 pub mod knobs;
 pub mod mdns;

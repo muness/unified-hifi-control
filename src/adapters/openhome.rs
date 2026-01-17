@@ -4,7 +4,7 @@
 //! OpenHome is an extension of UPnP that provides richer metadata and more
 //! control actions (next/previous track, playlists, etc.)
 
-use crate::bus::{BusEvent, SharedBus};
+use crate::bus::{BusEvent, PlaybackState, SharedBus, VolumeControl as BusVolumeControl, Zone};
 use futures::StreamExt;
 use quick_xml::de::from_str as xml_from_str;
 use reqwest::Client;
@@ -300,11 +300,12 @@ impl OpenHomeAdapter {
                                     e
                                 );
                             }
-                            bus_clone.publish(BusEvent::ZoneUpdated {
-                                zone_id: format!("openhome:{}", uuid_clone),
-                                display_name: uuid_clone.clone(),
-                                state: "stopped".to_string(),
-                            });
+                            // Emit ZoneDiscovered with full zone info
+                            let s = state_clone.read().await;
+                            if let Some(device) = s.devices.get(&uuid_clone) {
+                                let zone = openhome_device_to_zone(device);
+                                bus_clone.publish(BusEvent::ZoneDiscovered { zone });
+                            }
                         });
                     }
                 }
@@ -891,4 +892,38 @@ fn html_decode(s: &str) -> String {
         .replace("&amp;", "&")
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
+}
+
+/// Convert an OpenHome device to a unified Zone representation
+fn openhome_device_to_zone(device: &OpenHomeDevice) -> Zone {
+    Zone {
+        zone_id: format!("openhome:{}", device.uuid),
+        zone_name: device.name.clone(),
+        state: PlaybackState::from(device.state.as_str()),
+        volume_control: device.volume.map(|v| BusVolumeControl {
+            value: v as f32,
+            min: 0.0,
+            max: 100.0,
+            step: 1.0,
+            is_muted: device.muted,
+            scale: crate::bus::VolumeScale::Percentage,
+            output_id: Some(device.uuid.clone()),
+        }),
+        now_playing: device.track_info.as_ref().map(|t| crate::bus::NowPlaying {
+            title: t.title.clone(),
+            artist: t.artist.clone(),
+            album: t.album.clone(),
+            image_key: t.album_art_uri.clone(),
+            seek_position: None,
+            duration: None,
+            metadata: None,
+        }),
+        source: "openhome".to_string(),
+        is_controllable: true,
+        is_seekable: false, // OpenHome seek support varies
+        last_updated: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+    }
 }

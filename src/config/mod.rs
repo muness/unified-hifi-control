@@ -16,9 +16,6 @@ pub struct Config {
 
     #[serde(default)]
     pub lms: Option<LmsConfig>,
-
-    #[serde(default)]
-    pub mqtt: Option<MqttConfig>,
 }
 
 fn default_port() -> u16 {
@@ -55,20 +52,6 @@ pub struct LmsConfig {
 
 fn default_lms_port() -> u16 {
     9000
-}
-
-#[derive(Debug, Deserialize)]
-pub struct MqttConfig {
-    pub host: String,
-    #[serde(default = "default_mqtt_port")]
-    pub port: u16,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    pub topic_prefix: Option<String>,
-}
-
-fn default_mqtt_port() -> u16 {
-    1883
 }
 
 /// Get config directory (XDG_CONFIG_HOME or platform default)

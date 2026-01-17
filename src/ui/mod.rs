@@ -23,7 +23,6 @@
 //! - Web UI (this) - full control interface
 //! - ESP32 Knob (hardware surface via /now_playing, /control APIs)
 //! - Apple Watch / iOS apps (via REST API + SSE)
-//! - Home Assistant (via MQTT)
 //!
 //! Using Pico CSS (classless CSS framework) for clean, accessible,
 //! mobile-friendly design without custom CSS maintenance burden.

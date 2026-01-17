@@ -2,7 +2,7 @@
 //!
 //! Shows service status overview:
 //! - Version and uptime
-//! - Adapter connection statuses (Roon, HQPlayer, LMS, MQTT)
+//! - Adapter connection statuses (Roon, HQPlayer, LMS)
 
 use dioxus::prelude::*;
 
@@ -44,11 +44,6 @@ async function loadStatus() {
                         <td>LMS</td>
                         <td class="${lms.connected ? 'status-ok' : 'status-err'}">${lms.connected ? '✓ Connected' : '✗ Disconnected'}</td>
                         <td><small>${lms.host ? esc(lms.host) + ':' + lms.port : ''}</small></td>
-                    </tr>
-                    <tr>
-                        <td>MQTT</td>
-                        <td class="${status.mqtt_connected ? 'status-ok' : 'status-err'}">${status.mqtt_connected ? '✓ Connected' : '✗ Disconnected'}</td>
-                        <td></td>
                     </tr>
                 </tbody>
             </table>

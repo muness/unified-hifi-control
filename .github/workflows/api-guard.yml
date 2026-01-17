@@ -1,0 +1,56 @@
+name: API Guard
+
+on:
+  pull_request:
+    branches: [master, v3]
+    paths:
+      - 'src/main.rs'
+      - 'src/api/**'
+      - 'tests/fixtures/api_routes.txt'
+
+jobs:
+  check-api-changes:
+    name: Check API Changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for API route changes
+        id: check
+        run: |
+          # Check if api_routes.txt changed
+          if git diff origin/${{ github.base_ref }}..HEAD --name-only | grep -q 'tests/fixtures/api_routes.txt'; then
+            echo "api_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "api_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Require approval label for API changes
+        if: steps.check.outputs.api_changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "API contract file changed - checking for approval label..."
+
+          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels -q '.labels[].name' 2>/dev/null || echo "")
+
+          if echo "$LABELS" | grep -q 'api-change-approved'; then
+            echo "✅ API change approved via label"
+          else
+            echo "❌ API CONTRACT CHANGED!"
+            echo ""
+            echo "Changes to tests/fixtures/api_routes.txt detected."
+            echo "API changes require explicit approval."
+            echo ""
+            echo "To approve this change:"
+            echo "1. Review the API changes carefully"
+            echo "2. Add the 'api-change-approved' label to this PR"
+            echo "3. Re-run this workflow"
+            exit 1
+          fi
+
+      - name: API unchanged
+        if: steps.check.outputs.api_changed == 'false'
+        run: echo "✅ No API contract changes detected"

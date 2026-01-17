@@ -21,7 +21,10 @@ use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
 
-use crate::bus::{BusEvent, SharedBus};
+use crate::bus::{
+    BusEvent, NowPlaying as BusNowPlaying, PlaybackState, SharedBus, TrackMetadata,
+    VolumeControl as BusVolumeControl, VolumeScale, Zone as BusZone,
+};
 use crate::config::get_config_dir;
 
 const HQP_CONFIG_FILE: &str = "hqp-config.json";
@@ -562,15 +565,30 @@ impl HqpAdapter {
         self.bus
             .publish(BusEvent::HqpConnected { host: host.clone() });
 
+        // Get status and volume range for ZoneDiscovered (using inner methods to avoid recursion)
+        let status = self.get_playback_status_inner().await.unwrap_or_default();
+        let vol_range = self.get_volume_range_inner().await.unwrap_or_default();
+
+        // Get instance name for zone ID
+        let instance_name = {
+            let state = self.state.read().await;
+            state.instance_name.clone()
+        };
+
+        // Emit ZoneDiscovered for this HQPlayer instance
+        let zone =
+            Self::hqp_status_to_zone(&host, instance_name.as_deref(), &info, &status, &vol_range);
+        self.bus.publish(BusEvent::ZoneDiscovered { zone });
+
         Ok(())
     }
 
     /// Disconnect
     pub async fn disconnect(&self) {
-        let host = {
+        let (host, instance_name) = {
             let mut state = self.state.write().await;
             state.connected = false;
-            state.host.clone()
+            (state.host.clone(), state.instance_name.clone())
         };
 
         {
@@ -578,8 +596,13 @@ impl HqpAdapter {
             *conn = None;
         }
 
-        if let Some(host) = host {
-            self.bus.publish(BusEvent::HqpDisconnected { host });
+        if let Some(ref h) = host {
+            // Emit ZoneRemoved for this HQPlayer instance
+            let zone_id = format!("hqplayer:{}", instance_name.as_deref().unwrap_or(h));
+            self.bus.publish(BusEvent::ZoneRemoved { zone_id });
+
+            self.bus
+                .publish(BusEvent::HqpDisconnected { host: h.clone() });
         }
     }
 
@@ -599,10 +622,10 @@ impl HqpAdapter {
 
     /// Mark connection as broken (called on communication errors)
     async fn mark_disconnected(&self) {
-        let host = {
+        let (host, instance_name) = {
             let mut state = self.state.write().await;
             state.connected = false;
-            state.host.clone()
+            (state.host.clone(), state.instance_name.clone())
         };
 
         {
@@ -610,8 +633,11 @@ impl HqpAdapter {
             *conn = None;
         }
 
-        if let Some(ref host) = host {
-            tracing::warn!("HQPlayer connection lost to {}", host);
+        if let Some(ref h) = host {
+            tracing::warn!("HQPlayer connection lost to {}", h);
+            // Emit ZoneRemoved for this HQPlayer instance
+            let zone_id = format!("hqplayer:{}", instance_name.as_deref().unwrap_or(h));
+            self.bus.publish(BusEvent::ZoneRemoved { zone_id });
         }
     }
 
@@ -763,6 +789,43 @@ impl HqpAdapter {
             index: Self::parse_attr_u32(item, "index"),
             rate: Self::parse_attr_u32(item, "rate"),
         }))
+    }
+
+    /// Get playback status (no reconnection)
+    async fn get_playback_status_inner(&self) -> Result<HqpStatus> {
+        let xml = Self::build_request("Status", &[("subscribe", "0")]);
+        let response = self.send_command_inner(&xml).await?;
+
+        Ok(HqpStatus {
+            state: Self::parse_attr_u32(&response, "state") as u8,
+            track: Self::parse_attr_u32(&response, "track"),
+            track_id: Self::parse_attr(&response, "track_id").unwrap_or_default(),
+            position: Self::parse_attr_u32(&response, "position"),
+            length: Self::parse_attr_u32(&response, "length"),
+            volume: Self::parse_attr_i32(&response, "volume"),
+            active_mode: Self::parse_attr(&response, "active_mode").unwrap_or_default(),
+            active_filter: Self::parse_attr(&response, "active_filter").unwrap_or_default(),
+            active_shaper: Self::parse_attr(&response, "active_shaper").unwrap_or_default(),
+            active_rate: Self::parse_attr_u32(&response, "active_rate"),
+            active_bits: Self::parse_attr_u32(&response, "active_bits"),
+            active_channels: Self::parse_attr_u32(&response, "active_channels"),
+            samplerate: Self::parse_attr_u32(&response, "samplerate"),
+            bitrate: Self::parse_attr_u32(&response, "bitrate"),
+        })
+    }
+
+    /// Get volume range (no reconnection)
+    async fn get_volume_range_inner(&self) -> Result<VolumeRange> {
+        let xml = Self::build_request("VolumeRange", &[]);
+        let response = self.send_command_inner(&xml).await?;
+
+        Ok(VolumeRange {
+            min: Self::parse_attr_i32(&response, "min"),
+            max: Self::parse_attr_i32(&response, "max"),
+            step: Self::parse_attr_i32(&response, "step").max(1),
+            enabled: Self::parse_attr_bool(&response, "enabled"),
+            adaptive: Self::parse_attr_bool(&response, "adaptive"),
+        })
     }
 
     /// Build XML request
@@ -1683,6 +1746,86 @@ impl HqpAdapter {
     pub async fn set_instance_name(&self, name: String) {
         let mut state = self.state.write().await;
         state.instance_name = Some(name);
+    }
+
+    /// Convert HQPlayer status to a unified bus Zone
+    fn hqp_status_to_zone(
+        host: &str,
+        instance_name: Option<&str>,
+        info: &HqpInfo,
+        status: &HqpStatus,
+        vol_range: &VolumeRange,
+    ) -> BusZone {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let zone_id = format!("hqplayer:{}", instance_name.unwrap_or(host));
+        let zone_name = if info.name.is_empty() {
+            format!("HQPlayer @ {}", host)
+        } else {
+            info.name.clone()
+        };
+
+        let state = match status.state {
+            0 => PlaybackState::Stopped,
+            1 => PlaybackState::Paused,
+            2 => PlaybackState::Playing,
+            _ => PlaybackState::Unknown,
+        };
+
+        let volume_control = if vol_range.enabled {
+            Some(BusVolumeControl {
+                value: status.volume as f32,
+                min: vol_range.min as f32,
+                max: vol_range.max as f32,
+                step: vol_range.step as f32,
+                is_muted: false, // HQPlayer doesn't report mute separately
+                scale: VolumeScale::Decibel,
+                output_id: Some(zone_id.clone()),
+            })
+        } else {
+            None
+        };
+
+        // Build now_playing if we have track info
+        let now_playing = if !status.track_id.is_empty() || status.length > 0 {
+            Some(BusNowPlaying {
+                title: String::new(), // HQPlayer status doesn't include title
+                artist: String::new(),
+                album: String::new(),
+                image_key: None,
+                seek_position: Some(status.position as f64),
+                duration: Some(status.length as f64),
+                metadata: Some(TrackMetadata {
+                    format: Some(status.active_mode.clone()),
+                    sample_rate: Some(status.samplerate),
+                    bit_depth: Some(status.active_bits as u8),
+                    bitrate: Some(status.bitrate),
+                    genre: None,
+                    composer: None,
+                    track_number: Some(status.track),
+                    disc_number: None,
+                }),
+            })
+        } else {
+            None
+        };
+
+        let last_updated = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        BusZone {
+            zone_id,
+            zone_name,
+            state,
+            volume_control,
+            now_playing,
+            source: "hqplayer".to_string(),
+            is_controllable: true,
+            is_seekable: true,
+            last_updated,
+        }
     }
 }
 

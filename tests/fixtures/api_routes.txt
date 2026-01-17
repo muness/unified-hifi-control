@@ -1,0 +1,77 @@
+# API Routes Contract
+# This file is the source of truth for API endpoints.
+# Changes require 'api-change-approved' label on PR.
+#
+# Format: METHOD /path
+
+GET /
+GET /admin
+GET /admin/critical
+GET /api/settings
+GET /config/{knob_id}
+GET /control
+GET /critical
+GET /events
+GET /firmware/download
+GET /firmware/version
+GET /hqp/discover
+GET /hqp/instances
+GET /hqp/pipeline
+GET /hqp/profiles
+GET /hqp/status
+GET /hqp/zones/links
+GET /hqplayer
+GET /hqplayer/config
+GET /hqplayer/pipeline
+GET /hqplayer/profiles
+GET /hqplayer/status
+GET /knob/config
+GET /knob/devices
+GET /knob/now_playing
+GET /knob/now_playing/image
+GET /knob/zones
+GET /knobs
+GET /knobs/flash
+GET /lms
+GET /lms/config
+GET /lms/player/{player_id}
+GET /lms/players
+GET /lms/status
+GET /manifest-s3.json
+GET /now_playing
+GET /now_playing/image
+GET /openhome/status
+GET /openhome/zones
+GET /roon/image
+GET /roon/status
+GET /roon/zone/{zone_id}
+GET /roon/zones
+GET /settings
+GET /status
+GET /ui/zones
+GET /upnp/status
+GET /upnp/zones
+GET /zone
+GET /zones
+POST /api/settings
+POST /control
+POST /hqp/detect
+POST /hqp/instances
+POST /hqp/pipeline
+POST /hqp/profiles/load
+POST /hqp/zones/link
+POST /hqp/zones/unlink
+POST /hqplayer/configure
+POST /hqplayer/control
+POST /hqplayer/profile
+POST /hqplayer/setting
+POST /hqplayer/volume
+POST /knob/config
+POST /knob/control
+POST /lms/configure
+POST /lms/control
+POST /lms/volume
+POST /openhome/control
+POST /roon/control
+POST /roon/volume
+POST /upnp/control

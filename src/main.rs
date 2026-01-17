@@ -2,7 +2,7 @@
 //!
 //! A source-agnostic hi-fi control bridge for hardware surfaces and Home Assistant.
 
-use unified_hifi_control::{adapters, api, bus, config, firmware, knobs, mdns, ui};
+use unified_hifi_control::{adapters, aggregator, api, bus, config, firmware, knobs, mdns, ui};
 
 use anyhow::Result;
 use axum::{
@@ -135,25 +135,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Initialize MQTT adapter
-    let mqtt = Arc::new(adapters::mqtt::MqttAdapter::new(bus.clone()));
-    if let Some(ref mqtt_config) = config.mqtt {
-        mqtt.configure(
-            mqtt_config.host.clone(),
-            Some(mqtt_config.port),
-            mqtt_config.username.clone(),
-            mqtt_config.password.clone(),
-            mqtt_config.topic_prefix.clone(),
-        )
-        .await;
-
-        if let Err(e) = mqtt.start().await {
-            tracing::warn!("Failed to start MQTT adapter: {}", e);
-        } else {
-            tracing::info!("MQTT adapter started for {}", mqtt_config.host);
-        }
-    }
-
     // Initialize OpenHome adapter (SSDP discovery)
     let openhome = Arc::new(adapters::openhome::OpenHomeAdapter::new(bus.clone()));
     if let Err(e) = openhome.start().await {
@@ -170,6 +151,14 @@ async fn main() -> Result<()> {
         tracing::info!("UPnP adapter started (SSDP discovery active)");
     }
 
+    // Initialize ZoneAggregator for unified zone state
+    let zone_aggregator = Arc::new(aggregator::ZoneAggregator::new(bus.clone()));
+    let aggregator_for_spawn = zone_aggregator.clone();
+    tokio::spawn(async move {
+        aggregator_for_spawn.run().await;
+    });
+    tracing::info!("ZoneAggregator started");
+
     // Initialize Knob device store
     let data_dir = config::get_data_dir();
     let knob_store = knobs::KnobStore::new(data_dir);
@@ -185,11 +174,11 @@ async fn main() -> Result<()> {
         hqp_instances,
         hqp_zone_links,
         lms.clone(),
-        mqtt.clone(),
         openhome.clone(),
         upnp.clone(),
         knob_store,
         bus.clone(),
+        zone_aggregator,
     );
 
     // Build API routes
@@ -385,14 +374,23 @@ async fn main() -> Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    // Cleanup: stop adapters (mDNS daemon will be dropped automatically)
+    // Cleanup: publish ShuttingDown event and stop adapters
     tracing::info!("Shutting down adapters...");
+
+    // Publish ShuttingDown event for any bus listeners (fixes #73)
+    bus.publish(bus::BusEvent::ShuttingDown {
+        reason: Some("User requested shutdown".to_string()),
+    });
+
+    // Give listeners a moment to react to ShuttingDown
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // Stop adapters
     roon_for_shutdown.stop();
     if let Some(ref fw) = firmware_service {
         fw.stop();
     }
     lms.stop().await;
-    mqtt.stop().await;
     openhome.stop().await;
     upnp.stop().await;
     tracing::info!("Shutdown complete");

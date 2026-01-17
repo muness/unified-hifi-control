@@ -4,7 +4,7 @@
 //! Pure UPnP/DLNA has limited metadata support compared to OpenHome.
 //! Specifically, next/previous track are NOT supported by pure UPnP.
 
-use crate::bus::{BusEvent, SharedBus};
+use crate::bus::{BusEvent, PlaybackState, SharedBus, VolumeControl as BusVolumeControl, Zone};
 use futures::StreamExt;
 use quick_xml::de::from_str as xml_from_str;
 use regex::Regex;
@@ -262,11 +262,12 @@ impl UPnPAdapter {
                 {
                     tracing::warn!("Failed to fetch device info for {}: {}", uuid_clone, e);
                 }
-                bus_clone.publish(BusEvent::ZoneUpdated {
-                    zone_id: format!("upnp:{}", uuid_clone),
-                    display_name: uuid_clone.clone(),
-                    state: "stopped".to_string(),
-                });
+                // Emit ZoneDiscovered with full zone info
+                let s = state_clone.read().await;
+                if let Some(renderer) = s.renderers.get(&uuid_clone) {
+                    let zone = upnp_renderer_to_zone(renderer);
+                    bus_clone.publish(BusEvent::ZoneDiscovered { zone });
+                }
             });
         }
 
@@ -858,5 +859,31 @@ impl UPnPAdapter {
         });
 
         Ok(())
+    }
+}
+
+/// Convert a UPnP renderer to a unified Zone representation
+fn upnp_renderer_to_zone(renderer: &UPnPRenderer) -> Zone {
+    Zone {
+        zone_id: format!("upnp:{}", renderer.uuid),
+        zone_name: renderer.name.clone(),
+        state: PlaybackState::from(renderer.state.as_str()),
+        volume_control: renderer.volume.map(|v| BusVolumeControl {
+            value: v as f32,
+            min: 0.0,
+            max: 100.0,
+            step: 1.0,
+            is_muted: renderer.muted,
+            scale: crate::bus::VolumeScale::Percentage,
+            output_id: Some(renderer.uuid.clone()),
+        }),
+        now_playing: None, // UPnP track info would need separate DIDL-Lite parsing
+        source: "upnp".to_string(),
+        is_controllable: renderer.av_transport_url.is_some(),
+        is_seekable: false, // Pure UPnP seek support is limited
+        last_updated: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
     }
 }

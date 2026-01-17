@@ -17,7 +17,10 @@ use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
 use tokio_util::sync::CancellationToken;
 
-use crate::bus::{BusEvent, SharedBus};
+use crate::bus::{
+    BusEvent, NowPlaying as BusNowPlaying, PlaybackState, SharedBus,
+    VolumeControl as BusVolumeControl, Zone as BusZone,
+};
 use crate::config::get_data_dir;
 
 /// Pending image request - stores the oneshot sender to deliver the result
@@ -441,6 +444,47 @@ fn convert_zone(roon_zone: &RoonZone) -> Zone {
     }
 }
 
+/// Convert local Zone to bus Zone for ZoneDiscovered event
+fn roon_zone_to_bus_zone(zone: &Zone) -> BusZone {
+    // Get volume from first output (if available)
+    let volume_control = zone.outputs.first().and_then(|o| {
+        o.volume.as_ref().map(|v| BusVolumeControl {
+            value: v.value.unwrap_or(50.0),
+            min: v.min.unwrap_or(-64.0),
+            max: v.max.unwrap_or(0.0),
+            step: 1.0,
+            is_muted: v.is_muted.unwrap_or(false),
+            scale: crate::bus::VolumeScale::Decibel,
+            output_id: Some(o.output_id.clone()),
+        })
+    });
+
+    let now_playing = zone.now_playing.as_ref().map(|np| BusNowPlaying {
+        title: np.title.clone(),
+        artist: np.artist.clone(),
+        album: np.album.clone(),
+        image_key: np.image_key.clone(),
+        seek_position: np.seek_position.map(|p| p as f64),
+        duration: np.length.map(|l| l as f64),
+        metadata: None,
+    });
+
+    BusZone {
+        zone_id: format!("roon:{}", zone.zone_id),
+        zone_name: zone.display_name.clone(),
+        state: PlaybackState::from(zone.state.as_str()),
+        volume_control,
+        now_playing,
+        source: "roon".to_string(),
+        is_controllable: true,
+        is_seekable: zone.now_playing.is_some(),
+        last_updated: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+    }
+}
+
 /// Main Roon event loop
 async fn run_roon_loop(
     state: Arc<RwLock<RoonState>>,
@@ -593,13 +637,21 @@ async fn run_roon_loop(
                                     zone.zone_id
                                 );
                                 let converted = convert_zone(&zone);
+                                let is_new = !s.zones.contains_key(&zone.zone_id);
 
-                                // Publish zone updated event
-                                bus_for_events.publish(BusEvent::ZoneUpdated {
-                                    zone_id: converted.zone_id.clone(),
-                                    display_name: converted.display_name.clone(),
-                                    state: converted.state.clone(),
-                                });
+                                if is_new {
+                                    // New zone - emit ZoneDiscovered
+                                    let bus_zone = roon_zone_to_bus_zone(&converted);
+                                    bus_for_events
+                                        .publish(BusEvent::ZoneDiscovered { zone: bus_zone });
+                                } else {
+                                    // Existing zone - emit ZoneUpdated
+                                    bus_for_events.publish(BusEvent::ZoneUpdated {
+                                        zone_id: converted.zone_id.clone(),
+                                        display_name: converted.display_name.clone(),
+                                        state: converted.state.clone(),
+                                    });
+                                }
 
                                 // Publish now playing changed if present
                                 if let Some(ref np) = converted.now_playing {

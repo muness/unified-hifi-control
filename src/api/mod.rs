@@ -2,10 +2,10 @@
 
 use crate::adapters::hqplayer::{HqpAdapter, HqpInstanceManager, HqpZoneLinkService};
 use crate::adapters::lms::LmsAdapter;
-use crate::adapters::mqtt::MqttAdapter;
 use crate::adapters::openhome::OpenHomeAdapter;
 use crate::adapters::roon::RoonAdapter;
 use crate::adapters::upnp::UPnPAdapter;
+use crate::aggregator::ZoneAggregator;
 use crate::bus::SharedBus;
 use crate::knobs::KnobStore;
 use axum::{
@@ -33,11 +33,11 @@ pub struct AppState {
     pub hqp_instances: Arc<HqpInstanceManager>,
     pub hqp_zone_links: Arc<HqpZoneLinkService>,
     pub lms: Arc<LmsAdapter>,
-    pub mqtt: Arc<MqttAdapter>,
     pub openhome: Arc<OpenHomeAdapter>,
     pub upnp: Arc<UPnPAdapter>,
     pub knobs: KnobStore,
     pub bus: SharedBus,
+    pub aggregator: Arc<ZoneAggregator>,
 }
 
 impl AppState {
@@ -48,11 +48,11 @@ impl AppState {
         hqp_instances: Arc<HqpInstanceManager>,
         hqp_zone_links: Arc<HqpZoneLinkService>,
         lms: Arc<LmsAdapter>,
-        mqtt: Arc<MqttAdapter>,
         openhome: Arc<OpenHomeAdapter>,
         upnp: Arc<UPnPAdapter>,
         knobs: KnobStore,
         bus: SharedBus,
+        aggregator: Arc<ZoneAggregator>,
     ) -> Self {
         Self {
             roon: Arc::new(roon),
@@ -60,11 +60,11 @@ impl AppState {
             hqp_instances,
             hqp_zone_links,
             lms,
-            mqtt,
             openhome,
             upnp,
             knobs,
             bus,
+            aggregator,
         }
     }
 }
@@ -102,7 +102,6 @@ pub struct StatusResponse {
     pub roon_connected: bool,
     pub hqplayer_connected: bool,
     pub lms_connected: bool,
-    pub mqtt_connected: bool,
     pub openhome_devices: usize,
     pub upnp_devices: usize,
     pub bus_subscribers: usize,
@@ -113,7 +112,6 @@ pub async fn status_handler(State(state): State<AppState>) -> Json<StatusRespons
     let roon_status = state.roon.get_status().await;
     let hqp_status = state.hqplayer.get_status().await;
     let lms_status = state.lms.get_status().await;
-    let mqtt_status = state.mqtt.get_status().await;
     let openhome_status = state.openhome.get_status().await;
     let upnp_status = state.upnp.get_status().await;
 
@@ -124,7 +122,6 @@ pub async fn status_handler(State(state): State<AppState>) -> Json<StatusRespons
         roon_connected: roon_status.connected,
         hqplayer_connected: hqp_status.connected,
         lms_connected: lms_status.connected,
-        mqtt_connected: mqtt_status.connected,
         openhome_devices: openhome_status.device_count,
         upnp_devices: upnp_status.renderer_count,
         bus_subscribers: state.bus.subscriber_count(),
@@ -1423,6 +1420,10 @@ pub async fn hqp_discover_handler(Query(params): Query<HqpDiscoverRequest>) -> i
             .into_response(),
     }
 }
+
+// =============================================================================
+// App settings handlers
+// =============================================================================
 
 /// App settings for UI preferences
 #[derive(Debug, Clone, Serialize, Deserialize)]
