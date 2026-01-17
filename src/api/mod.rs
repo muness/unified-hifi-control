@@ -1444,6 +1444,8 @@ pub struct AppSettings {
     pub hide_knobs_page: bool,
     #[serde(default, alias = "hideHqpPage")]
     pub hide_hqp_page: bool,
+    #[serde(default, alias = "hideLmsPage")]
+    pub hide_lms_page: bool,
     #[serde(default)]
     pub adapters: AdapterSettings,
 }
@@ -1469,6 +1471,7 @@ impl Default for AppSettings {
         Self {
             hide_knobs_page: false,
             hide_hqp_page: false,
+            hide_lms_page: false,
             adapters: AdapterSettings {
                 roon: true,
                 upnp: false,

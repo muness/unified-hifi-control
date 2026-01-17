@@ -103,23 +103,6 @@ async function saveAdapterSettings() {
     document.getElementById('adapter-' + id).addEventListener('change', saveAdapterSettings);
 });
 
-// UI Settings (tab visibility)
-function loadUiSettings() {
-    const settings = JSON.parse(localStorage.getItem('hifi-ui-settings') || '{}');
-    document.getElementById('show-hqplayer').checked = settings.showHqplayer !== false;
-    document.getElementById('show-lms').checked = settings.showLms !== false;
-    document.getElementById('show-knobs').checked = settings.showKnobs !== false;
-}
-
-function saveUiSettings() {
-    const settings = {
-        showHqplayer: document.getElementById('show-hqplayer').checked,
-        showLms: document.getElementById('show-lms').checked,
-        showKnobs: document.getElementById('show-knobs').checked,
-    };
-    localStorage.setItem('hifi-ui-settings', JSON.stringify(settings));
-}
-
 // Store adapter settings for use by discovery status
 let currentAdapterSettings = {};
 
@@ -127,7 +110,6 @@ let currentAdapterSettings = {};
 async function initPage() {
     currentAdapterSettings = await loadAdapterSettings();
     loadDiscoveryStatus(currentAdapterSettings);
-    loadUiSettings();
 }
 initPage();
 
@@ -202,30 +184,6 @@ pub fn SettingsPage() -> Element {
                     p {
                         style: "margin-top:0.5rem;",
                         small { "Changes take effect immediately. Disabled adapters won't contribute zones." }
-                    }
-                }
-            }
-
-            // UI Settings section
-            section { id: "ui-settings",
-                hgroup {
-                    h2 { "UI Settings" }
-                    p { "Customize navigation tabs" }
-                }
-                article {
-                    // Using dangerous_inner_html for checkboxes with onchange handlers
-                    // since Dioxus SSR doesn't support string event handlers directly
-                    div {
-                        style: "display:flex;flex-wrap:wrap;gap:1.5rem;",
-                        dangerous_inner_html: r#"
-                            <label><input type="checkbox" id="show-hqplayer" checked onchange="saveUiSettings()"> HQPlayer tab</label>
-                            <label><input type="checkbox" id="show-lms" checked onchange="saveUiSettings()"> LMS tab</label>
-                            <label><input type="checkbox" id="show-knobs" checked onchange="saveUiSettings()"> Knobs tab</label>
-                        "#
-                    }
-                    p {
-                        style: "margin-top:0.5rem;",
-                        small { "Uncheck to hide tabs you don't use. Refresh page to apply." }
                     }
                 }
             }

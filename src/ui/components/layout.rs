@@ -50,6 +50,15 @@ pub struct LayoutProps {
     /// Optional additional scripts to include
     #[props(default)]
     pub scripts: Option<String>,
+    /// Hide HQPlayer tab in nav
+    #[props(default = false)]
+    pub hide_hqp: bool,
+    /// Hide LMS tab in nav
+    #[props(default = false)]
+    pub hide_lms: bool,
+    /// Hide Knobs tab in nav
+    #[props(default = false)]
+    pub hide_knobs: bool,
 }
 
 /// Main layout component wrapping all pages.
@@ -72,7 +81,12 @@ pub fn Layout(props: LayoutProps) -> Element {
         }
         body {
             header { class: "container",
-                Nav { active: props.nav_active.clone() }
+                Nav {
+                    active: props.nav_active.clone(),
+                    hide_hqp: props.hide_hqp,
+                    hide_lms: props.hide_lms,
+                    hide_knobs: props.hide_knobs,
+                }
             }
             main { class: "container",
                 {props.children}

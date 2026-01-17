@@ -128,26 +128,7 @@ fn html_doc(title: &str, nav_active: &str, content: &str) -> String {
                 if (btn) btn.classList.toggle('active', x === theme);
             }});
         }}
-        function applyNavVisibility() {{
-            const s = JSON.parse(localStorage.getItem('hifi-ui-settings') || '{{}}');
-            const hide = (id, show) => {{
-                const el = document.querySelector(`nav a[href*="${{id}}"]`);
-                if (el) el.style.display = show !== false ? '' : 'none';
-            }};
-            hide('/hqplayer', s.showHqplayer);
-            hide('/lms', s.showLms);
-            hide('/knobs', s.showKnobs);
-        }}
-        // Auto-hide LMS if not configured (only if user hasn't explicitly enabled it)
-        fetch('/lms/status').then(r => r.json()).then(st => {{
-            const s = JSON.parse(localStorage.getItem('hifi-ui-settings') || '{{}}');
-            if (!st.host && s.showLms !== true) {{
-                const el = document.querySelector('nav a[href*="/lms"]');
-                if (el) el.style.display = 'none';
-            }}
-        }}).catch(() => {{}});
         updateThemeButtons();
-        applyNavVisibility();
     </script>
 </body>
 </html>"#,
