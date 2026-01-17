@@ -407,6 +407,7 @@ jobs:
         run: |
           docker run --rm --platform linux/amd64 \
             -v "$(pwd)/qnap-build:/src" \
+            -w /src \
             owncloudci/qnap-qpkg-builder:latest \
             sh -c '/usr/share/qdk2/QDK/bin/qbuild --build-dir /src/build && cp /src/build/*.qpkg /src/ && chmod 666 /src/*.qpkg'
 
