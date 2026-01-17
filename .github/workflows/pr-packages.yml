@@ -311,7 +311,7 @@ jobs:
           dsm: '7.0'
           arch: ${{ matrix.arch }}
           projects: ./build/synology
-          output: ./dist/installers
+          output: /workspace/dist/installers
 
       - name: Debug - List output directory
         run: |

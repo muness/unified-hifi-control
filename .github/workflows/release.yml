@@ -349,7 +349,7 @@ jobs:
           dsm: '7.0'
           arch: ${{ matrix.arch }}
           projects: ./build/synology
-          output: ./dist/installers
+          output: /workspace/dist/installers
 
       - name: Upload Synology package
         uses: actions/upload-artifact@v4
