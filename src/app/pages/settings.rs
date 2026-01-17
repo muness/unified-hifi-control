@@ -25,15 +25,6 @@ pub struct AppSettings {
     pub adapters: AdapterSettings,
 }
 
-/// Discovery status for each protocol
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
-pub struct DiscoveryStatus {
-    pub roon_connected: bool,
-    pub roon_core_name: Option<String>,
-    pub openhome_device_count: usize,
-    pub upnp_renderer_count: usize,
-}
-
 /// Server function to fetch settings
 #[server]
 pub async fn get_settings() -> Result<AppSettings, ServerFnError> {
@@ -62,40 +53,105 @@ pub async fn save_settings(settings: AppSettings) -> Result<(), ServerFnError> {
     Ok(())
 }
 
-/// Server function to get discovery status
-#[server]
-pub async fn get_discovery_status() -> Result<DiscoveryStatus, ServerFnError> {
-    let client = reqwest::Client::new();
+/// Client-side script to fetch discovery status
+const DISCOVERY_SCRIPT: &str = r#"
+async function loadDiscoveryStatus() {
+    try {
+        const [roon, openhome, upnp] = await Promise.all([
+            fetch('/roon/status').then(r => r.json()).catch(() => ({ connected: false })),
+            fetch('/openhome/status').then(r => r.json()).catch(() => ({ device_count: 0 })),
+            fetch('/upnp/status').then(r => r.json()).catch(() => ({ renderer_count: 0 }))
+        ]);
 
-    let (roon, openhome, upnp) = tokio::join!(
-        client.get("http://127.0.0.1:8088/roon/status").send(),
-        client.get("http://127.0.0.1:8088/openhome/status").send(),
-        client.get("http://127.0.0.1:8088/upnp/status").send(),
-    );
+        // Update Roon row
+        const roonRow = document.querySelector('#discovery-table tr[data-protocol="roon"]');
+        if (roonRow) {
+            const statusCell = roonRow.querySelector('.status-cell');
+            const devicesCell = roonRow.querySelector('.devices-cell');
+            const roonEnabled = document.querySelector('input[data-adapter="roon"]')?.checked ?? true;
 
-    let mut status = DiscoveryStatus::default();
-
-    if let Ok(resp) = roon {
-        if let Ok(json) = resp.json::<serde_json::Value>().await {
-            status.roon_connected = json["connected"].as_bool().unwrap_or(false);
-            status.roon_core_name = json["core_name"].as_str().map(String::from);
+            if (!roonEnabled) {
+                statusCell.innerHTML = '<span class="status-disabled">Disabled</span>';
+                statusCell.className = 'status-cell';
+                devicesCell.textContent = '-';
+            } else if (roon.connected) {
+                statusCell.textContent = '✓ Connected';
+                statusCell.className = 'status-cell status-ok';
+                devicesCell.textContent = roon.core_name || 'Core';
+            } else {
+                statusCell.textContent = '✗ Not connected';
+                statusCell.className = 'status-cell status-err';
+                devicesCell.textContent = '-';
+            }
         }
-    }
 
-    if let Ok(resp) = openhome {
-        if let Ok(json) = resp.json::<serde_json::Value>().await {
-            status.openhome_device_count = json["device_count"].as_u64().unwrap_or(0) as usize;
+        // Update OpenHome row
+        const ohRow = document.querySelector('#discovery-table tr[data-protocol="openhome"]');
+        if (ohRow) {
+            const statusCell = ohRow.querySelector('.status-cell');
+            const devicesCell = ohRow.querySelector('.devices-cell');
+            const ohEnabled = document.querySelector('input[data-adapter="openhome"]')?.checked ?? false;
+
+            if (!ohEnabled) {
+                statusCell.innerHTML = '<span class="status-disabled">Disabled</span>';
+                statusCell.className = 'status-cell';
+                devicesCell.textContent = '-';
+            } else if (openhome.device_count > 0) {
+                statusCell.innerHTML = '<span class="status-ok">✓ Active</span>';
+                statusCell.className = 'status-cell';
+                devicesCell.textContent = openhome.device_count + ' device(s)';
+            } else {
+                statusCell.textContent = 'Searching...';
+                statusCell.className = 'status-cell';
+                devicesCell.textContent = '0 device(s)';
+            }
         }
-    }
 
-    if let Ok(resp) = upnp {
-        if let Ok(json) = resp.json::<serde_json::Value>().await {
-            status.upnp_renderer_count = json["renderer_count"].as_u64().unwrap_or(0) as usize;
+        // Update UPnP row
+        const upnpRow = document.querySelector('#discovery-table tr[data-protocol="upnp"]');
+        if (upnpRow) {
+            const statusCell = upnpRow.querySelector('.status-cell');
+            const devicesCell = upnpRow.querySelector('.devices-cell');
+            const upnpEnabled = document.querySelector('input[data-adapter="upnp"]')?.checked ?? false;
+
+            if (!upnpEnabled) {
+                statusCell.innerHTML = '<span class="status-disabled">Disabled</span>';
+                statusCell.className = 'status-cell';
+                devicesCell.textContent = '-';
+            } else if (upnp.renderer_count > 0) {
+                statusCell.innerHTML = '<span class="status-ok">✓ Active</span>';
+                statusCell.className = 'status-cell';
+                devicesCell.textContent = upnp.renderer_count + ' renderer(s)';
+            } else {
+                statusCell.textContent = 'Searching...';
+                statusCell.className = 'status-cell';
+                devicesCell.textContent = '0 renderer(s)';
+            }
         }
+    } catch (e) {
+        console.error('Failed to load discovery status:', e);
     }
-
-    Ok(status)
 }
+
+// Load on page load and set up SSE for updates
+loadDiscoveryStatus();
+
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+    try {
+        const event = JSON.parse(e.data);
+        if (['RoonConnected', 'RoonDisconnected', 'OpenHomeDeviceFound', 'OpenHomeDeviceLost',
+             'UpnpRendererFound', 'UpnpRendererLost'].includes(event.type)) {
+            loadDiscoveryStatus();
+        }
+    } catch (err) { console.error('SSE parse error:', err); }
+};
+es.onerror = () => {
+    console.warn('SSE disconnected, falling back to polling');
+    es.close();
+    setInterval(loadDiscoveryStatus, 10000);
+};
+"#;
 
 /// Settings page component
 #[component]
@@ -105,9 +161,6 @@ pub fn Settings() -> Element {
     let mut lms_enabled = use_signal(|| false);
     let mut openhome_enabled = use_signal(|| false);
     let mut upnp_enabled = use_signal(|| false);
-
-    // Discovery status
-    let mut discovery = use_signal(DiscoveryStatus::default);
 
     // Load initial settings
     let settings_resource = use_resource(move || async move { get_settings().await });
@@ -119,15 +172,6 @@ pub fn Settings() -> Element {
             lms_enabled.set(settings.adapters.lms);
             openhome_enabled.set(settings.adapters.openhome);
             upnp_enabled.set(settings.adapters.upnp);
-        }
-    });
-
-    // Load discovery status
-    let discovery_resource = use_resource(move || async move { get_discovery_status().await });
-
-    use_effect(move || {
-        if let Some(Ok(status)) = discovery_resource.read().as_ref() {
-            discovery.set(status.clone());
         }
     });
 
@@ -150,6 +194,7 @@ pub fn Settings() -> Element {
         Layout {
             title: "Settings".to_string(),
             nav_active: "settings".to_string(),
+            scripts: Some(DISCOVERY_SCRIPT.to_string()),
 
             h1 { "Settings" }
 
@@ -163,6 +208,7 @@ pub fn Settings() -> Element {
                         label {
                             input {
                                 r#type: "checkbox",
+                                "data-adapter": "roon",
                                 checked: roon_enabled(),
                                 onchange: move |_| {
                                     roon_enabled.toggle();
@@ -174,6 +220,7 @@ pub fn Settings() -> Element {
                         label {
                             input {
                                 r#type: "checkbox",
+                                "data-adapter": "lms",
                                 checked: lms_enabled(),
                                 onchange: move |_| {
                                     lms_enabled.toggle();
@@ -185,6 +232,7 @@ pub fn Settings() -> Element {
                         label {
                             input {
                                 r#type: "checkbox",
+                                "data-adapter": "openhome",
                                 checked: openhome_enabled(),
                                 onchange: move |_| {
                                     openhome_enabled.toggle();
@@ -196,6 +244,7 @@ pub fn Settings() -> Element {
                         label {
                             input {
                                 r#type: "checkbox",
+                                "data-adapter": "upnp",
                                 checked: upnp_enabled(),
                                 onchange: move |_| {
                                     upnp_enabled.toggle();
@@ -217,7 +266,7 @@ pub fn Settings() -> Element {
                 p { "Devices found via SSDP (no configuration needed)" }
 
                 article {
-                    table {
+                    table { id: "discovery-table",
                         thead {
                             tr {
                                 th { "Protocol" }
@@ -227,64 +276,22 @@ pub fn Settings() -> Element {
                         }
                         tbody {
                             // Roon row
-                            tr {
+                            tr { "data-protocol": "roon",
                                 td { "Roon" }
-                                td { class: if discovery().roon_connected { "status-ok" } else { "status-err" },
-                                    if !roon_enabled() {
-                                        span { class: "status-disabled", "Disabled" }
-                                    } else if discovery().roon_connected {
-                                        "✓ Connected"
-                                    } else {
-                                        "✗ Not connected"
-                                    }
-                                }
-                                td {
-                                    if discovery().roon_connected {
-                                        {discovery().roon_core_name.clone().unwrap_or_else(|| "Core".to_string())}
-                                    } else {
-                                        "-"
-                                    }
-                                }
+                                td { class: "status-cell", "Loading..." }
+                                td { class: "devices-cell", "-" }
                             }
                             // OpenHome row
-                            tr {
+                            tr { "data-protocol": "openhome",
                                 td { "OpenHome" }
-                                td {
-                                    if !openhome_enabled() {
-                                        span { class: "status-disabled", "Disabled" }
-                                    } else if discovery().openhome_device_count > 0 {
-                                        span { class: "status-ok", "✓ Active" }
-                                    } else {
-                                        "Searching..."
-                                    }
-                                }
-                                td {
-                                    if openhome_enabled() {
-                                        "{discovery().openhome_device_count} device(s)"
-                                    } else {
-                                        "-"
-                                    }
-                                }
+                                td { class: "status-cell", "Loading..." }
+                                td { class: "devices-cell", "-" }
                             }
                             // UPnP row
-                            tr {
+                            tr { "data-protocol": "upnp",
                                 td { "UPnP/DLNA" }
-                                td {
-                                    if !upnp_enabled() {
-                                        span { class: "status-disabled", "Disabled" }
-                                    } else if discovery().upnp_renderer_count > 0 {
-                                        span { class: "status-ok", "✓ Active" }
-                                    } else {
-                                        "Searching..."
-                                    }
-                                }
-                                td {
-                                    if upnp_enabled() {
-                                        "{discovery().upnp_renderer_count} renderer(s)"
-                                    } else {
-                                        "-"
-                                    }
-                                }
+                                td { class: "status-cell", "Loading..." }
+                                td { class: "devices-cell", "-" }
                             }
                         }
                     }
