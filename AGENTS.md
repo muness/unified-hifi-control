@@ -97,6 +97,33 @@ The Rust server must be a drop-in replacement for the Node.js server. All API re
 - Zone ID prefixes (`roon:`, `openhome:`, `upnp:`, `lms:`)
 - Error response formats
 
+## API Stability (CRITICAL)
+
+**DO NOT add, remove, or modify API endpoints without explicit user approval.**
+
+This includes:
+- Route paths in main.rs
+- HTTP methods (GET/POST/PUT/DELETE)
+- Response payload structure
+- Request body schemas
+
+### Enforcement
+
+1. **Contract file**: `tests/fixtures/api_routes.txt` lists all routes
+2. **Test**: `cargo test --test api_contract` fails if routes change
+3. **CI**: PRs changing the contract require `api-change-approved` label
+
+### If you think API needs to change
+
+1. **ASK FIRST** - Describe the proposed change and get explicit approval
+2. Only after approval: update `api_routes.txt` and implementation
+3. User adds `api-change-approved` label to PR
+
+**NEVER:**
+- Add the `api-change-approved` label yourself
+- Update `api_routes.txt` without explicit approval
+- Assume API changes are "minor" or "safe"
+
 ## Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the event bus pattern and design principles.
