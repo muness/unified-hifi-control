@@ -167,6 +167,74 @@ async fn handle_jsonrpc(
         .and_then(|v| v.as_str())
         .ok_or(StatusCode::BAD_REQUEST)?;
 
+    // Handle commands that modify state
+    match command {
+        "play" => {
+            // LMS "play" command starts playback from stopped/beginning
+            // NOTE: This does NOT resume from pause - use "pause 0" for that
+            let mut state = state.write().await;
+            if let Some(player) = state.players.get_mut(player_id) {
+                // Only start playing if stopped (not if paused!)
+                // This matches real LMS behavior where "play" starts playlist
+                // but doesn't resume from pause
+                if player.mode == "stop" {
+                    player.mode = "play".to_string();
+                }
+                // If paused, "play" does nothing - need "pause 0" to resume
+            }
+            return Ok(Json(JsonRpcResponse {
+                id: request.id,
+                result: json!({}),
+            }));
+        }
+        "pause" => {
+            let mut state = state.write().await;
+            if let Some(player) = state.players.get_mut(player_id) {
+                // Get optional parameter: 0=unpause, 1=pause, none=toggle
+                let pause_arg = commands.get(1).and_then(|v| v.as_i64());
+                match pause_arg {
+                    Some(0) => {
+                        // pause 0 = unpause/resume
+                        if player.mode == "pause" {
+                            player.mode = "play".to_string();
+                        }
+                    }
+                    Some(1) => {
+                        // pause 1 = force pause
+                        if player.mode == "play" {
+                            player.mode = "pause".to_string();
+                        }
+                    }
+                    None => {
+                        // No arg = toggle
+                        player.mode = match player.mode.as_str() {
+                            "play" => "pause".to_string(),
+                            "pause" => "play".to_string(),
+                            _ => player.mode.clone(),
+                        };
+                    }
+                    _ => {}
+                }
+            }
+            return Ok(Json(JsonRpcResponse {
+                id: request.id,
+                result: json!({}),
+            }));
+        }
+        "stop" => {
+            let mut state = state.write().await;
+            if let Some(player) = state.players.get_mut(player_id) {
+                player.mode = "stop".to_string();
+            }
+            return Ok(Json(JsonRpcResponse {
+                id: request.id,
+                result: json!({}),
+            }));
+        }
+        _ => {}
+    }
+
+    // Handle read-only commands
     let state = state.read().await;
     let result = match command {
         "players" => {
@@ -217,10 +285,6 @@ async fn handle_jsonrpc(
             } else {
                 json!({})
             }
-        }
-        "play" | "pause" | "stop" => {
-            // Control commands - return empty success
-            json!({})
         }
         "mixer" => {
             // Volume control - return empty success
@@ -274,6 +338,108 @@ mod tests {
         let players = body["result"]["players_loop"].as_array().unwrap();
         assert_eq!(players.len(), 1);
         assert_eq!(players[0]["name"], "Test Player");
+
+        server.stop().await;
+    }
+
+    /// Helper to get player status mode
+    async fn get_mode(client: &reqwest::Client, addr: &SocketAddr, player_id: &str) -> String {
+        let response = client
+            .post(format!("http://{}/jsonrpc.js", addr))
+            .json(&json!({
+                "id": 1,
+                "method": "slim.request",
+                "params": [player_id, ["status", "-", 1, "tags:"]]
+            }))
+            .send()
+            .await
+            .unwrap();
+        let body: Value = response.json().await.unwrap();
+        body["result"]["mode"].as_str().unwrap_or("unknown").to_string()
+    }
+
+    /// Helper to send a command
+    async fn send_command(client: &reqwest::Client, addr: &SocketAddr, player_id: &str, cmd: Vec<Value>) {
+        let request = json!({
+            "id": 1,
+            "method": "slim.request",
+            "params": [player_id, cmd]
+        });
+        client
+            .post(format!("http://{}/jsonrpc.js", addr))
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn mock_lms_pause_0_resumes_playback() {
+        // This test verifies the correct LMS behavior:
+        // - "pause 0" (unpause) resumes playback from pause
+        let server = MockLmsServer::start().await;
+        let player_id = "aa:bb:cc:dd:ee:ff";
+        server.add_player(player_id, "Test Player").await;
+        server.set_mode(player_id, "pause").await;
+
+        let client = reqwest::Client::new();
+        let addr = server.addr();
+
+        // Verify initial state is paused
+        assert_eq!(get_mode(&client, &addr, player_id).await, "pause");
+
+        // Send "pause 0" (unpause) - this should resume
+        send_command(&client, &addr, player_id, vec![json!("pause"), json!(0)]).await;
+
+        // Verify player is now playing
+        assert_eq!(get_mode(&client, &addr, player_id).await, "play");
+
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn mock_lms_play_does_not_resume_from_pause() {
+        // This test documents the LMS quirk that the current adapter doesn't handle:
+        // - The "play" command does NOT resume from pause
+        // - You need "pause 0" to resume
+        let server = MockLmsServer::start().await;
+        let player_id = "aa:bb:cc:dd:ee:ff";
+        server.add_player(player_id, "Test Player").await;
+        server.set_mode(player_id, "pause").await;
+
+        let client = reqwest::Client::new();
+        let addr = server.addr();
+
+        // Verify initial state is paused
+        assert_eq!(get_mode(&client, &addr, player_id).await, "pause");
+
+        // Send "play" - in real LMS, this does NOT resume from pause!
+        send_command(&client, &addr, player_id, vec![json!("play")]).await;
+
+        // Player should still be paused (play doesn't resume!)
+        assert_eq!(get_mode(&client, &addr, player_id).await, "pause");
+
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn mock_lms_pause_toggle() {
+        // Test that "pause" with no args toggles
+        let server = MockLmsServer::start().await;
+        let player_id = "aa:bb:cc:dd:ee:ff";
+        server.add_player(player_id, "Test Player").await;
+        server.set_mode(player_id, "play").await;
+
+        let client = reqwest::Client::new();
+        let addr = server.addr();
+
+        // Toggle: play -> pause
+        send_command(&client, &addr, player_id, vec![json!("pause")]).await;
+        assert_eq!(get_mode(&client, &addr, player_id).await, "pause");
+
+        // Toggle: pause -> play
+        send_command(&client, &addr, player_id, vec![json!("pause")]).await;
+        assert_eq!(get_mode(&client, &addr, player_id).await, "play");
 
         server.stop().await;
     }

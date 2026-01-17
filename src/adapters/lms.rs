@@ -538,7 +538,9 @@ impl LmsAdapter {
     /// Control player
     pub async fn control(&self, player_id: &str, command: &str, value: Option<i32>) -> Result<()> {
         let params: Vec<Value> = match command {
-            "play" => vec![json!("play")],
+            // LMS quirk: "play" command starts playback but doesn't resume from pause.
+            // Use "pause 0" (unpause) which works for both resume and general play.
+            "play" => vec![json!("pause"), json!(0)],
             "pause" => vec![json!("pause"), json!(1)],
             "stop" => vec![json!("stop")],
             "play_pause" => vec![json!("pause")], // Toggle
