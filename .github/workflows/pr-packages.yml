@@ -49,137 +49,56 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
-  build-linux:
-    name: Build Linux (musl static)
+  # Fast builds for PR testing - x86_64 only
+  build-linux-x64:
+    name: Build Linux x64
     needs: [lint, test]
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            output: unified-hifi-linux-x64
-          - target: aarch64-unknown-linux-musl
-            output: unified-hifi-linux-arm64
-          - target: armv7-unknown-linux-musleabihf
-            output: unified-hifi-linux-armv7
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-unknown-linux-musl
 
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build with cross
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release --target x86_64-unknown-linux-musl
 
       - name: Rename binary
         run: |
           mkdir -p dist/bin
-          cp target/${{ matrix.target }}/release/unified-hifi-control dist/bin/${{ matrix.output }}
+          cp target/x86_64-unknown-linux-musl/release/unified-hifi-control dist/bin/unified-hifi-linux-x64
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.target }}
+          name: binary-x86_64-unknown-linux-musl
           path: dist/bin/
           retention-days: 5
 
-  build-macos:
-    name: Build macOS
-    needs: [lint, test]
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-apple-darwin
-            output: unified-hifi-macos-x64
-          - target: aarch64-apple-darwin
-            output: unified-hifi-macos-arm64
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Rename binary
-        run: |
-          mkdir -p dist/bin
-          cp target/${{ matrix.target }}/release/unified-hifi-control dist/bin/${{ matrix.output }}
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.target }}
-          path: dist/bin/
-          retention-days: 5
-
-  build-windows:
-    name: Build Windows
-    needs: [lint, test]
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build
-        run: cargo build --release
-
-      - name: Rename binary
-        shell: bash
-        run: |
-          mkdir -p dist/bin
-          cp target/release/unified-hifi-control.exe dist/bin/unified-hifi-win-x64.exe
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-windows
-          path: dist/bin/
-          retention-days: 5
-
-  docker:
-    name: Build Docker Image
+  docker-x64:
+    name: Build Docker (x64 only)
     runs-on: ubuntu-latest
-    needs: [build-linux]
+    needs: [build-linux-x64]
     permissions:
       packages: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Linux binaries
+      - name: Download Linux binary
         uses: actions/download-artifact@v4
         with:
-          pattern: binary-*-linux-musl*
+          name: binary-x86_64-unknown-linux-musl
           path: binaries/
-          merge-multiple: true
 
-      - name: Prepare binaries for buildx
+      - name: Prepare binary
         run: |
-          # Rename to match Docker TARGETARCH convention
           mv binaries/unified-hifi-linux-x64 binaries/unified-hifi-linux-amd64
-          mv binaries/unified-hifi-linux-armv7 binaries/unified-hifi-linux-arm
-          # arm64 name already matches
           ls -la binaries/
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -204,151 +123,22 @@ jobs:
         with:
           context: .
           file: Dockerfile.ci
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  build-lms-plugin:
-    name: Build LMS Plugin
+  build-qnap-x64:
+    name: Build QNAP (x64)
+    needs: [build-linux-x64]
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Get version
-        id: version
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
-          else
-            VERSION="0.0.0-dev"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Update install.xml version
-        run: |
-          sed -i "s|<version>[^<]*</version>|<version>${{ steps.version.outputs.version }}</version>|" lms-plugin/install.xml
-          cat lms-plugin/install.xml
-
-      - name: Create LMS plugin ZIP
-        run: |
-          mkdir -p dist
-          cd lms-plugin
-          # Create ZIP with UnifiedHiFi as root directory (expected by LMS)
-          zip -r ../dist/lms-unified-hifi-control-${{ steps.version.outputs.version }}.zip . \
-            -x "*.git*" \
-            -x "Bin/*"
-          # Create empty Bin directory with placeholder
-          mkdir -p Bin
-          echo "# Binaries downloaded on first run" > Bin/.gitkeep
-          zip -r ../dist/lms-unified-hifi-control-${{ steps.version.outputs.version }}.zip Bin/.gitkeep
-          rm -rf Bin
-          cd ..
-          ls -la dist/
-
-      - name: Repack with correct directory structure
-        run: |
-          cd dist
-          mkdir -p repack
-          unzip lms-unified-hifi-control-${{ steps.version.outputs.version }}.zip -d repack/UnifiedHiFi
-          rm lms-unified-hifi-control-${{ steps.version.outputs.version }}.zip
-          cd repack
-          zip -r ../lms-unified-hifi-control-${{ steps.version.outputs.version }}.zip UnifiedHiFi
-          cd ..
-          rm -rf repack
-          ls -la
-
-      - name: Upload LMS plugin
-        uses: actions/upload-artifact@v4
-        with:
-          name: lms-plugin
-          path: dist/lms-unified-hifi-control-*.zip
-          retention-days: 5
-
-  build-synology-packages:
-    name: Build Synology Packages
-    needs: [build-linux]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: apollolake
-            target: x86_64-unknown-linux-musl
-            binary: unified-hifi-linux-x64
-          - arch: rtd1296
-            target: aarch64-unknown-linux-musl
-            binary: unified-hifi-linux-arm64
     steps:
       - uses: actions/checkout@v4
 
       - name: Download Linux binary
         uses: actions/download-artifact@v4
         with:
-          name: binary-${{ matrix.target }}
-          path: build/synology/package/
-
-      - name: Rename binary
-        run: |
-          mv build/synology/package/${{ matrix.binary }} build/synology/package/unified-hifi-control
-          chmod +x build/synology/package/unified-hifi-control
-
-      - name: Get version
-        id: version
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
-          else
-            VERSION="0.0.0-dev"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          # Update package.json version
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" build/synology/package.json
-
-      - name: Build Synology SPK
-        id: build-spk
-        uses: tomgrv/synology-package-builder@v1
-        with:
-          dsm: '7.0'
-          arch: ${{ matrix.arch }}
-          projects: ./build/synology
-          output: /workspace/dist/installers
-
-      - name: Debug - List output directory
-        run: |
-          echo "=== Action outputs ==="
-          echo "packages: ${{ steps.build-spk.outputs.packages }}"
-          echo "=== dist/installers ==="
-          ls -la ./dist/installers/ 2>/dev/null || echo "dist/installers not found"
-          echo "=== Find all SPK files ==="
-          find . -name "*.spk" -type f 2>/dev/null || echo "No SPK files found"
-
-      - name: Upload Synology package
-        uses: actions/upload-artifact@v4
-        with:
-          name: synology-${{ matrix.arch }}-spk
-          path: dist/installers/*.spk
-          retention-days: 5
-
-  build-qnap-packages:
-    name: Build QNAP Packages
-    needs: [build-linux]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-            target: x86_64-unknown-linux-musl
-            binary: unified-hifi-linux-x64
-          - arch: arm_64
-            target: aarch64-unknown-linux-musl
-            binary: unified-hifi-linux-arm64
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download Linux binary
-        uses: actions/download-artifact@v4
-        with:
-          name: binary-${{ matrix.target }}
+          name: binary-x86_64-unknown-linux-musl
           path: dist/bin/
 
       - name: Make binary executable
@@ -367,7 +157,7 @@ jobs:
       - name: Prepare QNAP package
         run: |
           mkdir -p qnap-build/shared
-          cp dist/bin/${{ matrix.binary }} qnap-build/shared/unified-hifi-control
+          cp dist/bin/unified-hifi-linux-x64 qnap-build/shared/unified-hifi-control
           chmod +x qnap-build/shared/unified-hifi-control
           cp build/qnap/shared/*.sh qnap-build/shared/
           chmod +x qnap-build/shared/*.sh
@@ -385,18 +175,18 @@ jobs:
       - name: Move QPKG to dist
         run: |
           mkdir -p dist/installers
-          mv qnap-build/*.qpkg dist/installers/unified-hifi-control_${{ steps.version.outputs.version }}_${{ matrix.arch }}.qpkg
+          mv qnap-build/*.qpkg dist/installers/unified-hifi-control_${{ steps.version.outputs.version }}_x86_64.qpkg
 
       - name: Upload QNAP package
         uses: actions/upload-artifact@v4
         with:
-          name: qnap-${{ matrix.arch }}-qpkg
+          name: qnap-x86_64-qpkg
           path: dist/installers/*.qpkg
           retention-days: 5
 
   summary:
     name: Build Summary
-    needs: [build-linux, build-macos, build-windows, docker, build-lms-plugin, build-synology-packages, build-qnap-packages]
+    needs: [build-linux-x64, docker-x64, build-qnap-x64]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -406,7 +196,7 @@ jobs:
 
       - name: Display build summary
         run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## PR Build Summary (x64 only)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Binaries" >> $GITHUB_STEP_SUMMARY
           echo "| Binary | Size |" >> $GITHUB_STEP_SUMMARY
@@ -420,9 +210,10 @@ jobs:
           echo "### Packages" >> $GITHUB_STEP_SUMMARY
           echo "| Package | Size |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|------|" >> $GITHUB_STEP_SUMMARY
-          find artifacts -name '*.zip' -o -name '*.spk' -o -name '*.qpkg' | while read f; do
+          find artifacts -name '*.qpkg' | while read f; do
             size=$(du -h "$f" | cut -f1)
             name=$(basename "$f")
             echo "| $name | $size |" >> $GITHUB_STEP_SUMMARY
           done
-
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Note: Full multi-arch builds run on release only._" >> $GITHUB_STEP_SUMMARY

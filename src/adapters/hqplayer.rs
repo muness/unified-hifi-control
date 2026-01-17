@@ -576,13 +576,8 @@ impl HqpAdapter {
         };
 
         // Emit ZoneDiscovered for this HQPlayer instance
-        let zone = Self::hqp_status_to_zone(
-            &host,
-            instance_name.as_deref(),
-            &info,
-            &status,
-            &vol_range,
-        );
+        let zone =
+            Self::hqp_status_to_zone(&host, instance_name.as_deref(), &info, &status, &vol_range);
         self.bus.publish(BusEvent::ZoneDiscovered { zone });
 
         Ok(())

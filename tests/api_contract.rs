@@ -15,8 +15,8 @@ use std::fs;
 
 /// Extract routes from the golden file
 fn load_golden_routes() -> BTreeSet<String> {
-    let content = fs::read_to_string("tests/fixtures/api_routes.txt")
-        .expect("Failed to read api_routes.txt");
+    let content =
+        fs::read_to_string("tests/fixtures/api_routes.txt").expect("Failed to read api_routes.txt");
 
     content
         .lines()
@@ -104,8 +104,8 @@ fn api_routes_match_contract() {
 
 #[test]
 fn golden_file_is_sorted() {
-    let content = fs::read_to_string("tests/fixtures/api_routes.txt")
-        .expect("Failed to read api_routes.txt");
+    let content =
+        fs::read_to_string("tests/fixtures/api_routes.txt").expect("Failed to read api_routes.txt");
 
     let routes: Vec<_> = content
         .lines()

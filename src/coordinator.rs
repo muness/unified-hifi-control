@@ -157,10 +157,7 @@ impl AdapterCoordinator {
                     error!("Adapter {} task panicked: {}", prefix, e);
                 }
                 Err(_) => {
-                    warn!(
-                        "Adapter {} did not stop within timeout, abandoning",
-                        prefix
-                    );
+                    warn!("Adapter {} did not stop within timeout, abandoning", prefix);
                 }
             }
         }
@@ -376,7 +373,8 @@ mod tests {
     #[tokio::test]
     async fn test_shutdown_sends_event() {
         let bus = create_bus();
-        let coord = AdapterCoordinator::with_shutdown_timeout(bus.clone(), Duration::from_millis(100));
+        let coord =
+            AdapterCoordinator::with_shutdown_timeout(bus.clone(), Duration::from_millis(100));
 
         let mut rx = bus.subscribe();
 

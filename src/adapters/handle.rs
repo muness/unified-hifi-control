@@ -1,12 +1,12 @@
 //! AdapterHandle - Wraps AdapterLogic with consistent lifecycle management
 
-use std::sync::Arc;
 use anyhow::Result;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, error};
+use tracing::{error, info};
 
-use crate::bus::{BusEvent, SharedBus};
 use crate::adapters::traits::{AdapterContext, AdapterLogic};
+use crate::bus::{BusEvent, SharedBus};
 
 /// AdapterHandle wraps an AdapterLogic implementation and provides:
 /// - Consistent shutdown handling (can't forget it)

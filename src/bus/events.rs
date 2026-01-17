@@ -45,7 +45,7 @@ pub struct Zone {
 }
 
 /// Playback state enumeration
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum PlaybackState {
     Playing,
@@ -55,13 +55,8 @@ pub enum PlaybackState {
     /// Buffering (used by streaming sources)
     Buffering,
     /// Unknown/unavailable state
+    #[default]
     Unknown,
-}
-
-impl Default for PlaybackState {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 impl std::fmt::Display for PlaybackState {
@@ -116,7 +111,7 @@ pub struct VolumeControl {
 }
 
 /// Volume scale type
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum VolumeScale {
     /// Decibels (typically -64 to 0)
@@ -126,13 +121,8 @@ pub enum VolumeScale {
     /// Linear (0.0 to 1.0)
     Linear,
     /// Unknown/unspecified
+    #[default]
     Unknown,
-}
-
-impl Default for VolumeScale {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// Now playing track information.
@@ -276,14 +266,10 @@ pub enum Command {
     },
 
     /// Set shuffle mode
-    Shuffle {
-        enabled: bool,
-    },
+    Shuffle { enabled: bool },
 
     /// Set repeat mode
-    Repeat {
-        mode: RepeatMode,
-    },
+    Repeat { mode: RepeatMode },
 }
 
 /// Repeat mode options
@@ -329,11 +315,11 @@ pub struct CommandResponse {
 /// - Legacy: Backward-compatible events for existing integrations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
+#[allow(clippy::large_enum_variant)] // Zone is intentionally large for full state
 pub enum BusEvent {
     // =========================================================================
     // Zone Lifecycle Events
     // =========================================================================
-
     /// A new zone was discovered by an adapter
     ZoneDiscovered {
         /// Full zone information
@@ -359,7 +345,6 @@ pub enum BusEvent {
     // =========================================================================
     // Now Playing Events
     // =========================================================================
-
     /// Now playing information changed for a zone
     NowPlayingChanged {
         /// Zone identifier
@@ -375,10 +360,7 @@ pub enum BusEvent {
     },
 
     /// Seek position changed (for progress updates)
-    SeekPositionChanged {
-        zone_id: String,
-        position: i64,
-    },
+    SeekPositionChanged { zone_id: String, position: i64 },
 
     /// Volume changed
     VolumeChanged {
@@ -390,7 +372,6 @@ pub enum BusEvent {
     // =========================================================================
     // Command Events
     // =========================================================================
-
     /// A command was received for a zone
     CommandReceived {
         /// Target zone
@@ -412,7 +393,6 @@ pub enum BusEvent {
     // =========================================================================
     // Adapter Lifecycle Events
     // =========================================================================
-
     /// An adapter is stopping (zones will be flushed)
     AdapterStopping {
         /// Adapter identifier (e.g., "roon", "lms", "hqplayer")
@@ -454,7 +434,6 @@ pub enum BusEvent {
     // =========================================================================
     // System Events
     // =========================================================================
-
     /// System is shutting down
     ShuttingDown {
         /// Reason for shutdown
@@ -470,31 +449,20 @@ pub enum BusEvent {
     // =========================================================================
     // Legacy Events (for backward compatibility)
     // =========================================================================
-
     /// Roon Core connected (legacy)
-    RoonConnected {
-        core_name: String,
-        version: String,
-    },
+    RoonConnected { core_name: String, version: String },
 
     /// Roon Core disconnected (legacy)
     RoonDisconnected,
 
     /// HQPlayer connected (legacy)
-    HqpConnected {
-        host: String,
-    },
+    HqpConnected { host: String },
 
     /// HQPlayer disconnected (legacy)
-    HqpDisconnected {
-        host: String,
-    },
+    HqpDisconnected { host: String },
 
     /// HQPlayer state changed (legacy)
-    HqpStateChanged {
-        host: String,
-        state: String,
-    },
+    HqpStateChanged { host: String, state: String },
 
     /// HQPlayer pipeline changed (legacy)
     HqpPipelineChanged {
@@ -505,20 +473,13 @@ pub enum BusEvent {
     },
 
     /// LMS connected (legacy)
-    LmsConnected {
-        host: String,
-    },
+    LmsConnected { host: String },
 
     /// LMS disconnected (legacy)
-    LmsDisconnected {
-        host: String,
-    },
+    LmsDisconnected { host: String },
 
     /// LMS player state changed (legacy)
-    LmsPlayerStateChanged {
-        player_id: String,
-        state: String,
-    },
+    LmsPlayerStateChanged { player_id: String, state: String },
 
     /// Control command from external source (legacy, for MQTT/HA)
     ControlCommand {

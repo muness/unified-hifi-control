@@ -642,7 +642,8 @@ async fn run_roon_loop(
                                 if is_new {
                                     // New zone - emit ZoneDiscovered
                                     let bus_zone = roon_zone_to_bus_zone(&converted);
-                                    bus_for_events.publish(BusEvent::ZoneDiscovered { zone: bus_zone });
+                                    bus_for_events
+                                        .publish(BusEvent::ZoneDiscovered { zone: bus_zone });
                                 } else {
                                     // Existing zone - emit ZoneUpdated
                                     bus_for_events.publish(BusEvent::ZoneUpdated {
