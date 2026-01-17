@@ -197,8 +197,8 @@ impl RoonAdapter {
         Ok(adapter)
     }
 
-    /// Start the Roon event loop
-    pub async fn start_roon(&self) -> Result<()> {
+    /// Start the Roon event loop (internal - use Startable trait)
+    async fn start_roon(&self) -> Result<()> {
         use std::sync::atomic::Ordering;
 
         // Check if already started
@@ -260,8 +260,8 @@ impl RoonAdapter {
         Ok(())
     }
 
-    /// Stop the Roon adapter
-    pub fn stop(&self) {
+    /// Stop the Roon adapter (internal - use Startable trait)
+    fn stop_adapter(&self) {
         self.shutdown.cancel();
         tracing::info!("Roon adapter stopped");
     }
@@ -799,7 +799,7 @@ impl Startable for RoonAdapter {
     }
 
     async fn stop(&self) {
-        RoonAdapter::stop(self)
+        self.stop_adapter()
     }
 
     async fn can_start(&self) -> bool {

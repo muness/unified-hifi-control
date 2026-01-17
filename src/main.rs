@@ -6,6 +6,9 @@ use unified_hifi_control::{
     adapters, aggregator, api, bus, config, coordinator, firmware, knobs, mdns, ui,
 };
 
+// Import Startable trait for adapter lifecycle methods
+use adapters::Startable;
+
 // Import load_app_settings for checking adapter enabled state
 use api::load_app_settings;
 
@@ -382,7 +385,7 @@ async fn main() -> Result<()> {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Stop adapters
-    roon_for_shutdown.stop();
+    roon_for_shutdown.stop().await;
     if let Some(ref fw) = firmware_service {
         fw.stop();
     }

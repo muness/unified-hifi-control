@@ -16,6 +16,7 @@ use tokio::time::timeout;
 
 use unified_hifi_control::adapters::hqplayer::HqpAdapter;
 use unified_hifi_control::adapters::lms::LmsAdapter;
+use unified_hifi_control::adapters::Startable;
 use unified_hifi_control::bus::{create_bus, BusEvent, SharedBus};
 
 // =============================================================================

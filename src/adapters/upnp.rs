@@ -133,8 +133,8 @@ impl UPnPAdapter {
         }
     }
 
-    /// Start SSDP discovery
-    pub async fn start(&self) -> anyhow::Result<()> {
+    /// Start SSDP discovery (internal - use Startable trait)
+    async fn start_discovery(&self) -> anyhow::Result<()> {
         {
             let mut state = self.state.write().await;
             if state.running {
@@ -575,8 +575,8 @@ impl UPnPAdapter {
             .map(|m| m.as_str().to_string())
     }
 
-    /// Stop discovery
-    pub async fn stop(&self) {
+    /// Stop discovery (internal - use Startable trait)
+    async fn stop_discovery(&self) {
         // Cancel background tasks first
         self.shutdown.cancel();
 
@@ -902,10 +902,10 @@ impl Startable for UPnPAdapter {
     }
 
     async fn start(&self) -> Result<()> {
-        UPnPAdapter::start(self).await
+        self.start_discovery().await
     }
 
     async fn stop(&self) {
-        UPnPAdapter::stop(self).await
+        self.stop_discovery().await
     }
 }

@@ -144,8 +144,8 @@ impl OpenHomeAdapter {
         }
     }
 
-    /// Start SSDP discovery
-    pub async fn start(&self) -> anyhow::Result<()> {
+    /// Start SSDP discovery (internal - use Startable trait)
+    async fn start_discovery(&self) -> anyhow::Result<()> {
         {
             let mut state = self.state.write().await;
             if state.running {
@@ -621,8 +621,8 @@ impl OpenHomeAdapter {
         })
     }
 
-    /// Stop discovery
-    pub async fn stop(&self) {
+    /// Stop discovery (internal - use Startable trait)
+    async fn stop_discovery(&self) {
         // Cancel background tasks first
         self.shutdown.cancel();
 
@@ -942,10 +942,10 @@ impl Startable for OpenHomeAdapter {
     }
 
     async fn start(&self) -> Result<()> {
-        OpenHomeAdapter::start(self).await
+        self.start_discovery().await
     }
 
     async fn stop(&self) {
-        OpenHomeAdapter::stop(self).await
+        self.stop_discovery().await
     }
 }

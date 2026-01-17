@@ -464,8 +464,8 @@ impl LmsAdapter {
         self.rpc.get_player_status(player_id).await
     }
 
-    /// Start polling for player updates
-    pub async fn start(&self) -> Result<()> {
+    /// Start polling for player updates (internal - use Startable trait)
+    async fn start_polling(&self) -> Result<()> {
         if !self.is_configured().await {
             return Err(anyhow!("LMS not configured"));
         }
@@ -521,8 +521,8 @@ impl LmsAdapter {
         update_players_internal(&self.rpc, &self.state, &self.bus).await
     }
 
-    /// Stop polling
-    pub async fn stop(&self) {
+    /// Stop polling (internal - use Startable trait)
+    async fn stop_polling(&self) {
         // Cancel background tasks first
         self.shutdown.cancel();
 
@@ -801,11 +801,11 @@ impl Startable for LmsAdapter {
     }
 
     async fn start(&self) -> Result<()> {
-        LmsAdapter::start(self).await
+        self.start_polling().await
     }
 
     async fn stop(&self) {
-        LmsAdapter::stop(self).await
+        self.stop_polling().await
     }
 
     async fn can_start(&self) -> bool {
