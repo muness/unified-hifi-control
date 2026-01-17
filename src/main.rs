@@ -365,8 +365,18 @@ async fn main() -> Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    // Cleanup: stop adapters (mDNS daemon will be dropped automatically)
+    // Cleanup: publish ShuttingDown event and stop adapters
     tracing::info!("Shutting down adapters...");
+
+    // Publish ShuttingDown event for any bus listeners (fixes #73)
+    bus.publish(bus::BusEvent::ShuttingDown {
+        reason: Some("User requested shutdown".to_string()),
+    });
+
+    // Give listeners a moment to react to ShuttingDown
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // Stop adapters
     roon_for_shutdown.stop();
     if let Some(ref fw) = firmware_service {
         fw.stop();
