@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.86-slim AS builder
+FROM rust:1.92-slim AS builder
 
 WORKDIR /app
 
@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y \
 # Install wasm32 target for client build
 RUN rustup target add wasm32-unknown-unknown
 
-# Install Dioxus CLI (pinned version for reproducible builds)
-RUN cargo install dioxus-cli@0.7.3 --locked
+# Install Dioxus CLI
+RUN cargo install dioxus-cli@0.7.3
 
 # Copy manifests
 COPY Cargo.toml Cargo.lock Dioxus.toml ./
