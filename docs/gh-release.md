@@ -8,9 +8,9 @@ The release workflow builds for 5 targets across 3 platforms, plus web assets, D
 
 ## Caching Strategies
 
-### 1. sccache + rust-cache for All Builds
+### 1. sccache + rust-cache for Native Builds
 
-**Used by:** All builds (Web Assets, macOS, Windows, Linux)
+**Used by:** Native builds (Web Assets, Windows)
 
 **Why both?** They cache different things:
 - **sccache**: Caches individual compilation units (`.o` files)
@@ -137,16 +137,18 @@ The LMS plugin downloads this tarball at runtime since it can't bundle large bin
 | Target | Caching | Build Tool |
 |--------|---------|------------|
 | Web Assets (WASM) | sccache + rust-cache | dx (dioxus-cli) |
-| macOS universal | sccache + rust-cache | cargo-zigbuild |
+| macOS universal | rust-cache | cargo-zigbuild |
 | Windows x86_64 | sccache + rust-cache | cargo |
-| Linux x86_64-musl | sccache + rust-cache | cargo-zigbuild |
-| Linux aarch64-musl | sccache + rust-cache | cargo-zigbuild |
-| Linux armv7-musl | sccache + rust-cache | cargo-zigbuild |
+| Linux x86_64-musl | rust-cache | cargo-zigbuild |
+| Linux aarch64-musl | rust-cache | cargo-zigbuild |
+| Linux armv7-musl | rust-cache | cargo-zigbuild |
 | Docker multi-arch | N/A | pre-built binaries |
+
+**Note:** sccache doesn't support zig's compiler wrapper, so zigbuild jobs use rust-cache only.
 
 ## Lessons Learned
 
-1. **sccache + rust-cache:** Use both for all builds. sccache caches compilation units, rust-cache caches proc-macro dylibs and the target directory.
+1. **sccache + rust-cache:** Use both for native builds. sccache caches compilation units, rust-cache caches proc-macro dylibs and the target directory. Note: sccache doesn't support zig's compiler wrapper, so zigbuild jobs use rust-cache only.
 
 2. **Avoid containerized cross-compilation:** Tools like `cross` run cargo in Docker containers, breaking Cargo's fingerprint-based caching (paths don't match). Use `cargo-zigbuild` instead - it cross-compiles without containers so caching works normally.
 
