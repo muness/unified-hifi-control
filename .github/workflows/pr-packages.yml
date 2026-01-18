@@ -114,19 +114,24 @@ jobs:
         with:
           targets: x86_64-unknown-linux-musl
 
-      - name: Cache cross
-        id: cache-cross
-        uses: actions/cache@v4
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
         with:
-          path: ~/.cargo/bin/cross
-          key: cross-0.2.5
+          shared-key: zigbuild-x86_64-unknown-linux-musl
 
-      - name: Install cross
-        if: steps.cache-cross.outputs.cache-hit != 'true'
-        run: cargo install cross@0.2.5
+      - name: Install zig
+        run: |
+          curl -L https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz | tar -xJ
+          sudo mv zig-linux-x86_64-0.13.0 /opt/zig
+          echo "/opt/zig" >> $GITHUB_PATH
 
-      - name: Build with cross
-        run: cross build --release --target x86_64-unknown-linux-musl
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --locked
+
+      - name: Build with zigbuild
+        env:
+          PATH: /opt/zig:$PATH
+        run: cargo zigbuild --release --target x86_64-unknown-linux-musl
 
       - name: Rename binary
         run: |
