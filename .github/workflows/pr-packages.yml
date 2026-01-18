@@ -47,20 +47,23 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "native-build"
-          cache-all-crates: true
-          cache-on-failure: true
+          shared-key: "test-build"
 
       - name: Run tests
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: cargo test --workspace
 
   # Build web assets (WASM + JS) - runs once, shared by all platforms
   build-web-assets:
     name: Build Web Assets
-    needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,7 +107,6 @@ jobs:
   # Fast builds for PR testing - x86_64 only
   build-linux-x64:
     name: Build Linux x64
-    needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -271,7 +273,7 @@ jobs:
 
   summary:
     name: Build Summary
-    needs: [build-linux-x64, build-web-assets, docker-x64, build-qnap-x64]
+    needs: [lint, test, build-linux-x64, build-web-assets, docker-x64, build-qnap-x64]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
