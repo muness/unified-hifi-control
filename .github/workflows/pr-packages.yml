@@ -79,6 +79,7 @@ jobs:
           shared-key: "wasm-build"
           cache-all-crates: true
           cache-on-failure: true
+          cache-directories: target/dx
 
       - name: Cache Dioxus CLI
         id: cache-dx
