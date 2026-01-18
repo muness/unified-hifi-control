@@ -62,6 +62,25 @@ body {
     var(--light, var(--primary-color));
   --secondary-info-color: var(--dark, var(--primary-color-7))
     var(--light, var(--secondary-color-3));
+
+  /* Semantic text colors */
+  --text-primary: var(--secondary-color-1);
+  --text-secondary: var(--secondary-color-4);
+  --text-muted: var(--secondary-color-5);
+  --text-disabled: var(--secondary-color-6);
+
+  /* Semantic surface colors */
+  --surface-base: var(--primary-color);
+  --surface-elevated: var(--primary-color-5);
+  --surface-hover: var(--primary-color-7);
+
+  /* Semantic border colors */
+  --border-default: var(--primary-color-6);
+  --border-subtle: var(--primary-color-7);
+
+  /* Accent color (links, primary buttons) */
+  --accent-color: var(--focused-border-color);
+  --accent-hover: var(--dark, #3d8fff) var(--light, #1a6fef);
 }
 
 /* Modern browsers with `scrollbar-*` support */

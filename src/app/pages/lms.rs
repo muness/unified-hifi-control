@@ -143,7 +143,7 @@ pub fn Lms() -> Element {
             section { id: "lms-config", class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Server Configuration" }
-                    p { class: "text-gray-400 text-sm", "Configure connection to your Squeezebox server" }
+                    p { class: "text-muted text-sm", "Configure connection to your Squeezebox server" }
                 }
                 div { class: "card p-6",
                     // Status line
@@ -158,10 +158,10 @@ pub fn Lms() -> Element {
                                     "✗ Configured but not connected ({c.host.as_deref().unwrap_or(\"\")}:{c.port.unwrap_or(9000)})"
                                 }
                             } else {
-                                span { class: "text-gray-400", "Not configured" }
+                                span { class: "text-muted", "Not configured" }
                             }
                         } else {
-                            span { class: "text-gray-400", "Checking..." }
+                            span { class: "text-muted", "Checking..." }
                         }
                     }
 
@@ -225,7 +225,7 @@ pub fn Lms() -> Element {
                                     } else if status.contains("Connected") {
                                         span { class: "status-ok", "✓ {status}" }
                                     } else {
-                                        span { class: "text-gray-400", "{status}" }
+                                        span { class: "text-muted", "{status}" }
                                     }
                                 }
                             }
@@ -247,16 +247,16 @@ pub fn Lms() -> Element {
             section { id: "lms-players", class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Players" }
-                    p { class: "text-gray-400 text-sm", "Connected Squeezebox players" }
+                    p { class: "text-muted text-sm", "Connected Squeezebox players" }
                 }
 
                 if settings_loading {
                     div { class: "card p-6", aria_busy: "true", "Loading settings..." }
                 } else if matches!(lms_enabled, Some(false)) {
                     div { class: "card p-6",
-                        p { class: "text-gray-400",
+                        p { class: "text-muted",
                             "LMS adapter is disabled. "
-                            a { class: "text-indigo-400 hover:text-indigo-300", href: "/settings", "Enable it in Settings" }
+                            a { class: "link", href: "/settings", "Enable it in Settings" }
                             " to discover players."
                         }
                     }
@@ -264,7 +264,7 @@ pub fn Lms() -> Element {
                     div { class: "card p-6", aria_busy: "true", "Loading..." }
                 } else if players_list.is_empty() {
                     div { class: "card p-6",
-                        p { class: "text-gray-400", "No players found. Make sure your Squeezebox server is configured and reachable." }
+                        p { class: "text-muted", "No players found. Make sure your Squeezebox server is configured and reachable." }
                     }
                 } else {
                     div { class: "zone-grid",
@@ -308,10 +308,10 @@ fn PlayerCard(player: LmsPlayer, on_control: EventHandler<(String, String)>) -> 
                 if let Some(ref title) = player.current_title {
                     p { class: "font-medium text-sm truncate", "{title}" }
                     if let Some(ref artist) = player.artist {
-                        p { class: "text-sm text-gray-400 truncate", "{artist}" }
+                        p { class: "text-sm text-muted truncate", "{artist}" }
                     }
                 } else {
-                    p { class: "text-sm text-gray-500", "Nothing playing" }
+                    p { class: "text-sm text-muted", "Nothing playing" }
                 }
             }
 
@@ -332,7 +332,7 @@ fn PlayerCard(player: LmsPlayer, on_control: EventHandler<(String, String)>) -> 
                     onclick: move |_| on_control.call((player_id_next.clone(), "next".to_string())),
                     "▶▶"
                 }
-                span { class: "ml-auto text-sm text-gray-400", "Volume: {player.volume}%" }
+                span { class: "ml-auto text-sm text-muted", "Volume: {player.volume}%" }
             }
         }
     }

@@ -106,7 +106,7 @@ pub fn Settings() -> Element {
             section { class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Adapter Settings" }
-                    p { class: "text-gray-400 text-sm", "Enable or disable zone sources" }
+                    p { class: "text-muted text-sm", "Enable or disable zone sources" }
                 }
 
                 div { class: "card p-6",
@@ -160,7 +160,7 @@ pub fn Settings() -> Element {
                             "UPnP/DLNA"
                         }
                     }
-                    p { class: "mt-3 text-sm text-gray-400",
+                    p { class: "mt-3 text-sm text-muted",
                         "Changes take effect immediately. Disabled adapters won't contribute zones."
                     }
                 }
@@ -170,13 +170,13 @@ pub fn Settings() -> Element {
             section {
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Auto-Discovery" }
-                    p { class: "text-gray-400 text-sm", "Devices found via SSDP (no configuration needed)" }
+                    p { class: "text-muted text-sm", "Devices found via SSDP (no configuration needed)" }
                 }
 
                 div { class: "card p-6",
                     table { class: "w-full", id: "discovery-table",
                         thead {
-                            tr { class: "border-b border-gray-700",
+                            tr { class: "border-b border-default",
                                 th { class: "text-left py-2 px-3 font-semibold", "Protocol" }
                                 th { class: "text-left py-2 px-3 font-semibold", "Status" }
                                 th { class: "text-left py-2 px-3 font-semibold", "Devices" }
@@ -184,7 +184,7 @@ pub fn Settings() -> Element {
                         }
                         tbody {
                             // Roon row
-                            tr { class: "border-b border-gray-800",
+                            tr { class: "border-b border-default",
                                 td { class: "py-2 px-3", "Roon" }
                                 td { class: "py-2 px-3",
                                     if !roon_enabled() {
@@ -199,7 +199,7 @@ pub fn Settings() -> Element {
                                         "Loading..."
                                     }
                                 }
-                                td { class: "py-2 px-3 text-gray-400",
+                                td { class: "py-2 px-3 text-muted",
                                     if !roon_enabled() {
                                         "-"
                                     } else if let Some(ref status) = roon_st {
@@ -218,7 +218,7 @@ pub fn Settings() -> Element {
                                 }
                             }
                             // OpenHome row
-                            tr { class: "border-b border-gray-800",
+                            tr { class: "border-b border-default",
                                 td { class: "py-2 px-3", "OpenHome" }
                                 td { class: "py-2 px-3",
                                     if !openhome_enabled() {
@@ -233,7 +233,7 @@ pub fn Settings() -> Element {
                                         "Loading..."
                                     }
                                 }
-                                td { class: "py-2 px-3 text-gray-400",
+                                td { class: "py-2 px-3 text-muted",
                                     if !openhome_enabled() {
                                         "-"
                                     } else if let Some(ref status) = openhome_st {
@@ -259,7 +259,7 @@ pub fn Settings() -> Element {
                                         "Loading..."
                                     }
                                 }
-                                td { class: "py-2 px-3 text-gray-400",
+                                td { class: "py-2 px-3 text-muted",
                                     if !upnp_enabled() {
                                         "-"
                                     } else if let Some(ref status) = upnp_st {
