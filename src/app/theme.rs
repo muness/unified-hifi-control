@@ -81,7 +81,8 @@ impl ThemeContext {
 
 /// Initialize theme context provider - call once at app root
 pub fn use_theme_provider() {
-    let current = use_signal(|| Theme::System);
+    #[allow(unused_mut)] // mut needed for WASM target
+    let mut current = use_signal(|| Theme::System);
 
     let ctx = ThemeContext { current };
     use_context_provider(|| ctx);
