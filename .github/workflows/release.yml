@@ -433,6 +433,16 @@ jobs:
           projects: ./build/synology
           output: ./dist/installers
 
+      - name: Debug - find SPK files
+        if: always()
+        run: |
+          echo "=== Searching for SPK files ==="
+          find . -name "*.spk" -type f 2>/dev/null || echo "No .spk files found"
+          echo "=== Contents of dist/ ==="
+          ls -laR dist/ 2>/dev/null || echo "No dist/ directory"
+          echo "=== Contents of build/synology/ ==="
+          ls -laR build/synology/ 2>/dev/null || echo "No build/synology/ directory"
+
       - name: Upload Synology package
         uses: actions/upload-artifact@v4
         with:
