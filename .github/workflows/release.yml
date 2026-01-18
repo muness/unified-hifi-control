@@ -18,17 +18,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "wasm-build"
-          cache-all-crates: true
-          workspaces: ". -> target"
-          # Preserve Dioxus-specific build directories
-          cache-directories: |
-            target/dx
-            target/wasm-release
-            target/wasm32-unknown-unknown
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Cache Dioxus CLI
         id: cache-dx
@@ -51,6 +42,9 @@ jobs:
         run: make css
 
       - name: Build web assets
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: dx build --release --platform web --features web
 
       - name: Create web assets tarball
@@ -96,15 +90,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "cross-${{ matrix.target }}"
-          cache-all-crates: true
-          workspaces: ". -> target"
-          # Preserve cross-compilation target directories
-          cache-directories: |
-            target/${{ matrix.target }}
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Cache cross
         id: cache-cross
@@ -117,14 +104,10 @@ jobs:
         if: steps.cache-cross.outputs.cache-hit != 'true'
         run: cargo install cross@0.2.5
 
-      - name: Debug cache info
-        run: |
-          echo "CARGO_HOME=$CARGO_HOME"
-          echo "Cache key: cross-${{ matrix.target }}"
-          ls -la $CARGO_HOME/registry/cache 2>/dev/null | head -20 || echo "No registry cache"
-          ls -la $CARGO_HOME/registry/index 2>/dev/null | head -5 || echo "No registry index"
-
       - name: Build with cross
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: $CARGO_HOME/bin/cross build --release --target ${{ matrix.target }}
 
       - name: Rename binary
@@ -174,13 +157,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "macos-${{ matrix.target }}"
-          cache-all-crates: true
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Build
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Rename binary
@@ -218,13 +201,13 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "windows-build"
-          cache-all-crates: true
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Build
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: cargo build --release
 
       - name: Rename binary
