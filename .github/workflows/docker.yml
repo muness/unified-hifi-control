@@ -30,6 +30,10 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "native-build"
+          cache-all-crates: true
+          cache-on-failure: true
 
       - name: Check formatting
         run: cargo fmt --check
@@ -48,6 +52,10 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "native-build"
+          cache-all-crates: true
+          cache-on-failure: true
 
       - name: Run tests
         run: cargo test --workspace

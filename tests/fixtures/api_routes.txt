@@ -3,14 +3,15 @@
 # Changes require 'api-change-approved' label on PR.
 #
 # Format: METHOD /path
+#
+# Note: UI routes (/, /ui/zones, /zone, /hqplayer, /lms, /knobs, /settings)
+# are served by Dioxus SPA router (fallback handler), not explicit Axum routes.
+# They still work but aren't detected by the route extraction logic.
 
-GET /
 GET /admin
-GET /admin/critical
 GET /api/settings
 GET /config/{knob_id}
 GET /control
-GET /critical
 GET /events
 GET /firmware/download
 GET /firmware/version
@@ -20,7 +21,6 @@ GET /hqp/pipeline
 GET /hqp/profiles
 GET /hqp/status
 GET /hqp/zones/links
-GET /hqplayer
 GET /hqplayer/config
 GET /hqplayer/pipeline
 GET /hqplayer/profiles
@@ -30,9 +30,7 @@ GET /knob/devices
 GET /knob/now_playing
 GET /knob/now_playing/image
 GET /knob/zones
-GET /knobs
 GET /knobs/flash
-GET /lms
 GET /lms/config
 GET /lms/player/{player_id}
 GET /lms/players
@@ -46,12 +44,9 @@ GET /roon/image
 GET /roon/status
 GET /roon/zone/{zone_id}
 GET /roon/zones
-GET /settings
 GET /status
-GET /ui/zones
 GET /upnp/status
 GET /upnp/zones
-GET /zone
 GET /zones
 POST /api/settings
 POST /control

@@ -197,6 +197,73 @@ The v3 rewrite was motivated by packaging requests (NAS users wanted native pack
 
 </details>
 
+## Development
+
+### Prerequisites
+
+- Rust 1.84+ with `wasm32-unknown-unknown` target
+- [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started)
+- [sccache](https://github.com/mozilla/sccache) (shared compilation cache - speeds up rebuilds significantly)
+- `curl` (for Tailwind CLI download)
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install dioxus-cli --locked
+
+# Optional: shared compilation cache (speeds up rebuilds significantly)
+brew install sccache  # macOS, or: cargo install sccache
+echo 'export RUSTC_WRAPPER=sccache' >> ~/.zshrc  # or ~/.bashrc
+
+# Install pre-commit hook (runs fmt + clippy)
+cp scripts/pre-commit .git/hooks/
+```
+
+### Build
+
+```bash
+# Build Tailwind CSS (auto-downloads standalone CLI, no Node.js)
+make css
+
+# Full build with web UI (WASM + server) - REQUIRED for web UI
+dx build --release --platform web
+```
+
+**Note:** `cargo build` only builds the server without the WASM client. The web UI requires `dx build` which produces both the server binary and the WASM bundle needed for hydration (interactive components).
+
+### Run
+
+```bash
+# Run from dx output directory (contains required wasm assets)
+./target/dx/unified-hifi-control/release/web/unified-hifi-control
+
+# Access at http://127.0.0.1:8088
+```
+
+**Important:** The server must be run from the `dx build` output directory where the `public/wasm/` folder exists. Running the binary from elsewhere will cause a panic or non-functional UI.
+
+### CSS Development
+
+```bash
+# Watch mode - rebuilds CSS on changes to src/input.css or .rs files
+make css-watch
+
+# In another terminal, run dx serve for hot reload
+dx serve
+```
+
+### Test
+
+```bash
+cargo test --workspace
+```
+
+### Lint
+
+```bash
+cargo fmt --check
+cargo clippy -- -D warnings
+```
+
 ## License
 
 As of v2.5.0, this project is licensed under the [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/) license.

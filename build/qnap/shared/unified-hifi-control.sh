@@ -24,23 +24,26 @@ case "$1" in
         exit 1
     fi
 
-    cd $QPKG_ROOT
+    cd "$QPKG_ROOT" || { echo "Failed to cd to $QPKG_ROOT"; exit 1; }
 
     # Start the static binary (musl-linked, no dependencies)
-    ${QPKG_ROOT}/unified-hifi-control >> $LOGF 2>&1 &
-    echo $! > $PIDF
+    "${QPKG_ROOT}/unified-hifi-control" >> "$LOGF" 2>&1 &
+    echo $! > "$PIDF"
 
     echo "$QPKG_NAME started."
     ;;
 
   stop)
     # Kill by PID file first
-    if [ -e $PIDF ]; then
-        PID=$(cat $PIDF)
-        if [ -n "$PID" ] && kill -0 $PID 2>/dev/null; then
-            kill -9 $PID 2>/dev/null
+    if [ -e "$PIDF" ]; then
+        PID=$(cat "$PIDF")
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+            # Graceful shutdown first, then force if needed
+            kill "$PID" 2>/dev/null
+            sleep 2
+            kill -0 "$PID" 2>/dev/null && kill -9 "$PID" 2>/dev/null
         fi
-        rm -f $PIDF
+        rm -f "$PIDF"
     fi
 
     # Fallback: kill any process listening on our port
@@ -61,7 +64,7 @@ case "$1" in
     ;;
 
   status)
-    if [ -f $PIDF ] && kill -0 $(cat $PIDF) 2>/dev/null; then
+    if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
         echo "$QPKG_NAME is running."
         exit 0
     else

@@ -1,0 +1,5 @@
+# Local build optimizations
+#
+# sccache: Shared compilation cache - caches compiled crates across projects
+# Install: brew install sccache (macOS) or cargo install sccache
+# Enable: add to your shell profile: export RUSTC_WRAPPER=sccache

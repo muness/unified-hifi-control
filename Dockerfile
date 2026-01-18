@@ -1,30 +1,38 @@
 # Build stage
-FROM rust:1.92-slim AS builder
+FROM rust:1.84-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies (minimal - using rustls, no OpenSSL needed)
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install wasm32 target for client build
+RUN rustup target add wasm32-unknown-unknown
+
+# Install Dioxus CLI
+RUN cargo install dioxus-cli --locked
+
 # Copy manifests
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock Dioxus.toml ./
 
 # Create dummy source for dependency caching
-RUN mkdir -p src && \
+RUN mkdir -p src/app && \
     echo "fn main() {}" > src/main.rs && \
-    echo "// lib stub" > src/lib.rs
+    echo "pub mod app;" > src/lib.rs && \
+    echo "// stub" > src/app/mod.rs
 
 # Build dependencies only (cached layer)
-RUN cargo build --release --bin unified-hifi-control 2>/dev/null || true
+RUN cargo build --release 2>/dev/null || true
 RUN rm -rf src
 
 # Copy actual source
 COPY src/ ./src/
 
-# Build only the main binary (skip protocol-checker dev tool)
-RUN cargo build --release --bin unified-hifi-control
+# Build with Dioxus (fullstack: server + WASM client)
+RUN dx build --release --platform web --features web
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -36,8 +44,9 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy binary from builder
-COPY --from=builder /app/target/release/unified-hifi-control /app/
+# Copy binary and web assets from builder
+COPY --from=builder /app/target/dx/unified-hifi-control/release/web/unified-hifi-control /app/
+COPY --from=builder /app/target/dx/unified-hifi-control/release/web/public /app/public
 
 # Create data directory for config persistence
 RUN mkdir -p /data

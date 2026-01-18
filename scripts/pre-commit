@@ -1,0 +1,18 @@
+#!/bin/sh
+# Pre-commit hook: run cargo fmt and clippy
+
+# Check formatting
+if ! cargo fmt --check > /dev/null 2>&1; then
+    echo "Formatting issues found. Running cargo fmt..."
+    cargo fmt
+    echo ""
+    echo "Files were reformatted. Please stage the changes and commit again."
+    exit 1
+fi
+
+# Run clippy
+if ! cargo clippy --quiet -- -D warnings 2>&1; then
+    echo ""
+    echo "Clippy found issues. Please fix them before committing."
+    exit 1
+fi

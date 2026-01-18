@@ -1,0 +1,157 @@
+@import "tailwindcss";
+
+/* Source scanning for Dioxus .rs files */
+@source "../src/**/*.rs";
+
+/* Custom theme for Hi-Fi Control */
+@theme {
+  /* Primary colors - dark theme optimized for hi-fi aesthetic */
+  --color-primary: #6366f1;
+  --color-primary-hover: #818cf8;
+  --color-primary-active: #4f46e5;
+
+  /* Status colors */
+  --color-success: #22c55e;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+  --color-muted: #9ca3af;
+
+  /* Dark theme base */
+  --color-bg-dark: #111827;
+  --color-bg-card: #1f2937;
+  --color-bg-elevated: #374151;
+  --color-text-primary: #f9fafb;
+  --color-text-secondary: #d1d5db;
+  --color-border: #374151;
+}
+
+/* Base styles */
+@layer base {
+  body {
+    @apply bg-gray-900 text-gray-100 antialiased;
+  }
+}
+
+/* Custom utility classes for the app */
+@layer components {
+  /* Status indicators */
+  .status-ok {
+    @apply text-success;
+  }
+  .status-err {
+    @apply text-danger;
+  }
+  .status-disabled {
+    @apply text-muted;
+  }
+
+  /* Zone grid layout */
+  .zone-grid {
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+
+  /* Control button group */
+  .controls {
+    @apply flex gap-2 mt-2;
+  }
+  .controls button {
+    @apply m-0;
+  }
+
+  /* Navigation container */
+  .nav-container {
+    background: var(--primary-color-5);
+  }
+
+  .nav-inner {
+    @apply max-w-7xl mx-auto px-4 flex items-center justify-between h-16;
+  }
+
+  .nav-brand {
+    @apply text-xl font-bold;
+    color: var(--secondary-color-1);
+    text-decoration: none;
+  }
+
+  .nav-brand:hover {
+    color: var(--secondary-color-2);
+  }
+
+  /* Desktop nav - hidden on mobile */
+  .nav-desktop {
+    @apply hidden lg:block;
+  }
+
+  /* Mobile nav - hidden on desktop */
+  .nav-mobile {
+    @apply block lg:hidden;
+  }
+
+  .nav-mobile-items {
+    @apply flex flex-col gap-1 py-2;
+  }
+
+  /* Active nav item styling */
+  .navbar-item-active {
+    background: var(--primary-color-7);
+    color: var(--secondary-color-1);
+  }
+
+  /* Card component */
+  .card {
+    @apply rounded-lg;
+    background: var(--primary-color-5);
+    border: 1px solid var(--primary-color-6);
+  }
+
+  /* Badge components */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+
+  .badge-primary {
+    @apply bg-indigo-600 text-white;
+  }
+
+  .badge-secondary {
+    background: var(--primary-color-7);
+    color: var(--secondary-color-3);
+  }
+
+  /* Checkbox styling */
+  .checkbox {
+    @apply w-4 h-4 rounded border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-800;
+  }
+
+  /* Form input styling */
+  .input {
+    @apply block w-full rounded-md border-0 py-1.5 px-3 bg-gray-700 text-white shadow-sm ring-1 ring-inset ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6;
+  }
+
+  /* Form grid */
+  .form-grid {
+    @apply grid grid-cols-1 md:grid-cols-2 gap-4;
+  }
+
+  /* Button styles */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900;
+  }
+
+  .btn-primary {
+    @apply bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500;
+  }
+
+  .btn-ghost {
+    @apply text-gray-300 hover:text-white hover:bg-gray-700 focus:ring-gray-500;
+  }
+
+  .btn-outline {
+    @apply border border-gray-600 text-gray-300 hover:text-white hover:bg-gray-700 focus:ring-gray-500;
+  }
+
+  .btn-sm {
+    @apply px-2 py-1 text-xs;
+  }
+}

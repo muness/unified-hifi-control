@@ -9,77 +9,115 @@ repository = "https://github.com/open-horizon-labs/unified-hifi-control"
 
 [features]
 default = ["server"]
-server = ["dioxus/server"]
+server = [
+    "dioxus/server",
+    "dep:axum",
+    "dep:tokio",
+    "dep:tower",
+    "dep:tower-http",
+    "dep:roon-api",
+    "dep:reqwest",
+    "dep:rumqttc",
+    "dep:tracing-subscriber",
+    "dep:config",
+    "dep:image",
+    "dep:tokio-stream",
+    "dep:tokio-util",
+    "dep:ssdp-client",
+    "dep:mdns-sd",
+    "dep:gethostname",
+]
 web = ["dioxus/web"]
 
 [dependencies]
-# Web framework
-axum = { version = "0.8", features = ["macros"] }
-tokio = { version = "1", features = ["full"] }
-tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace"] }
+# Dioxus UI framework (SSR + client hydration + router)
+dioxus = { version = "0.7.3", features = ["fullstack", "router"] }
 
-# Dioxus UI framework (SSR + client hydration)
-dioxus = { version = "0.7", features = ["fullstack"] }
-
-# Roon API (the key discovery!)
-# Package is named "roon-api" in Cargo.toml, repo is "rust-roon-api"
-roon-api = { git = "https://github.com/TheAppgineer/rust-roon-api.git", tag = "0.2.0", features = ["transport", "image", "status"] }
-
-# Serialization
+# Serialization (shared)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# HTTP client (for HQPlayer) - rustls for cross-compilation
-reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls"] }
-
-# Crypto/hashing
+# Crypto/hashing (shared - pure Rust)
 md5 = "0.7"
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
 
-# Regex for HTML parsing
+# Regex (shared)
 regex = "1"
 
-# URL encoding/parsing
+# URL encoding/parsing (shared)
 urlencoding = "2"
 url = "2"
 
-# XML parsing (for HQPlayer protocol)
+# XML parsing (shared)
 quick-xml = { version = "0.37", features = ["serialize"] }
 
-# MQTT
-rumqttc = "0.24"
-
-# Logging
+# Logging (shared - tracing works in WASM)
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Config
-config = "0.14"
-
-# Error handling
+# Error handling (shared)
 thiserror = "2"
 anyhow = "1"
 
-# Image processing (for knobs LCD)
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
-
-# Date/time
+# Date/time (shared)
 chrono = { version = "0.4", features = ["serde"] }
 
-# Async utilities
+# Async utilities (shared)
 futures = "0.3"
-tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-util = "0.7"
 async-trait = "0.1"
 
-# SSDP/UPnP discovery
-ssdp-client = "2"
+# Base64 (shared)
 base64 = "0.22.1"
-mdns-sd = "0.17.1"
-gethostname = "1.1.0"
+
+# Dioxus UI primitives (shared - needed for SSR and client hydration)
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, features = ["router"] }
+
+# ============ SERVER-ONLY DEPENDENCIES ============
+# These are optional and only included when building for server
+
+# Web framework (server only)
+axum = { version = "0.8", features = ["macros"], optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+tower = { version = "0.5", optional = true }
+tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace"], optional = true }
+
+# Roon API (server only)
+roon-api = { git = "https://github.com/TheAppgineer/rust-roon-api.git", tag = "0.2.0", features = ["transport", "image", "status"], optional = true }
+
+# HTTP client (server only)
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls"], optional = true }
+
+# MQTT (server only)
+rumqttc = { version = "0.24", optional = true }
+
+# Logging subscriber (server only - needs tokio)
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
+# Config (server only)
+config = { version = "0.14", optional = true }
+
+# Image processing (server only)
+image = { version = "0.25", default-features = false, features = ["jpeg"], optional = true }
+
+# Tokio stream utilities (server only)
+tokio-stream = { version = "0.1", features = ["sync"], optional = true }
+tokio-util = { version = "0.7", optional = true }
+
+# SSDP/UPnP/mDNS discovery (server only)
+ssdp-client = { version = "2", optional = true }
+mdns-sd = { version = "0.17.1", optional = true }
+gethostname = { version = "1.1.0", optional = true }
+
+# ============ WEB-ONLY DEPENDENCIES ============
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Storage", "Request", "RequestInit", "Response", "Headers"] }
+serde-wasm-bindgen = "0.6"
+# getrandom needs js feature for WASM (used by rand)
+getrandom = { version = "0.2", features = ["js"] }
 
 [[bin]]
 name = "unified-hifi-control"
@@ -88,6 +126,7 @@ path = "src/main.rs"
 [[bin]]
 name = "protocol-checker"
 path = "src/bin/protocol_checker.rs"
+required-features = ["server"]
 
 [dev-dependencies]
 tokio-test = "0.4"
