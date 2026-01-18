@@ -60,6 +60,8 @@ const POLL_INTERVAL_WITH_SUBSCRIPTION: Duration = Duration::from_secs(30);
 const CLI_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 /// Maximum reconnection delay (exponential backoff cap)
 const CLI_MAX_RECONNECT_DELAY: Duration = Duration::from_secs(60);
+/// TCP read timeout for CLI subscription (detect unresponsive LMS)
+const CLI_READ_TIMEOUT: Duration = Duration::from_secs(120);
 
 // =============================================================================
 // CLI Event Parsing
@@ -1006,16 +1008,23 @@ async fn run_cli_subscription(
                 break;
             }
             Err(e) => {
+                // Check if we had a successful connection before failing
+                let was_connected = {
+                    let mut s = state.write().await;
+                    let was_active = s.cli_subscription_active;
+                    s.cli_subscription_active = false;
+                    was_active
+                };
+
+                // Reset backoff if we had a working connection that later failed
+                if was_connected {
+                    retry_delay = CLI_RECONNECT_DELAY;
+                }
+
                 warn!(
                     "CLI subscription error: {}. Reconnecting in {:?}...",
                     e, retry_delay
                 );
-
-                // Mark subscription as inactive
-                {
-                    let mut s = state.write().await;
-                    s.cli_subscription_active = false;
-                }
 
                 // Wait before reconnecting (with shutdown check)
                 tokio::select! {
@@ -1024,8 +1033,10 @@ async fn run_cli_subscription(
                         break;
                     }
                     _ = tokio::time::sleep(retry_delay) => {
-                        // Exponential backoff up to max
-                        retry_delay = (retry_delay * 2).min(CLI_MAX_RECONNECT_DELAY);
+                        // Exponential backoff up to max (only if initial connection failed)
+                        if !was_connected {
+                            retry_delay = (retry_delay * 2).min(CLI_MAX_RECONNECT_DELAY);
+                        }
                     }
                 }
             }
@@ -1080,21 +1091,25 @@ async fn connect_and_subscribe(
                 info!("CLI subscription received shutdown signal");
                 return Ok(());
             }
-            result = reader.read_line(&mut line) => {
+            result = tokio::time::timeout(CLI_READ_TIMEOUT, reader.read_line(&mut line)) => {
                 match result {
-                    Ok(0) => {
+                    Ok(Ok(0)) => {
                         // EOF - connection closed
                         return Err(anyhow!("LMS CLI connection closed"));
                     }
-                    Ok(_) => {
+                    Ok(Ok(_)) => {
                         let trimmed = line.trim();
                         if !trimmed.is_empty() {
                             debug!("CLI event: {}", trimmed);
                             handle_cli_event(trimmed, state, bus, rpc).await;
                         }
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         return Err(anyhow!("CLI read error: {}", e));
+                    }
+                    Err(_) => {
+                        // Timeout - LMS may be unresponsive
+                        return Err(anyhow!("CLI read timeout after {:?}", CLI_READ_TIMEOUT));
                     }
                 }
             }
@@ -1183,7 +1198,23 @@ async fn handle_cli_event(
                 bus.publish(BusEvent::VolumeChanged {
                     output_id: player_id,
                     value: value as f32,
-                    is_muted: false, // LMS doesn't expose mute via CLI events
+                    is_muted: false,
+                });
+            } else if param == "muting" {
+                let is_muted = value != 0;
+                debug!("Mute change for {}: {}", player_id, is_muted);
+
+                // Get current volume from cache for the event
+                let current_volume = {
+                    let s = state.read().await;
+                    s.players.get(&player_id).map(|p| p.volume).unwrap_or(0)
+                };
+
+                // Publish volume changed event with mute state
+                bus.publish(BusEvent::VolumeChanged {
+                    output_id: player_id,
+                    value: current_volume as f32,
+                    is_muted,
                 });
             }
         }
