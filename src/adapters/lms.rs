@@ -1486,7 +1486,7 @@ mod tests {
             } => {
                 assert_eq!(player_id, "00:04:20:aa:bb:cc");
                 assert_eq!(param, "volume");
-                assert_eq!(value, 75);
+                assert_eq!(value, Some(75));
             }
             _ => panic!("Expected Mixer event, got {:?}", event),
         }
@@ -1590,7 +1590,7 @@ mod tests {
             } => {
                 assert_eq!(player_id, "00:04:20:aa:bb:cc");
                 assert_eq!(param, "volume");
-                assert_eq!(value, 50);
+                assert_eq!(value, Some(50));
             }
             _ => panic!("Expected Mixer event, got {:?}", event),
         }
@@ -1647,7 +1647,7 @@ mod tests {
         match event {
             CliEvent::Mixer { param, value, .. } => {
                 assert_eq!(param, "muting");
-                assert_eq!(value, 1);
+                assert_eq!(value, Some(1));
             }
             _ => panic!("Expected Mixer event, got {:?}", event),
         }

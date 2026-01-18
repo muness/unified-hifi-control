@@ -66,12 +66,20 @@ Proc-macros (serde_derive, dioxus, thiserror, etc.) can't be cached by sccache d
 ```
 
 **macOS universal binary:**
+
+Note: zigbuild can't find macOS system frameworks, so we use native cargo + lipo instead:
 ```yaml
-- name: Build universal binary
-  run: cargo zigbuild --release --target universal2-apple-darwin
+- name: Build x86_64
+  run: cargo build --release --target x86_64-apple-darwin
+
+- name: Build aarch64
+  run: cargo build --release --target aarch64-apple-darwin
+
+- name: Create universal binary with lipo
+  run: lipo -create target/x86_64-apple-darwin/release/binary target/aarch64-apple-darwin/release/binary -output binary-universal
 ```
 
-This creates a single fat binary that works on both x86_64 and arm64 Macs, eliminating the need for separate builds.
+This creates a single fat binary that works on both x86_64 and arm64 Macs.
 
 ### 3. Tool Binary Caching
 
@@ -137,14 +145,14 @@ The LMS plugin downloads this tarball at runtime since it can't bundle large bin
 | Target | Caching | Build Tool |
 |--------|---------|------------|
 | Web Assets (WASM) | sccache + rust-cache | dx (dioxus-cli) |
-| macOS universal | rust-cache | cargo-zigbuild |
+| macOS universal | sccache + rust-cache | cargo + lipo |
 | Windows x86_64 | sccache + rust-cache | cargo |
 | Linux x86_64-musl | rust-cache | cargo-zigbuild |
 | Linux aarch64-musl | rust-cache | cargo-zigbuild |
 | Linux armv7-musl | rust-cache | cargo-zigbuild |
 | Docker multi-arch | N/A | pre-built binaries |
 
-**Note:** sccache doesn't support zig's compiler wrapper, so zigbuild jobs use rust-cache only.
+**Note:** sccache doesn't support zig's compiler wrapper, so Linux zigbuild jobs use rust-cache only. macOS uses native cargo (with sccache) + lipo because zigbuild can't find macOS system frameworks.
 
 ## Lessons Learned
 
@@ -152,7 +160,7 @@ The LMS plugin downloads this tarball at runtime since it can't bundle large bin
 
 2. **Avoid containerized cross-compilation:** Tools like `cross` run cargo in Docker containers, breaking Cargo's fingerprint-based caching (paths don't match). Use `cargo-zigbuild` instead - it cross-compiles without containers so caching works normally.
 
-3. **Universal macOS binaries:** Use `cargo zigbuild --target universal2-apple-darwin` to create a single fat binary for both x86_64 and arm64, halving macOS build jobs.
+3. **Universal macOS binaries:** Build each arch with native cargo, then combine with `lipo`. zigbuild's `universal2-apple-darwin` target can't find macOS system frameworks.
 
 4. **QEMU for cross-arch testing:** Test armv7 binaries on x86_64 runners using `qemu-user-static` for smoke tests.
 

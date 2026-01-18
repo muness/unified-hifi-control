@@ -163,30 +163,32 @@ jobs:
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Install zig
-        run: brew install zig
+      - name: Build x86_64
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+        run: cargo build --release --target x86_64-apple-darwin
 
-      - name: Cache cargo-zigbuild
-        id: cache-zigbuild
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-zigbuild
-          key: cargo-zigbuild-macos-0.20
+      - name: Build aarch64
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+        run: cargo build --release --target aarch64-apple-darwin
 
-      - name: Install cargo-zigbuild
-        if: steps.cache-zigbuild.outputs.cache-hit != 'true'
-        run: cargo install cargo-zigbuild --locked
-
-      - name: Build universal binary
-        run: cargo zigbuild --release --target universal2-apple-darwin
-
-      - name: Package binary
+      - name: Create universal binary with lipo
         run: |
           mkdir -p dist/bin
-          cp target/universal2-apple-darwin/release/unified-hifi-control dist/bin/unified-hifi-macos-universal
+          lipo -create \
+            target/x86_64-apple-darwin/release/unified-hifi-control \
+            target/aarch64-apple-darwin/release/unified-hifi-control \
+            -output dist/bin/unified-hifi-macos-universal
+          file dist/bin/unified-hifi-macos-universal
           ls -la dist/bin/
 
       - name: Upload binary
