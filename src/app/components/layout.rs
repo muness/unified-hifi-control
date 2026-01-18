@@ -3,13 +3,7 @@
 use dioxus::prelude::*;
 
 use super::nav::Nav;
-use super::theme::{ThemeSwitcher, THEME_FUNCTIONS, THEME_SCRIPT};
-
-/// Shared JavaScript utilities (XSS-safe escaping, etc.)
-const SHARED_JS: &str = r#"
-function esc(s) { return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
-function escAttr(s) { return esc(s); }
-"#;
+use super::theme::{ThemeSwitcher, THEME_SCRIPT};
 
 /// CSS styles for the application (extends Pico CSS).
 const CUSTOM_STYLES: &str = r#"
@@ -48,9 +42,6 @@ pub struct LayoutProps {
     pub nav_active: String,
     /// Page content
     pub children: Element,
-    /// Optional additional scripts to include
-    #[props(default)]
-    pub scripts: Option<String>,
     /// Hide HQPlayer tab in nav
     #[props(default = false)]
     pub hide_hqp: bool,
@@ -69,14 +60,14 @@ pub fn Layout(props: LayoutProps) -> Element {
     let full_title = format!("{} - Unified Hi-Fi Control", props.title);
 
     rsx! {
-        // Head elements using Dioxus document components
+        // Head elements - Dioxus hoists these to the real <head>
         document::Title { "{full_title}" }
         document::Link { rel: "stylesheet", href: "https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" }
         document::Style { {CUSTOM_STYLES} }
+        // Theme init runs immediately (no DOM needed) to prevent flash
         document::Script { {THEME_SCRIPT} }
-        document::Script { {SHARED_JS} }
 
-        // Body content (no body tag - Dioxus handles document structure)
+        // Body content
         header { class: "container",
             Nav {
                 active: props.nav_active.clone(),
@@ -93,11 +84,6 @@ pub fn Layout(props: LayoutProps) -> Element {
             style: "display:flex;justify-content:space-between;align-items:center;",
             small { "Unified Hi-Fi Control v{version}" }
             ThemeSwitcher {}
-        }
-        // Scripts that manipulate DOM must be inline at end of body, not in head
-        script { dangerous_inner_html: THEME_FUNCTIONS }
-        if let Some(scripts) = props.scripts {
-            script { dangerous_inner_html: "{scripts}" }
         }
     }
 }

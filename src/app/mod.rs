@@ -5,14 +5,20 @@
 
 use dioxus::prelude::*;
 
+pub mod api;
 pub mod components;
 pub mod pages;
+pub mod sse;
 
 use pages::{Dashboard, HqPlayer, Knobs, Lms, Settings, Zone, Zones};
+use sse::use_sse_provider;
 
 /// Root app component with routing
 #[component]
 pub fn App() -> Element {
+    // Initialize SSE context at app root (single EventSource for all pages)
+    use_sse_provider();
+
     rsx! {
         Router::<Route> {}
     }

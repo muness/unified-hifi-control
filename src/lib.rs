@@ -10,13 +10,25 @@
 //! - Server-Sent Events for real-time updates
 //! - Web UI for daily control (Pico CSS)
 
-pub mod adapters;
-pub mod aggregator;
-pub mod api;
+// Dioxus UI app (shared between server SSR and WASM client)
 pub mod app;
+
+// Server-only modules (excluded from WASM build)
+#[cfg(feature = "server")]
+pub mod adapters;
+#[cfg(feature = "server")]
+pub mod aggregator;
+#[cfg(feature = "server")]
+pub mod api;
+#[cfg(feature = "server")]
 pub mod bus;
+#[cfg(feature = "server")]
 pub mod config;
+#[cfg(feature = "server")]
 pub mod coordinator;
+#[cfg(feature = "server")]
 pub mod firmware;
+#[cfg(feature = "server")]
 pub mod knobs;
+#[cfg(feature = "server")]
 pub mod mdns;

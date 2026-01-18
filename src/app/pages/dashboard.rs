@@ -1,86 +1,128 @@
 //! Dashboard page component.
 //!
-//! Shows service status overview:
-//! - Version and uptime
-//! - Adapter connection statuses (Roon, HQPlayer, LMS)
+//! Shows service status overview using Dioxus resources for async data fetching.
 
 use dioxus::prelude::*;
 
+use crate::app::api::{AppStatus, HqpStatus, LmsStatus, RoonStatus};
 use crate::app::components::Layout;
-
-/// Client-side JavaScript for the Dashboard page.
-const DASHBOARD_SCRIPT: &str = r#"
-
-async function loadStatus() {
-    const section = document.querySelector('#status article');
-    try {
-        const [status, roon, hqp, lms] = await Promise.all([
-            fetch('/status').then(r => r.json()),
-            fetch('/roon/status').then(r => r.json()).catch(() => ({ connected: false })),
-            fetch('/hqp/status').then(r => r.json()).catch(() => ({ connected: false })),
-            fetch('/lms/status').then(r => r.json()).catch(() => ({ connected: false }))
-        ]);
-
-        section.removeAttribute('aria-busy');
-        section.innerHTML = `
-            <p><strong>Version:</strong> ${esc(status.version)}</p>
-            <p><strong>Uptime:</strong> ${status.uptime_secs}s</p>
-            <p><strong>Event Bus Subscribers:</strong> ${status.bus_subscribers}</p>
-            <hr>
-            <table>
-                <thead><tr><th>Adapter</th><th>Status</th><th>Details</th></tr></thead>
-                <tbody>
-                    <tr>
-                        <td>Roon</td>
-                        <td class="${roon.connected ? 'status-ok' : 'status-err'}">${roon.connected ? '✓ Connected' : '✗ Disconnected'}</td>
-                        <td><small>${esc(roon.core_name || '')} ${roon.core_version ? 'v' + esc(roon.core_version) : ''}</small></td>
-                    </tr>
-                    <tr>
-                        <td>HQPlayer</td>
-                        <td class="${hqp.connected ? 'status-ok' : 'status-err'}">${hqp.connected ? '✓ Connected' : '✗ Disconnected'}</td>
-                        <td><small>${esc(hqp.host || '')}</small></td>
-                    </tr>
-                    <tr>
-                        <td>LMS</td>
-                        <td class="${lms.connected ? 'status-ok' : 'status-err'}">${lms.connected ? '✓ Connected' : '✗ Disconnected'}</td>
-                        <td><small>${lms.host ? esc(lms.host) + ':' + lms.port : ''}</small></td>
-                    </tr>
-                </tbody>
-            </table>
-        `;
-    } catch (e) {
-        section.removeAttribute('aria-busy');
-        section.innerHTML = `<p class="status-err">Error loading status: ${esc(e.message)}</p>`;
-    }
-}
-loadStatus();
-
-// SSE for real-time updates
-const es = new EventSource('/events');
-es.onmessage = (e) => {
-    try {
-        const event = JSON.parse(e.data);
-        if (['RoonConnected', 'RoonDisconnected', 'HqpConnected', 'HqpDisconnected',
-             'LmsConnected', 'LmsDisconnected'].includes(event.type)) {
-            loadStatus();
-        }
-    } catch (err) { console.error('SSE parse error:', err); }
-};
-es.onerror = () => {
-    console.warn('SSE disconnected, falling back to polling');
-    es.close();
-    setInterval(loadStatus, 10000);
-};
-"#;
+use crate::app::sse::use_sse;
 
 /// Dashboard page component.
 #[component]
 pub fn Dashboard() -> Element {
+    let sse = use_sse();
+
+    // Use resources for async data fetching (handles SSR/client properly)
+    let status = use_resource(|| async {
+        crate::app::api::fetch_json::<AppStatus>("/status").await.ok()
+    });
+    let mut roon = use_resource(|| async {
+        crate::app::api::fetch_json::<RoonStatus>("/roon/status").await.ok()
+    });
+    let mut hqp = use_resource(|| async {
+        crate::app::api::fetch_json::<HqpStatus>("/hqp/status").await.ok()
+    });
+    let mut lms = use_resource(|| async {
+        crate::app::api::fetch_json::<LmsStatus>("/lms/status").await.ok()
+    });
+
+    // Refresh on SSE events
+    let event_count = sse.event_count;
+    use_effect(move || {
+        let _ = event_count();
+        if sse.should_refresh_roon() || sse.should_refresh_hqp() || sse.should_refresh_lms() {
+            roon.restart();
+            hqp.restart();
+            lms.restart();
+        }
+    });
+
+    let is_loading = status.read().is_none() || roon.read().is_none();
+
+    let status_content = if is_loading {
+        rsx! {
+            article { aria_busy: "true", "Loading status..." }
+        }
+    } else {
+        let app_status = status.read().clone().flatten().unwrap_or_default();
+        let roon_status = roon.read().clone().flatten().unwrap_or_default();
+        let hqp_status = hqp.read().clone().flatten().unwrap_or_default();
+        let lms_status = lms.read().clone().flatten().unwrap_or_default();
+
+        rsx! {
+            article {
+                p { strong { "Version:" } " {app_status.version}" }
+                p { strong { "Uptime:" } " {app_status.uptime_secs}s" }
+                p { strong { "Event Bus Subscribers:" } " {app_status.bus_subscribers}" }
+                hr {}
+                table {
+                    thead {
+                        tr {
+                            th { "Adapter" }
+                            th { "Status" }
+                            th { "Details" }
+                        }
+                    }
+                    tbody {
+                        // Roon row
+                        tr {
+                            td { "Roon" }
+                            td {
+                                class: if roon_status.connected { "status-ok" } else { "status-err" },
+                                if roon_status.connected { "✓ Connected" } else { "✗ Disconnected" }
+                            }
+                            td {
+                                small {
+                                    if let Some(name) = &roon_status.core_name {
+                                        "{name} "
+                                    }
+                                    if let Some(ver) = &roon_status.core_version {
+                                        "v{ver}"
+                                    }
+                                }
+                            }
+                        }
+                        // HQPlayer row
+                        tr {
+                            td { "HQPlayer" }
+                            td {
+                                class: if hqp_status.connected { "status-ok" } else { "status-err" },
+                                if hqp_status.connected { "✓ Connected" } else { "✗ Disconnected" }
+                            }
+                            td {
+                                small {
+                                    if let Some(host) = &hqp_status.host {
+                                        "{host}"
+                                    }
+                                }
+                            }
+                        }
+                        // LMS row
+                        tr {
+                            td { "LMS" }
+                            td {
+                                class: if lms_status.connected { "status-ok" } else { "status-err" },
+                                if lms_status.connected { "✓ Connected" } else { "✗ Disconnected" }
+                            }
+                            td {
+                                small {
+                                    if let (Some(host), Some(port)) = (&lms_status.host, lms_status.port) {
+                                        "{host}:{port}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
     rsx! {
         Layout {
             title: "Dashboard".to_string(),
             nav_active: "dashboard".to_string(),
-            scripts: Some(DASHBOARD_SCRIPT.to_string()),
 
             h1 { "Dashboard" }
 
@@ -89,10 +131,7 @@ pub fn Dashboard() -> Element {
                     h2 { "Service Status" }
                     p { "Connection status for all adapters" }
                 }
-                article {
-                    aria_busy: "true",
-                    "Loading status..."
-                }
+                {status_content}
             }
         }
     }

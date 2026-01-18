@@ -8,5 +8,5 @@ title = "Unified Hi-Fi Control"
 reload_html = true
 watch_path = ["src"]
 
-[web.resource]
-dev_base_path = "/"
+[web.resource.dev]
+base_path = "/"

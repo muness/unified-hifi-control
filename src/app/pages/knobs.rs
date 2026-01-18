@@ -1,228 +1,473 @@
 //! Knobs page component.
 //!
-//! Knob device management:
-//! - List registered knob devices
-//! - Configure individual knobs (name, display rotation, power timers)
-//! - Firmware management (version check, fetch from GitHub)
-//! - Flash new knobs
+//! Knob device management using Dioxus resources for async data fetching.
 
 use dioxus::prelude::*;
 
-use crate::app::components::Layout;
-
-/// Client-side JavaScript for the Knobs page.
-const KNOBS_SCRIPT: &str = r#"
-
-let zonesData = [];
-let currentKnobId = null;
-
-function ago(ts) {
-    if (!ts) return 'never';
-    const diff = Date.now() - new Date(ts).getTime();
-    const s = Math.floor(diff / 1000);
-    if (s < 60) return s + 's ago';
-    const m = Math.floor(s / 60);
-    if (m < 60) return m + 'm ago';
-    const h = Math.floor(m / 60);
-    if (h < 24) return h + 'h ago';
-    return Math.floor(h / 24) + 'd ago';
-}
-
-function knobDisplayName(knob) {
-    if (knob.name) return esc(knob.name);
-    const id = knob.knob_id || '';
-    const suffix = id.replace(/[:-]/g, '').slice(-6).toLowerCase();
-    return suffix ? '<small>roon-knob-' + suffix + '</small>' : '<small>unnamed</small>';
-}
-
-async function loadKnobs() {
-    const section = document.querySelector('#knobs-section');
-    try {
-        const [devicesRes, zonesRes] = await Promise.all([
-            fetch('/knob/devices').then(r => r.json()),
-            fetch('/zones').then(r => r.json()).catch(() => ({ zones: [] }))
-        ]);
-        const knobs = devicesRes.knobs || [];
-        zonesData = zonesRes.zones || zonesRes || [];
-
-        if (knobs.length === 0) {
-            section.innerHTML = '<article>No knobs registered. Connect a knob to see it here.</article>';
-            return;
-        }
-
-        section.innerHTML = '<article><table><thead><tr><th>ID</th><th>Name</th><th>Version</th><th>IP</th><th>Zone</th><th>Battery</th><th>Last Seen</th><th></th></tr></thead><tbody id="knobs-body">' +
-            knobs.map(k => {
-                const st = k.status || {};
-                const bat = st.battery_level != null ? st.battery_level + '%' + (st.battery_charging ? ' ⚡' : '') : '—';
-                const zone = st.zone_id ? esc(zonesData.find(z => z.zone_id === st.zone_id)?.zone_name || st.zone_id) : '—';
-                const ip = st.ip || '—';
-                return '<tr><td><code>' + esc(k.knob_id) + '</code></td><td>' + knobDisplayName(k) + '</td><td>' + esc(k.version || '—') + '</td><td>' + esc(ip) + '</td><td>' + zone + '</td><td>' + bat + '</td><td>' + ago(k.last_seen) + '</td><td><button class="outline secondary" data-knob-id="' + escAttr(k.knob_id) + '">Config</button></td></tr>';
-            }).join('') + '</tbody></table></article>';
-    } catch (e) {
-        section.innerHTML = '<article class="status-err">Error: ' + esc(e.message) + '</article>';
-    }
-}
-
-document.querySelector('#knobs-section').addEventListener('click', e => {
-    const btn = e.target.closest('button[data-knob-id]');
-    if (btn) openConfig(btn.dataset.knobId);
-});
-
-function openModal() { document.getElementById('config-modal').showModal(); }
-function closeModal() { document.getElementById('config-modal').close(); }
-
-async function openConfig(knobId) {
-    currentKnobId = knobId;
-    openModal();
-    const container = document.getElementById('config-form-container');
-    container.innerHTML = '<p aria-busy="true">Loading configuration...</p>';
-
-    try {
-        const res = await fetch('/knob/config?knob_id=' + encodeURIComponent(knobId));
-        const data = await res.json();
-        const c = data.config || {};
-
-        const rotSel = (n, v) => '<select name="' + n + '"><option value="0"' + (v === 0 ? ' selected' : '') + '>0°</option><option value="180"' + (v === 180 ? ' selected' : '') + '>180°</option></select>';
-
-        container.innerHTML = '<form id="knob-config-form">' +
-            '<label>Name<input type="text" name="name" value="' + escAttr(c.name || '') + '" placeholder="Living Room Knob"></label>' +
-            '<fieldset><legend>Display Rotation</legend>' +
-            '<div class="grid"><label>Charging: ' + rotSel('rotation_charging', c.rotation_charging ?? 180) + '</label>' +
-            '<label>Battery: ' + rotSel('rotation_not_charging', c.rotation_not_charging ?? 0) + '</label></div></fieldset>' +
-            '<footer><button type="button" class="secondary" onclick="closeModal()">Cancel</button><button type="submit">Save</button></footer></form>';
-
-        document.getElementById('knob-config-form').addEventListener('submit', saveConfig);
-    } catch (e) {
-        container.innerHTML = '<p class="status-err">Error: ' + esc(e.message) + '</p>';
-    }
-}
-
-async function saveConfig(e) {
-    e.preventDefault();
-    const f = e.target;
-    const cfg = {
-        name: f.querySelector('[name="name"]')?.value || null,
-        rotation_charging: parseInt(f.querySelector('[name="rotation_charging"]')?.value) || 0,
-        rotation_not_charging: parseInt(f.querySelector('[name="rotation_not_charging"]')?.value) || 0,
-    };
-
-    try {
-        const res = await fetch('/knob/config?knob_id=' + encodeURIComponent(currentKnobId), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(cfg)
-        });
-        if (res.ok) {
-            closeModal();
-            loadKnobs();
-        } else {
-            alert('Save failed');
-        }
-    } catch (e) {
-        alert('Error: ' + e.message);
-    }
-}
-
-document.getElementById('config-modal').addEventListener('click', e => {
-    if (e.target.id === 'config-modal') closeModal();
-});
-
-async function loadFirmwareVersion() {
-    const el = document.getElementById('fw-version');
-    try {
-        const res = await fetch('/firmware/version');
-        if (res.ok) {
-            const data = await res.json();
-            el.textContent = 'v' + data.version;
-        } else {
-            el.textContent = 'Not installed';
-        }
-    } catch (e) {
-        el.textContent = 'Not installed';
-    }
-}
-
-document.getElementById('fetch-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('fetch-btn');
-    const msg = document.getElementById('fw-msg');
-    btn.disabled = true;
-    btn.setAttribute('aria-busy', 'true');
-    msg.textContent = '';
-
-    try {
-        const res = await fetch('/admin/fetch-firmware', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok) {
-            msg.innerHTML = ' <span class="status-ok">Downloaded v' + esc(data.version) + '</span>';
-            document.getElementById('fw-version').textContent = 'v' + data.version;
-        } else {
-            msg.innerHTML = ' <span class="status-err">' + esc(data.error) + '</span>';
-        }
-    } catch (e) {
-        msg.innerHTML = ' <span class="status-err">' + esc(e.message) + '</span>';
-    } finally {
-        btn.disabled = false;
-        btn.removeAttribute('aria-busy');
-    }
-});
-
-loadKnobs();
-loadFirmwareVersion();
-
-const es = new EventSource('/events');
-es.onmessage = (e) => {
-    try {
-        const event = JSON.parse(e.data);
-        if (['ZoneUpdated', 'ZoneRemoved', 'RoonConnected', 'RoonDisconnected', 'LmsConnected', 'LmsDisconnected'].includes(event.type)) {
-            loadKnobs();
-        }
-    } catch (err) {}
+use crate::app::api::{
+    self, FetchFirmwareResponse, FirmwareVersion, KnobConfig, KnobConfigResponse, KnobDevice,
+    KnobDevicesResponse, Zone, ZonesResponse,
 };
-es.onerror = () => { es.close(); setInterval(loadKnobs, 10000); };
-"#;
+use crate::app::components::Layout;
+use crate::app::sse::use_sse;
 
 /// Knobs page component.
 #[component]
 pub fn Knobs() -> Element {
+    let sse = use_sse();
+
+    // Modal state
+    let mut modal_open = use_signal(|| false);
+    let mut current_knob_id = use_signal(|| None::<String>);
+    let mut config_loading = use_signal(|| false);
+
+    // Config form state
+    let mut config_name = use_signal(String::new);
+    let mut config_rotation_charging = use_signal(|| 180i32);
+    let mut config_rotation_not_charging = use_signal(|| 0i32);
+    let mut save_status = use_signal(|| None::<String>);
+
+    // Firmware fetch state
+    let mut fw_fetching = use_signal(|| false);
+    let mut fw_message = use_signal(|| None::<(bool, String)>); // (is_error, message)
+
+    // Load knobs resource
+    let mut knobs = use_resource(|| async {
+        api::fetch_json::<KnobDevicesResponse>("/knob/devices").await.ok()
+    });
+
+    // Load zones resource
+    let mut zones = use_resource(|| async {
+        api::fetch_json::<ZonesResponse>("/zones").await.ok()
+    });
+
+    // Load firmware version resource
+    let mut firmware_version = use_resource(|| async {
+        api::fetch_json::<FirmwareVersion>("/firmware/version").await.ok()
+    });
+
+    // Refresh on SSE events
+    let event_count = sse.event_count;
+    use_effect(move || {
+        let _ = event_count();
+        if sse.should_refresh_knobs() {
+            knobs.restart();
+            zones.restart();
+        }
+    });
+
+    // Open config modal
+    let mut open_config = move |knob_id: String| {
+        current_knob_id.set(Some(knob_id.clone()));
+        modal_open.set(true);
+        config_loading.set(true);
+        save_status.set(None);
+
+        spawn(async move {
+            let url = format!("/knob/config?knob_id={}", urlencoding::encode(&knob_id));
+            match api::fetch_json::<KnobConfigResponse>(&url).await {
+                Ok(resp) => {
+                    if let Some(cfg) = resp.config {
+                        config_name.set(cfg.name.unwrap_or_default());
+                        config_rotation_charging.set(cfg.rotation_charging.unwrap_or(180));
+                        config_rotation_not_charging.set(cfg.rotation_not_charging.unwrap_or(0));
+                    } else {
+                        config_name.set(String::new());
+                        config_rotation_charging.set(180);
+                        config_rotation_not_charging.set(0);
+                    }
+                }
+                Err(e) => {
+                    save_status.set(Some(format!("Error: {}", e)));
+                }
+            }
+            config_loading.set(false);
+        });
+    };
+
+    // Save config handler
+    let save_config = move |_| {
+        if let Some(knob_id) = current_knob_id() {
+            let name = config_name();
+            let rot_c = config_rotation_charging();
+            let rot_nc = config_rotation_not_charging();
+
+            save_status.set(Some("Saving...".to_string()));
+
+            spawn(async move {
+                let cfg = KnobConfig {
+                    name: if name.is_empty() { None } else { Some(name) },
+                    rotation_charging: Some(rot_c),
+                    rotation_not_charging: Some(rot_nc),
+                };
+
+                let url = format!("/knob/config?knob_id={}", urlencoding::encode(&knob_id));
+                match api::post_json::<_, serde_json::Value>(&url, &cfg).await {
+                    Ok(_) => {
+                        modal_open.set(false);
+                        knobs.restart();
+                    }
+                    Err(e) => {
+                        save_status.set(Some(format!("Error: {}", e)));
+                    }
+                }
+            });
+        }
+    };
+
+    // Fetch firmware handler
+    let fetch_firmware = move |_| {
+        fw_fetching.set(true);
+        fw_message.set(None);
+
+        spawn(async move {
+            match api::post_json::<_, FetchFirmwareResponse>("/admin/fetch-firmware", &()).await {
+                Ok(resp) => {
+                    if let Some(version) = resp.version {
+                        fw_message.set(Some((false, format!("Downloaded v{}", version))));
+                        firmware_version.restart();
+                    } else if let Some(err) = resp.error {
+                        fw_message.set(Some((true, err)));
+                    }
+                }
+                Err(e) => {
+                    fw_message.set(Some((true, e)));
+                }
+            }
+            fw_fetching.set(false);
+        });
+    };
+
+    let is_loading = knobs.read().is_none();
+    let knobs_list = knobs.read().clone().flatten().map(|r| r.knobs).unwrap_or_default();
+    let zones_list = zones.read().clone().flatten().map(|r| r.zones).unwrap_or_default();
+    let fw_version = firmware_version.read().clone().flatten().map(|r| r.version);
+
     rsx! {
         Layout {
             title: "Knobs".to_string(),
             nav_active: "knobs".to_string(),
-            scripts: Some(KNOBS_SCRIPT.to_string()),
 
             h1 { "Knob Devices" }
 
             p {
-                a { href: "https://community.roonlabs.com/t/50-esp32-s3-knob-roon-controller/311363", target: "_blank", rel: "noopener", "Knob Community Thread" }
+                a {
+                    href: "https://community.roonlabs.com/t/50-esp32-s3-knob-roon-controller/311363",
+                    target: "_blank",
+                    rel: "noopener",
+                    "Knob Community Thread"
+                }
                 " - build info, firmware updates, discussion"
             }
 
+            // Knobs section
             section { id: "knobs-section",
-                article { aria_busy: "true", "Loading knobs..." }
-            }
-
-            section { id: "firmware-section",
-                hgroup { h2 { "Firmware" } p { "Manage knob firmware updates" } }
-                article {
-                    p { "Current: ", strong { id: "fw-version", "checking..." } }
-                    button { id: "fetch-btn", "Fetch Latest from GitHub" }
-                    a { href: "/knobs/flash", style: "margin-left:1rem;", "Flash a new knob" }
-                    span { id: "fw-msg" }
+                if is_loading {
+                    article { aria_busy: "true", "Loading knobs..." }
+                } else if knobs_list.is_empty() {
+                    article { "No knobs registered. Connect a knob to see it here." }
+                } else {
+                    article {
+                        table {
+                            thead {
+                                tr {
+                                    th { "ID" }
+                                    th { "Name" }
+                                    th { "Version" }
+                                    th { "IP" }
+                                    th { "Zone" }
+                                    th { "Battery" }
+                                    th { "Last Seen" }
+                                    th {}
+                                }
+                            }
+                            tbody {
+                                for knob in knobs_list {
+                                    KnobRow {
+                                        knob: knob.clone(),
+                                        zones: zones_list.clone(),
+                                        on_config: move |id| open_config(id),
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            div {
-                dangerous_inner_html: r#"
-                    <dialog id="config-modal">
-                        <article>
-                            <header>
-                                <button aria-label="Close" rel="prev" onclick="closeModal()"></button>
-                                <h2>Knob Configuration</h2>
-                            </header>
-                            <div id="config-form-container">Loading...</div>
-                        </article>
-                    </dialog>
-                "#
+            // Firmware section
+            section { id: "firmware-section",
+                hgroup {
+                    h2 { "Firmware" }
+                    p { "Manage knob firmware updates" }
+                }
+                article {
+                    p {
+                        "Current: "
+                        strong {
+                            if let Some(ref v) = fw_version {
+                                "v{v}"
+                            } else {
+                                "Not installed"
+                            }
+                        }
+                    }
+                    button {
+                        id: "fetch-btn",
+                        disabled: fw_fetching(),
+                        aria_busy: if fw_fetching() { "true" } else { "false" },
+                        onclick: fetch_firmware,
+                        "Fetch Latest from GitHub"
+                    }
+                    a { href: "/knobs/flash", style: "margin-left:1rem;", "Flash a new knob" }
+                    if let Some((is_err, ref msg)) = fw_message() {
+                        span { style: "margin-left:1rem;",
+                            if is_err {
+                                span { class: "status-err", "{msg}" }
+                            } else {
+                                span { class: "status-ok", "✓ {msg}" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Config modal
+            if modal_open() {
+                ConfigModal {
+                    loading: config_loading(),
+                    name: config_name(),
+                    rotation_charging: config_rotation_charging(),
+                    rotation_not_charging: config_rotation_not_charging(),
+                    save_status: save_status(),
+                    on_name_change: move |v| config_name.set(v),
+                    on_rotation_charging_change: move |v| config_rotation_charging.set(v),
+                    on_rotation_not_charging_change: move |v| config_rotation_not_charging.set(v),
+                    on_save: save_config,
+                    on_close: move |_| modal_open.set(false),
+                }
+            }
+        }
+    }
+}
+
+/// Format time ago from ISO timestamp
+fn format_ago(timestamp: Option<&str>) -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(ts) = timestamp {
+            let now = js_sys::Date::now();
+            let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_str(ts));
+            let diff_ms = now - date.get_time();
+            let secs = (diff_ms / 1000.0) as i64;
+
+            if secs < 60 {
+                format!("{}s ago", secs)
+            } else if secs < 3600 {
+                format!("{}m ago", secs / 60)
+            } else if secs < 86400 {
+                format!("{}h ago", secs / 3600)
+            } else {
+                format!("{}d ago", secs / 86400)
+            }
+        } else {
+            "never".to_string()
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        timestamp
+            .map(|_| "recently".to_string())
+            .unwrap_or_else(|| "never".to_string())
+    }
+}
+
+/// Format knob display name
+fn knob_display_name(knob: &KnobDevice) -> String {
+    if let Some(ref name) = knob.name {
+        if !name.is_empty() {
+            return name.clone();
+        }
+    }
+
+    let suffix = knob
+        .knob_id
+        .replace(['-', ':'], "")
+        .chars()
+        .rev()
+        .take(6)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>()
+        .to_lowercase();
+
+    if suffix.is_empty() {
+        "unnamed".to_string()
+    } else {
+        format!("roon-knob-{}", suffix)
+    }
+}
+
+/// Knob row component
+#[component]
+fn KnobRow(knob: KnobDevice, zones: Vec<Zone>, on_config: EventHandler<String>) -> Element {
+    let status = knob.status.as_ref();
+    let knob_id = knob.knob_id.clone();
+
+    let battery = status
+        .and_then(|s| {
+            s.battery_level.map(|level| {
+                let charging = s.battery_charging.unwrap_or(false);
+                if charging {
+                    format!("{}% ⚡", level)
+                } else {
+                    format!("{}%", level)
+                }
+            })
+        })
+        .unwrap_or_else(|| "—".to_string());
+
+    let zone_name = status
+        .and_then(|s| s.zone_id.as_ref())
+        .and_then(|zone_id| zones.iter().find(|z| &z.zone_id == zone_id))
+        .map(|z| z.zone_name.clone())
+        .unwrap_or_else(|| "—".to_string());
+
+    let ip = status
+        .and_then(|s| s.ip.clone())
+        .unwrap_or_else(|| "—".to_string());
+
+    let version = knob.version.clone().unwrap_or_else(|| "—".to_string());
+    let display_name = knob_display_name(&knob);
+    let last_seen = format_ago(knob.last_seen.as_deref());
+
+    rsx! {
+        tr {
+            td { code { "{knob.knob_id}" } }
+            td { small { "{display_name}" } }
+            td { "{version}" }
+            td { "{ip}" }
+            td { "{zone_name}" }
+            td { "{battery}" }
+            td { "{last_seen}" }
+            td {
+                button {
+                    class: "outline secondary",
+                    onclick: move |_| on_config.call(knob_id.clone()),
+                    "Config"
+                }
+            }
+        }
+    }
+}
+
+/// Config modal component
+#[component]
+fn ConfigModal(
+    loading: bool,
+    name: String,
+    rotation_charging: i32,
+    rotation_not_charging: i32,
+    save_status: Option<String>,
+    on_name_change: EventHandler<String>,
+    on_rotation_charging_change: EventHandler<i32>,
+    on_rotation_not_charging_change: EventHandler<i32>,
+    on_save: EventHandler<()>,
+    on_close: EventHandler<()>,
+) -> Element {
+    rsx! {
+        div {
+            class: "modal-backdrop",
+            style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;",
+            onclick: move |_| on_close.call(()),
+
+            article {
+                style: "max-width:500px;margin:0;",
+                onclick: move |e| e.stop_propagation(),
+
+                header {
+                    button {
+                        aria_label: "Close",
+                        style: "float:right;",
+                        onclick: move |_| on_close.call(()),
+                        "×"
+                    }
+                    h2 { "Knob Configuration" }
+                }
+
+                if loading {
+                    p { aria_busy: "true", "Loading configuration..." }
+                } else {
+                    form {
+                        onsubmit: move |e| {
+                            e.prevent_default();
+                            on_save.call(());
+                        },
+
+                        label {
+                            "Name"
+                            input {
+                                r#type: "text",
+                                placeholder: "Living Room Knob",
+                                value: "{name}",
+                                oninput: move |e| on_name_change.call(e.value())
+                            }
+                        }
+
+                        fieldset {
+                            legend { "Display Rotation" }
+                            div { class: "grid",
+                                label {
+                                    "Charging"
+                                    select {
+                                        value: "{rotation_charging}",
+                                        onchange: move |e| {
+                                            if let Ok(v) = e.value().parse() {
+                                                on_rotation_charging_change.call(v);
+                                            }
+                                        },
+                                        option { value: "0", selected: rotation_charging == 0, "0°" }
+                                        option { value: "180", selected: rotation_charging == 180, "180°" }
+                                    }
+                                }
+                                label {
+                                    "Battery"
+                                    select {
+                                        value: "{rotation_not_charging}",
+                                        onchange: move |e| {
+                                            if let Ok(v) = e.value().parse() {
+                                                on_rotation_not_charging_change.call(v);
+                                            }
+                                        },
+                                        option { value: "0", selected: rotation_not_charging == 0, "0°" }
+                                        option { value: "180", selected: rotation_not_charging == 180, "180°" }
+                                    }
+                                }
+                            }
+                        }
+
+                        footer { style: "display:flex;gap:1rem;justify-content:flex-end;",
+                            if let Some(ref status) = save_status {
+                                span { style: "margin-right:auto;",
+                                    if status.starts_with("Error") {
+                                        span { class: "status-err", "{status}" }
+                                    } else {
+                                        "{status}"
+                                    }
+                                }
+                            }
+                            button {
+                                r#type: "button",
+                                class: "secondary",
+                                onclick: move |_| on_close.call(()),
+                                "Cancel"
+                            }
+                            button { r#type: "submit", "Save" }
+                        }
+                    }
+                }
             }
         }
     }

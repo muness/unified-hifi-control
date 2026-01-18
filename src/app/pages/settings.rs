@@ -1,204 +1,96 @@
-//! Settings page using Dioxus signals.
+//! Settings page component.
 //!
-//! Replaces inline JavaScript with idiomatic Dioxus patterns:
-//! - use_signal() for reactive state
-//! - use_resource() for async data fetching
-//! - Rust event handlers (onclick, onchange)
+//! Adapter settings and discovery status using Dioxus resources.
 
 use dioxus::prelude::*;
-use serde::{Deserialize, Serialize};
 
+use crate::app::api::{AdapterSettings, AppSettings, RoonStatus};
 use crate::app::components::Layout;
+use crate::app::sse::use_sse;
 
-/// Adapter settings from /api/settings
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
-pub struct AdapterSettings {
-    pub roon: bool,
-    pub lms: bool,
-    pub openhome: bool,
-    pub upnp: bool,
+/// OpenHome status response
+#[derive(Clone, Debug, Default, serde::Deserialize, PartialEq)]
+struct OpenHomeStatus {
+    device_count: usize,
 }
 
-/// Full app settings
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
-pub struct AppSettings {
-    pub adapters: AdapterSettings,
+/// UPnP status response
+#[derive(Clone, Debug, Default, serde::Deserialize, PartialEq)]
+struct UpnpStatus {
+    renderer_count: usize,
 }
 
-/// Server function to fetch settings
-#[server]
-pub async fn get_settings() -> Result<AppSettings, ServerFnError> {
-    let client = reqwest::Client::new();
-    let resp = client
-        .get("http://127.0.0.1:8088/api/settings")
-        .send()
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    resp.json::<AppSettings>()
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
-}
-
-/// Server function to save settings
-#[server]
-pub async fn save_settings(settings: AppSettings) -> Result<(), ServerFnError> {
-    let client = reqwest::Client::new();
-    client
-        .post("http://127.0.0.1:8088/api/settings")
-        .json(&settings)
-        .send()
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(())
-}
-
-/// Client-side script to fetch discovery status
-const DISCOVERY_SCRIPT: &str = r#"
-async function loadDiscoveryStatus() {
-    try {
-        const [roon, openhome, upnp] = await Promise.all([
-            fetch('/roon/status').then(r => r.json()).catch(() => ({ connected: false })),
-            fetch('/openhome/status').then(r => r.json()).catch(() => ({ device_count: 0 })),
-            fetch('/upnp/status').then(r => r.json()).catch(() => ({ renderer_count: 0 }))
-        ]);
-
-        // Update Roon row
-        const roonRow = document.querySelector('#discovery-table tr[data-protocol="roon"]');
-        if (roonRow) {
-            const statusCell = roonRow.querySelector('.status-cell');
-            const devicesCell = roonRow.querySelector('.devices-cell');
-            const roonEnabled = document.querySelector('input[data-adapter="roon"]')?.checked ?? true;
-
-            if (!roonEnabled) {
-                statusCell.innerHTML = '<span class="status-disabled">Disabled</span>';
-                statusCell.className = 'status-cell';
-                devicesCell.textContent = '-';
-            } else if (roon.connected) {
-                statusCell.textContent = '✓ Connected';
-                statusCell.className = 'status-cell status-ok';
-                devicesCell.textContent = roon.core_name || 'Core';
-            } else {
-                statusCell.textContent = '✗ Not connected';
-                statusCell.className = 'status-cell status-err';
-                devicesCell.textContent = '-';
-            }
-        }
-
-        // Update OpenHome row
-        const ohRow = document.querySelector('#discovery-table tr[data-protocol="openhome"]');
-        if (ohRow) {
-            const statusCell = ohRow.querySelector('.status-cell');
-            const devicesCell = ohRow.querySelector('.devices-cell');
-            const ohEnabled = document.querySelector('input[data-adapter="openhome"]')?.checked ?? false;
-
-            if (!ohEnabled) {
-                statusCell.innerHTML = '<span class="status-disabled">Disabled</span>';
-                statusCell.className = 'status-cell';
-                devicesCell.textContent = '-';
-            } else if (openhome.device_count > 0) {
-                statusCell.innerHTML = '<span class="status-ok">✓ Active</span>';
-                statusCell.className = 'status-cell';
-                devicesCell.textContent = openhome.device_count + ' device(s)';
-            } else {
-                statusCell.textContent = 'Searching...';
-                statusCell.className = 'status-cell';
-                devicesCell.textContent = '0 device(s)';
-            }
-        }
-
-        // Update UPnP row
-        const upnpRow = document.querySelector('#discovery-table tr[data-protocol="upnp"]');
-        if (upnpRow) {
-            const statusCell = upnpRow.querySelector('.status-cell');
-            const devicesCell = upnpRow.querySelector('.devices-cell');
-            const upnpEnabled = document.querySelector('input[data-adapter="upnp"]')?.checked ?? false;
-
-            if (!upnpEnabled) {
-                statusCell.innerHTML = '<span class="status-disabled">Disabled</span>';
-                statusCell.className = 'status-cell';
-                devicesCell.textContent = '-';
-            } else if (upnp.renderer_count > 0) {
-                statusCell.innerHTML = '<span class="status-ok">✓ Active</span>';
-                statusCell.className = 'status-cell';
-                devicesCell.textContent = upnp.renderer_count + ' renderer(s)';
-            } else {
-                statusCell.textContent = 'Searching...';
-                statusCell.className = 'status-cell';
-                devicesCell.textContent = '0 renderer(s)';
-            }
-        }
-    } catch (e) {
-        console.error('Failed to load discovery status:', e);
-    }
-}
-
-// Load on page load (wait for DOM) and set up SSE for updates
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadDiscoveryStatus);
-} else {
-    loadDiscoveryStatus();
-}
-
-const es = new EventSource('/events');
-es.onmessage = (e) => {
-    try {
-        const event = JSON.parse(e.data);
-        if (['RoonConnected', 'RoonDisconnected', 'OpenHomeDeviceFound', 'OpenHomeDeviceLost',
-             'UpnpRendererFound', 'UpnpRendererLost'].includes(event.type)) {
-            loadDiscoveryStatus();
-        }
-    } catch (err) { console.error('SSE parse error:', err); }
-};
-es.onerror = () => {
-    console.warn('SSE disconnected, falling back to polling');
-    es.close();
-    setInterval(loadDiscoveryStatus, 10000);
-};
-"#;
-
-/// Settings page component
+/// Settings page component.
 #[component]
 pub fn Settings() -> Element {
-    // Reactive state for adapter toggles
+    let sse = use_sse();
+
+    // Adapter toggle signals
     let mut roon_enabled = use_signal(|| true);
     let mut lms_enabled = use_signal(|| false);
     let mut openhome_enabled = use_signal(|| false);
     let mut upnp_enabled = use_signal(|| false);
 
-    // Load initial settings
-    let settings_resource = use_resource(move || async move { get_settings().await });
+    // Load settings resource
+    let settings = use_resource(|| async {
+        crate::app::api::fetch_json::<AppSettings>("/api/settings").await.ok()
+    });
 
-    // Update signals when settings load
+    // Sync settings to signals when loaded
     use_effect(move || {
-        if let Some(Ok(settings)) = settings_resource.read().as_ref() {
-            roon_enabled.set(settings.adapters.roon);
-            lms_enabled.set(settings.adapters.lms);
-            openhome_enabled.set(settings.adapters.openhome);
-            upnp_enabled.set(settings.adapters.upnp);
+        if let Some(Some(s)) = settings.read().as_ref() {
+            roon_enabled.set(s.adapters.roon);
+            lms_enabled.set(s.adapters.lms);
+            openhome_enabled.set(s.adapters.openhome);
+            upnp_enabled.set(s.adapters.upnp);
+        }
+    });
+
+    // Discovery status resources
+    let mut roon_status = use_resource(|| async {
+        crate::app::api::fetch_json::<RoonStatus>("/roon/status").await.ok()
+    });
+    let mut openhome_status = use_resource(|| async {
+        crate::app::api::fetch_json::<OpenHomeStatus>("/openhome/status").await.ok()
+    });
+    let mut upnp_status = use_resource(|| async {
+        crate::app::api::fetch_json::<UpnpStatus>("/upnp/status").await.ok()
+    });
+
+    // Refresh discovery on SSE events
+    let event_count = sse.event_count;
+    use_effect(move || {
+        let _ = event_count();
+        if sse.should_refresh_discovery() {
+            roon_status.restart();
+            openhome_status.restart();
+            upnp_status.restart();
         }
     });
 
     // Save settings handler
-    let save = move |_| {
+    let save_settings = move || {
+        let settings = AppSettings {
+            adapters: AdapterSettings {
+                roon: roon_enabled(),
+                lms: lms_enabled(),
+                openhome: openhome_enabled(),
+                upnp: upnp_enabled(),
+            },
+        };
         spawn(async move {
-            let settings = AppSettings {
-                adapters: AdapterSettings {
-                    roon: roon_enabled(),
-                    lms: lms_enabled(),
-                    openhome: openhome_enabled(),
-                    upnp: upnp_enabled(),
-                },
-            };
-            let _ = save_settings(settings).await;
+            let _ = crate::app::api::post_json_no_response("/api/settings", &settings).await;
         });
     };
+
+    let roon_st = roon_status.read().clone().flatten();
+    let openhome_st = openhome_status.read().clone().flatten();
+    let upnp_st = upnp_status.read().clone().flatten();
 
     rsx! {
         Layout {
             title: "Settings".to_string(),
             nav_active: "settings".to_string(),
-            scripts: Some(DISCOVERY_SCRIPT.to_string()),
 
             h1 { "Settings" }
 
@@ -212,11 +104,10 @@ pub fn Settings() -> Element {
                         label {
                             input {
                                 r#type: "checkbox",
-                                "data-adapter": "roon",
                                 checked: roon_enabled(),
                                 onchange: move |_| {
                                     roon_enabled.toggle();
-                                    save(());
+                                    save_settings();
                                 }
                             }
                             " Roon"
@@ -224,11 +115,10 @@ pub fn Settings() -> Element {
                         label {
                             input {
                                 r#type: "checkbox",
-                                "data-adapter": "lms",
                                 checked: lms_enabled(),
                                 onchange: move |_| {
                                     lms_enabled.toggle();
-                                    save(());
+                                    save_settings();
                                 }
                             }
                             " LMS"
@@ -236,11 +126,10 @@ pub fn Settings() -> Element {
                         label {
                             input {
                                 r#type: "checkbox",
-                                "data-adapter": "openhome",
                                 checked: openhome_enabled(),
                                 onchange: move |_| {
                                     openhome_enabled.toggle();
-                                    save(());
+                                    save_settings();
                                 }
                             }
                             " OpenHome"
@@ -248,11 +137,10 @@ pub fn Settings() -> Element {
                         label {
                             input {
                                 r#type: "checkbox",
-                                "data-adapter": "upnp",
                                 checked: upnp_enabled(),
                                 onchange: move |_| {
                                     upnp_enabled.toggle();
-                                    save(());
+                                    save_settings();
                                 }
                             }
                             " UPnP/DLNA"
@@ -280,22 +168,90 @@ pub fn Settings() -> Element {
                         }
                         tbody {
                             // Roon row
-                            tr { "data-protocol": "roon",
+                            tr {
                                 td { "Roon" }
-                                td { class: "status-cell", "Loading..." }
-                                td { class: "devices-cell", "-" }
+                                td {
+                                    if !roon_enabled() {
+                                        span { class: "status-disabled", "Disabled" }
+                                    } else if let Some(ref status) = roon_st {
+                                        if status.connected {
+                                            span { class: "status-ok", "✓ Connected" }
+                                        } else {
+                                            span { class: "status-err", "✗ Not connected" }
+                                        }
+                                    } else {
+                                        "Loading..."
+                                    }
+                                }
+                                td {
+                                    if !roon_enabled() {
+                                        "-"
+                                    } else if let Some(ref status) = roon_st {
+                                        if status.connected {
+                                            if let Some(ref name) = status.core_name {
+                                                "{name}"
+                                            } else {
+                                                "Core"
+                                            }
+                                        } else {
+                                            "-"
+                                        }
+                                    } else {
+                                        "-"
+                                    }
+                                }
                             }
                             // OpenHome row
-                            tr { "data-protocol": "openhome",
+                            tr {
                                 td { "OpenHome" }
-                                td { class: "status-cell", "Loading..." }
-                                td { class: "devices-cell", "-" }
+                                td {
+                                    if !openhome_enabled() {
+                                        span { class: "status-disabled", "Disabled" }
+                                    } else if let Some(ref status) = openhome_st {
+                                        if status.device_count > 0 {
+                                            span { class: "status-ok", "✓ Active" }
+                                        } else {
+                                            "Searching..."
+                                        }
+                                    } else {
+                                        "Loading..."
+                                    }
+                                }
+                                td {
+                                    if !openhome_enabled() {
+                                        "-"
+                                    } else if let Some(ref status) = openhome_st {
+                                        "{status.device_count} device(s)"
+                                    } else {
+                                        "-"
+                                    }
+                                }
                             }
                             // UPnP row
-                            tr { "data-protocol": "upnp",
+                            tr {
                                 td { "UPnP/DLNA" }
-                                td { class: "status-cell", "Loading..." }
-                                td { class: "devices-cell", "-" }
+                                td {
+                                    if !upnp_enabled() {
+                                        span { class: "status-disabled", "Disabled" }
+                                    } else if let Some(ref status) = upnp_st {
+                                        if status.renderer_count > 0 {
+                                            span { class: "status-ok", "✓ Active" }
+                                        } else {
+                                            "Searching..."
+                                        }
+                                    } else {
+                                        "Loading..."
+                                    }
+                                }
+                                td {
+                                    if !upnp_enabled() {
+                                        "-"
+                                    } else if let Some(ref status) = upnp_st {
+                                        "{status.renderer_count} renderer(s)"
+                                    } else {
+                                        "-"
+                                    }
+                                }
                             }
                         }
                     }

@@ -6,46 +6,83 @@ use dioxus::prelude::*;
 /// Uses localStorage for persistence and Pico CSS data-theme attribute.
 #[component]
 pub fn ThemeSwitcher() -> Element {
+    let mut current_theme = use_signal(|| "dark".to_string());
+
+    // Load theme from localStorage on mount
+    use_effect(move || {
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(window) = web_sys::window() {
+                if let Ok(Some(storage)) = window.local_storage() {
+                    if let Ok(Some(theme)) = storage.get_item("hifi-theme") {
+                        current_theme.set(theme);
+                    }
+                }
+            }
+        }
+    });
+
+    let mut set_theme = move |theme: &'static str| {
+        current_theme.set(theme.to_string());
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(window) = web_sys::window() {
+                if let Some(document) = window.document() {
+                    if let Some(root) = document.document_element() {
+                        // Set data-theme
+                        let data_theme = if theme == "black" { "dark" } else { theme };
+                        let _ = root.set_attribute("data-theme", data_theme);
+
+                        // Set/remove data-variant for black theme
+                        if theme == "black" {
+                            let _ = root.set_attribute("data-variant", "black");
+                        } else {
+                            let _ = root.remove_attribute("data-variant");
+                        }
+                    }
+                }
+
+                // Save to localStorage
+                if let Ok(Some(storage)) = window.local_storage() {
+                    let _ = storage.set_item("hifi-theme", theme);
+                }
+            }
+        }
+    };
+
+    let theme = current_theme();
+
     rsx! {
-        div {
-            class: "theme-switcher",
-            dangerous_inner_html: r#"
-                <button id="theme-light" onclick="setTheme('light')">Light</button>
-                <button id="theme-dark" onclick="setTheme('dark')">Dark</button>
-                <button id="theme-black" onclick="setTheme('black')">Black</button>
-            "#
+        div { class: "theme-switcher",
+            button {
+                id: "theme-light",
+                class: if theme == "light" { "active" } else { "" },
+                onclick: move |_| set_theme("light"),
+                "Light"
+            }
+            button {
+                id: "theme-dark",
+                class: if theme == "dark" { "active" } else { "" },
+                onclick: move |_| set_theme("dark"),
+                "Dark"
+            }
+            button {
+                id: "theme-black",
+                class: if theme == "black" { "active" } else { "" },
+                onclick: move |_| set_theme("black"),
+                "Black"
+            }
         }
     }
 }
 
-/// Client-side JavaScript for theme management (included in head).
+/// Client-side JavaScript for initial theme setup (included in head).
+/// Runs immediately to prevent flash of wrong theme.
 pub const THEME_SCRIPT: &str = r#"
 (function(){
     const t = localStorage.getItem('hifi-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', t === 'black' ? 'dark' : t);
     if (t === 'black') document.documentElement.setAttribute('data-variant', 'black');
 })();
-"#;
-
-/// Client-side JavaScript for theme switching (included in body).
-pub const THEME_FUNCTIONS: &str = r#"
-function setTheme(t) {
-    document.documentElement.setAttribute('data-theme', t === 'black' ? 'dark' : t);
-    if (t === 'black') {
-        document.documentElement.setAttribute('data-variant', 'black');
-    } else {
-        document.documentElement.removeAttribute('data-variant');
-    }
-    localStorage.setItem('hifi-theme', t);
-    updateThemeButtons();
-}
-function updateThemeButtons() {
-    const variant = document.documentElement.getAttribute('data-variant');
-    const theme = variant === 'black' ? 'black' : (document.documentElement.getAttribute('data-theme') || 'dark');
-    ['light','dark','black'].forEach(x => {
-        const btn = document.getElementById('theme-' + x);
-        if (btn) btn.classList.toggle('active', x === theme);
-    });
-}
-updateThemeButtons();
 "#;

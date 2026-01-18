@@ -1,354 +1,523 @@
 //! HQPlayer page component.
 //!
-//! HQPlayer status and DSP controls:
-//! - Configuration (host/port/credentials)
-//! - Connection status
-//! - Pipeline settings (mode, filter, shaper, sample rate)
-//! - Profiles (saved configurations)
-//! - Zone linking (connect audio zones to HQPlayer)
+//! Using Dioxus resources for async data fetching.
 
 use dioxus::prelude::*;
 
+use crate::app::api::{self, HqpConfig, HqpPipeline, HqpProfile, HqpStatus, Zone, ZonesResponse};
 use crate::app::components::Layout;
+use crate::app::sse::use_sse;
 
-/// Client-side JavaScript for the HQPlayer page.
-const HQPLAYER_SCRIPT: &str = r#"
-
-async function loadHqpConfig() {
-    const section = document.querySelector('#hqp-config article');
-    try {
-        const config = await fetch('/hqplayer/config').then(r => r.json());
-        section.removeAttribute('aria-busy');
-
-        section.innerHTML = `
-            <form id="hqp-config-form">
-                <label>Host (IP or hostname)
-                    <input type="text" name="host" value="${esc(config.host || '')}" placeholder="192.168.1.100" required>
-                </label>
-                <div class="grid">
-                    <label>Native Port (TCP)
-                        <input type="number" name="port" value="${config.port || 4321}" min="1" max="65535">
-                    </label>
-                    <label>Web Port (HTTP)
-                        <input type="number" name="web_port" value="${config.web_port || 8088}" min="1" max="65535">
-                        <small>For profile loading (HQPlayer Embedded)</small>
-                    </label>
-                </div>
-                <div class="grid">
-                    <label>Web Username
-                        <input type="text" name="username" placeholder="admin">
-                    </label>
-                    <label>Web Password
-                        <input type="password" name="password" placeholder="password">
-                    </label>
-                </div>
-                <small>Web credentials enable profile switching via HQPlayer's web UI</small>
-                <button type="submit">Save Configuration</button>
-                <span id="config-status"></span>
-            </form>
-        `;
-        document.getElementById('hqp-config-form').addEventListener('submit', saveHqpConfig);
-    } catch (e) {
-        section.removeAttribute('aria-busy');
-        section.innerHTML = `<p class="status-err">Error: ${esc(e.message)}</p>`;
-    }
+/// HQP configure request
+#[derive(Clone, serde::Serialize)]
+struct HqpConfigureRequest {
+    host: String,
+    port: u16,
+    web_port: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    password: Option<String>,
 }
 
-async function saveHqpConfig(e) {
-    e.preventDefault();
-    const form = e.target;
-    const statusEl = document.getElementById('config-status');
-    statusEl.textContent = 'Saving...';
-
-    const data = {
-        host: form.host.value,
-        port: parseInt(form.port.value) || 4321,
-        web_port: parseInt(form.web_port.value) || 8088,
-        username: form.username.value || null,
-        password: form.password.value || null
-    };
-
-    try {
-        const res = await fetch('/hqplayer/configure', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        const result = await res.json();
-        if (result.connected) {
-            statusEl.innerHTML = '<span class="status-ok">✓ Connected!</span>';
-        } else {
-            statusEl.innerHTML = '<span class="status-err">Saved but not connected</span>';
-        }
-        loadHqpStatus();
-        loadHqpPipeline();
-        loadHqpProfiles();
-    } catch (err) {
-        statusEl.innerHTML = '<span class="status-err">Error: ' + esc(err.message) + '</span>';
-    }
+/// Zone link response
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+struct ZoneLinksResponse {
+    links: Vec<ZoneLink>,
 }
 
-async function loadHqpStatus() {
-    const section = document.querySelector('#hqp-status article');
-    try {
-        const [status, pipeline] = await Promise.all([
-            fetch('/hqp/status').then(r => r.json()),
-            fetch('/hqp/pipeline').then(r => r.json()).catch(() => null)
-        ]);
-        section.removeAttribute('aria-busy');
-
-        if (!status.connected) {
-            section.innerHTML = '<p class="status-err">Not connected to HQPlayer</p>';
-            return;
-        }
-
-        const state = pipeline?.status?.state || 'Unknown';
-        const info = status.info ? ` (${esc(status.info.name || status.info.product)})` : '';
-        section.innerHTML = `
-            <p class="status-ok">✓ Connected to ${esc(status.host || 'HQPlayer')}${info}</p>
-            <p>State: <strong>${esc(state)}</strong></p>
-        `;
-    } catch (e) {
-        section.removeAttribute('aria-busy');
-        section.innerHTML = `<p class="status-err">Error: ${esc(e.message)}</p>`;
-    }
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
+struct ZoneLink {
+    zone_id: String,
+    instance: String,
 }
 
-async function loadHqpPipeline() {
-    const section = document.querySelector('#hqp-pipeline article');
-    try {
-        const data = await fetch('/hqp/pipeline').then(r => r.json());
-        section.removeAttribute('aria-busy');
-
-        const st = data.status || {};
-        const vol = data.volume || {};
-        const formatRate = (r) => r >= 1000000 ? (r/1000000).toFixed(1) + ' MHz' : (r/1000).toFixed(1) + ' kHz';
-
-        section.innerHTML = `
-            <table>
-                <tr><td>Mode</td><td>${esc(st.active_mode || st.mode || 'N/A')}</td></tr>
-                <tr><td>Filter</td><td>${esc(st.active_filter || 'N/A')}</td></tr>
-                <tr><td>Shaper</td><td>${esc(st.active_shaper || 'N/A')}</td></tr>
-                <tr><td>Sample Rate</td><td>${st.active_rate ? formatRate(st.active_rate) : 'N/A'}</td></tr>
-                <tr><td>Volume</td><td>${vol.value != null ? vol.value + ' dB' : 'N/A'}${vol.is_fixed ? ' (fixed)' : ''}</td></tr>
-            </table>
-            ${!vol.is_fixed ? `
-            <hr>
-            <label>Volume Control
-                <input type="range" min="${vol.min || -60}" max="${vol.max || 0}" value="${vol.value || -20}"
-                    oninput="this.nextElementSibling.textContent = this.value + ' dB'"
-                    onchange="setVolume(this.value)">
-                <output>${vol.value || -20} dB</output>
-            </label>
-            ` : ''}
-        `;
-    } catch (e) {
-        section.removeAttribute('aria-busy');
-        section.innerHTML = `<p class="status-err">Error: ${esc(e.message)}</p>`;
-    }
+/// HQPlayer instances response
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+struct InstancesResponse {
+    instances: Vec<HqpInstance>,
 }
 
-async function loadHqpProfiles() {
-    const section = document.querySelector('#hqp-profiles article');
-    try {
-        const profiles = await fetch('/hqp/profiles').then(r => r.json());
-        section.removeAttribute('aria-busy');
-
-        if (!profiles || !profiles.length) {
-            section.innerHTML = '<p>No profiles available</p>';
-            return;
-        }
-
-        section.innerHTML = `
-            <table id="profiles-table">
-                <thead><tr><th>Profile</th><th>Status</th><th>Action</th></tr></thead>
-                <tbody>
-                    ${profiles.map(p => `
-                        <tr>
-                            <td>${esc(p.title || p.name || p.value)}</td>
-                            <td></td>
-                            <td><button data-profile="${esc(p.value || p.title || p.name)}">Load</button></td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
-        section.querySelectorAll('button[data-profile]').forEach(btn => {
-            btn.addEventListener('click', () => loadProfile(btn.dataset.profile));
-        });
-    } catch (e) {
-        section.removeAttribute('aria-busy');
-        section.innerHTML = `<p class="status-err">Error: ${esc(e.message)}</p>`;
-    }
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
+struct HqpInstance {
+    name: String,
+    host: Option<String>,
 }
 
-async function setVolume(value) {
-    try {
-        await fetch('/hqplayer/volume', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ value: parseInt(value) })
-        });
-    } catch (e) { console.error(e); }
+/// Zone link request
+#[derive(Clone, serde::Serialize)]
+struct ZoneLinkRequest {
+    zone_id: String,
+    instance: String,
 }
 
-async function loadProfile(name) {
-    try {
-        await fetch('/hqp/profiles/load', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ profile: name })
-        });
-        setTimeout(loadHqpProfiles, 500);
-        setTimeout(loadHqpPipeline, 500);
-    } catch (e) { console.error(e); }
+/// Zone unlink request
+#[derive(Clone, serde::Serialize)]
+struct ZoneUnlinkRequest {
+    zone_id: String,
 }
-
-let zoneLinkMap = {};
-
-async function loadZoneLinks() {
-    const section = document.querySelector('#hqp-zone-links article');
-    try {
-        const [linksRes, instancesRes, zonesRes] = await Promise.all([
-            fetch('/hqp/zones/links').then(r => r.json()).catch(() => []),
-            fetch('/hqp/instances').then(r => r.json()).catch(() => ({ instances: [] })),
-            fetch('/knob/zones').then(r => r.json()).catch(() => ({ zones: [] }))
-        ]);
-
-        section.removeAttribute('aria-busy');
-        const hqpInstances = instancesRes.instances || instancesRes || [];
-        const zones = zonesRes.zones || zonesRes || [];
-        const links = linksRes.links || linksRes || [];
-
-        zoneLinkMap = {};
-        links.forEach(l => { zoneLinkMap[l.zone_id] = l.instance; });
-
-        if (!zones.length) {
-            section.innerHTML = '<p>No audio zones available. Check that adapters are connected.</p>';
-            return;
-        }
-
-        const instanceOptions = hqpInstances.length > 0
-            ? hqpInstances.map(i => `<option value="${esc(i.name)}">${esc(i.name)} (${esc(i.host || 'unconfigured')})</option>`).join('')
-            : '<option value="default">default</option>';
-
-        const getBackend = (zid) => {
-            if (zid.startsWith('lms:')) return 'LMS';
-            if (zid.startsWith('openhome:')) return 'OpenHome';
-            if (zid.startsWith('upnp:')) return 'UPnP';
-            return 'Roon';
-        };
-
-        section.innerHTML = `
-            <table id="zone-links-table">
-                <thead><tr><th>Zone</th><th>Source</th><th>HQPlayer Instance</th><th>Action</th></tr></thead>
-                <tbody>
-                    ${zones.map(z => {
-                        const linked = zoneLinkMap[z.zone_id];
-                        const backend = getBackend(z.zone_id);
-                        return `
-                        <tr data-zone-id="${esc(z.zone_id)}">
-                            <td>${esc(z.zone_name)}</td>
-                            <td><small>${backend}</small></td>
-                            <td>${linked ? `<strong>${esc(linked)}</strong>` : `<select class="hqp-instance-select">${instanceOptions}</select>`}</td>
-                            <td>${linked ? `<button class="unlink-btn outline secondary">Unlink</button>` : `<button class="link-btn">Link</button>`}</td>
-                        </tr>`;
-                    }).join('')}
-                </tbody>
-            </table>
-        `;
-
-        section.querySelectorAll('.link-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const row = btn.closest('tr');
-                const zoneId = row.dataset.zoneId;
-                const select = row.querySelector('.hqp-instance-select');
-                const instanceName = select ? select.value : 'default';
-                btn.disabled = true;
-                try {
-                    await fetch('/hqp/zones/link', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ zone_id: zoneId, instance: instanceName })
-                    });
-                    loadZoneLinks();
-                } catch (e) { btn.disabled = false; }
-            });
-        });
-
-        section.querySelectorAll('.unlink-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const row = btn.closest('tr');
-                const zoneId = row.dataset.zoneId;
-                btn.disabled = true;
-                try {
-                    await fetch('/hqp/zones/unlink', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ zone_id: zoneId })
-                    });
-                    loadZoneLinks();
-                } catch (e) { btn.disabled = false; }
-            });
-        });
-    } catch (e) {
-        section.removeAttribute('aria-busy');
-        section.innerHTML = `<p class="status-err">Error: ${esc(e.message)}</p>`;
-    }
-}
-
-loadHqpConfig();
-loadHqpStatus();
-loadHqpPipeline();
-loadHqpProfiles();
-loadZoneLinks();
-
-const es = new EventSource('/events');
-es.onmessage = (e) => {
-    try {
-        const event = JSON.parse(e.data);
-        if (['HqpConnected', 'HqpDisconnected', 'HqpStateChanged'].includes(event.type)) loadHqpStatus();
-        if (['HqpConnected', 'HqpPipelineChanged'].includes(event.type)) loadHqpPipeline();
-        if (['ZoneUpdated', 'ZoneRemoved', 'RoonConnected', 'RoonDisconnected', 'LmsConnected', 'LmsDisconnected'].includes(event.type)) loadZoneLinks();
-    } catch (err) {}
-};
-es.onerror = () => { es.close(); setInterval(loadHqpStatus, 5000); };
-"#;
 
 /// HQPlayer page component.
 #[component]
 pub fn HqPlayer() -> Element {
+    let sse = use_sse();
+
+    // Form fields
+    let mut host = use_signal(String::new);
+    let mut port = use_signal(|| 4321u16);
+    let mut web_port = use_signal(|| 8088u16);
+    let mut username = use_signal(String::new);
+    let mut password = use_signal(String::new);
+    let mut config_status = use_signal(|| None::<String>);
+
+    // Load config resource
+    let config = use_resource(|| async {
+        api::fetch_json::<HqpConfig>("/hqplayer/config").await.ok()
+    });
+
+    // Load status resource
+    let mut status = use_resource(|| async {
+        api::fetch_json::<HqpStatus>("/hqp/status").await.ok()
+    });
+
+    // Load pipeline resource
+    let mut pipeline = use_resource(|| async {
+        api::fetch_json::<HqpPipeline>("/hqp/pipeline").await.ok()
+    });
+
+    // Load profiles resource
+    let profiles = use_resource(|| async {
+        api::fetch_json::<Vec<HqpProfile>>("/hqp/profiles").await.ok()
+    });
+
+    // Load zones resource
+    let mut zones = use_resource(|| async {
+        api::fetch_json::<ZonesResponse>("/knob/zones").await.ok()
+    });
+
+    // Load zone links resource
+    let mut zone_links = use_resource(|| async {
+        api::fetch_json::<ZoneLinksResponse>("/hqp/zones/links").await.ok()
+    });
+
+    // Load instances resource
+    let instances = use_resource(|| async {
+        api::fetch_json::<InstancesResponse>("/hqp/instances").await.ok()
+    });
+
+    // Sync config to form when loaded
+    use_effect(move || {
+        if let Some(Some(cfg)) = config.read().as_ref() {
+            host.set(cfg.host.clone().unwrap_or_default());
+            port.set(cfg.port.unwrap_or(4321));
+            web_port.set(cfg.web_port.unwrap_or(8088));
+        }
+    });
+
+    // Refresh on SSE events
+    let event_count = sse.event_count;
+    use_effect(move || {
+        let _ = event_count();
+        if sse.should_refresh_hqp() {
+            status.restart();
+            pipeline.restart();
+        }
+        if sse.should_refresh_zones() {
+            zones.restart();
+            zone_links.restart();
+        }
+    });
+
+    // Save config handler
+    let save_config = move |_| {
+        let h = host();
+        let p = port();
+        let wp = web_port();
+        let u = username();
+        let pw = password();
+
+        config_status.set(Some("Saving...".to_string()));
+
+        spawn(async move {
+            let req = HqpConfigureRequest {
+                host: h,
+                port: p,
+                web_port: wp,
+                username: if u.is_empty() { None } else { Some(u) },
+                password: if pw.is_empty() { None } else { Some(pw) },
+            };
+
+            match api::post_json::<_, serde_json::Value>("/hqplayer/configure", &req).await {
+                Ok(resp) => {
+                    let connected = resp.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if connected {
+                        config_status.set(Some("Connected!".to_string()));
+                    } else {
+                        config_status.set(Some("Saved but not connected".to_string()));
+                    }
+                    status.restart();
+                    pipeline.restart();
+                }
+                Err(e) => {
+                    config_status.set(Some(format!("Error: {}", e)));
+                }
+            }
+        });
+    };
+
+    // Zone link handler
+    let link_zone = move |(zone_id, instance): (String, String)| {
+        spawn(async move {
+            let req = ZoneLinkRequest { zone_id, instance };
+            let _ = api::post_json_no_response("/hqp/zones/link", &req).await;
+            zone_links.restart();
+        });
+    };
+
+    // Zone unlink handler
+    let unlink_zone = move |zone_id: String| {
+        spawn(async move {
+            let req = ZoneUnlinkRequest { zone_id };
+            let _ = api::post_json_no_response("/hqp/zones/unlink", &req).await;
+            zone_links.restart();
+        });
+    };
+
+    let is_loading = config.read().is_none();
+    let current_status = status.read().clone().flatten();
+    let current_pipeline = pipeline.read().clone().flatten();
+    let profiles_list = profiles.read().clone().flatten().unwrap_or_default();
+    let zones_list = zones.read().clone().flatten().map(|r| r.zones).unwrap_or_default();
+    let links_list = zone_links.read().clone().flatten().map(|r| r.links).unwrap_or_default();
+    let instances_list = instances.read().clone().flatten().map(|r| r.instances).unwrap_or_default();
+
     rsx! {
         Layout {
             title: "HQPlayer".to_string(),
             nav_active: "hqplayer".to_string(),
-            scripts: Some(HQPLAYER_SCRIPT.to_string()),
 
             h1 { "HQPlayer" }
 
+            // Configuration section
             section { id: "hqp-config",
-                hgroup { h2 { "Configuration" } p { "HQPlayer connection settings" } }
-                article { aria_busy: "true", "Loading..." }
+                hgroup {
+                    h2 { "Configuration" }
+                    p { "HQPlayer connection settings" }
+                }
+                article {
+                    label {
+                        "Host (IP or hostname)"
+                        input {
+                            r#type: "text",
+                            placeholder: "192.168.1.100",
+                            value: "{host}",
+                            oninput: move |evt| host.set(evt.value())
+                        }
+                    }
+                    div { class: "grid",
+                        label {
+                            "Native Port (TCP)"
+                            input {
+                                r#type: "number",
+                                min: "1",
+                                max: "65535",
+                                value: "{port}",
+                                oninput: move |evt| {
+                                    if let Ok(p) = evt.value().parse() {
+                                        port.set(p);
+                                    }
+                                }
+                            }
+                        }
+                        label {
+                            "Web Port (HTTP)"
+                            input {
+                                r#type: "number",
+                                min: "1",
+                                max: "65535",
+                                value: "{web_port}",
+                                oninput: move |evt| {
+                                    if let Ok(p) = evt.value().parse() {
+                                        web_port.set(p);
+                                    }
+                                }
+                            }
+                            small { "For profile loading (HQPlayer Embedded)" }
+                        }
+                    }
+                    div { class: "grid",
+                        label {
+                            "Web Username"
+                            input {
+                                r#type: "text",
+                                placeholder: "admin",
+                                value: "{username}",
+                                oninput: move |evt| username.set(evt.value())
+                            }
+                        }
+                        label {
+                            "Web Password"
+                            input {
+                                r#type: "password",
+                                placeholder: "password",
+                                value: "{password}",
+                                oninput: move |evt| password.set(evt.value())
+                            }
+                        }
+                    }
+                    small { "Web credentials enable profile switching via HQPlayer's web UI" }
+                    br {}
+                    button { onclick: save_config, "Save Configuration" }
+                    if let Some(ref status_msg) = config_status() {
+                        span { style: "margin-left:1rem;",
+                            if status_msg.contains("Connected") {
+                                span { class: "status-ok", "✓ {status_msg}" }
+                            } else if status_msg.starts_with("Error") {
+                                span { class: "status-err", "{status_msg}" }
+                            } else {
+                                "{status_msg}"
+                            }
+                        }
+                    }
+                }
             }
 
+            // Connection Status section
             section { id: "hqp-status",
-                hgroup { h2 { "Connection Status" } p { "HQPlayer DSP engine connection" } }
-                article { aria_busy: "true", "Loading..." }
+                hgroup {
+                    h2 { "Connection Status" }
+                    p { "HQPlayer DSP engine connection" }
+                }
+                article {
+                    if let Some(ref s) = current_status {
+                        if s.connected {
+                            p { class: "status-ok",
+                                "✓ Connected to {s.host.as_deref().unwrap_or(\"HQPlayer\")}"
+                            }
+                        } else {
+                            p { class: "status-err", "Not connected to HQPlayer" }
+                        }
+                    } else if is_loading {
+                        p { aria_busy: "true", "Loading..." }
+                    } else {
+                        p { class: "status-err", "Not connected to HQPlayer" }
+                    }
+                }
             }
 
+            // Pipeline Settings section
             section { id: "hqp-pipeline",
-                hgroup { h2 { "Pipeline Settings" } p { "Current DSP configuration" } }
-                article { aria_busy: "true", "Loading..." }
+                hgroup {
+                    h2 { "Pipeline Settings" }
+                    p { "Current DSP configuration" }
+                }
+                article {
+                    if let Some(ref pipe) = current_pipeline {
+                        PipelineDisplay { pipeline: pipe.clone() }
+                    } else if is_loading {
+                        p { aria_busy: "true", "Loading..." }
+                    } else {
+                        p { class: "status-err", "Pipeline not available" }
+                    }
+                }
             }
 
+            // Profiles section
             section { id: "hqp-profiles",
-                hgroup { h2 { "Profiles" } p { "Saved configurations (requires web credentials)" } }
-                article { aria_busy: "true", "Loading..." }
+                hgroup {
+                    h2 { "Profiles" }
+                    p { "Saved configurations (requires web credentials)" }
+                }
+                article {
+                    if profiles_list.is_empty() {
+                        p { "No profiles available" }
+                    } else {
+                        table {
+                            thead {
+                                tr {
+                                    th { "Profile" }
+                                    th { "Action" }
+                                }
+                            }
+                            tbody {
+                                for profile in profiles_list {
+                                    tr {
+                                        td { "{profile.title.as_deref().or(profile.name.as_deref()).unwrap_or(\"Unknown\")}" }
+                                        td {
+                                            button { "Load" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
+            // Zone Linking section
             section { id: "hqp-zone-links",
-                hgroup { h2 { "Zone Linking" } p { "Link audio zones to HQPlayer for DSP processing" } }
-                article { aria_busy: "true", "Loading..." }
+                hgroup {
+                    h2 { "Zone Linking" }
+                    p { "Link audio zones to HQPlayer for DSP processing" }
+                }
+                article {
+                    ZoneLinkTable {
+                        zones: zones_list,
+                        links: links_list,
+                        instances: instances_list,
+                        on_link: link_zone,
+                        on_unlink: unlink_zone,
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Pipeline display component
+#[component]
+fn PipelineDisplay(pipeline: HqpPipeline) -> Element {
+    let status = pipeline.status.as_ref();
+    let volume = pipeline.volume.as_ref();
+
+    let format_rate = |r: u64| {
+        if r >= 1_000_000 {
+            format!("{:.1} MHz", r as f64 / 1_000_000.0)
+        } else {
+            format!("{:.1} kHz", r as f64 / 1_000.0)
+        }
+    };
+
+    rsx! {
+        table {
+            tr {
+                td { "Mode" }
+                td { "{status.and_then(|s| s.active_mode.as_deref()).unwrap_or(\"N/A\")}" }
+            }
+            tr {
+                td { "Filter" }
+                td { "{status.and_then(|s| s.active_filter.as_deref()).unwrap_or(\"N/A\")}" }
+            }
+            tr {
+                td { "Shaper" }
+                td { "{status.and_then(|s| s.active_shaper.as_deref()).unwrap_or(\"N/A\")}" }
+            }
+            tr {
+                td { "Sample Rate" }
+                td {
+                    if let Some(rate) = status.and_then(|s| s.active_rate) {
+                        "{format_rate(rate)}"
+                    } else {
+                        "N/A"
+                    }
+                }
+            }
+            tr {
+                td { "Volume" }
+                td {
+                    if let Some(v) = volume.and_then(|vol| vol.value) {
+                        "{v} dB"
+                        if volume.map(|vol| vol.is_fixed).unwrap_or(false) {
+                            " (fixed)"
+                        }
+                    } else {
+                        "N/A"
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Zone link table component
+#[component]
+fn ZoneLinkTable(
+    zones: Vec<Zone>,
+    links: Vec<ZoneLink>,
+    instances: Vec<HqpInstance>,
+    on_link: EventHandler<(String, String)>,
+    on_unlink: EventHandler<String>,
+) -> Element {
+    if zones.is_empty() {
+        return rsx! {
+            p { "No audio zones available. Check that adapters are connected." }
+        };
+    }
+
+    // Build a map of zone_id -> instance
+    let link_map: std::collections::HashMap<_, _> = links.iter().map(|l| (l.zone_id.clone(), l.instance.clone())).collect();
+
+    let get_backend = |zone_id: &str| {
+        if zone_id.starts_with("lms:") {
+            "LMS"
+        } else if zone_id.starts_with("openhome:") {
+            "OpenHome"
+        } else if zone_id.starts_with("upnp:") {
+            "UPnP"
+        } else {
+            "Roon"
+        }
+    };
+
+    rsx! {
+        table {
+            thead {
+                tr {
+                    th { "Zone" }
+                    th { "Source" }
+                    th { "HQPlayer Instance" }
+                    th { "Action" }
+                }
+            }
+            tbody {
+                for zone in zones {
+                    {
+                        let zone_id = zone.zone_id.clone();
+                        let zone_id_link = zone_id.clone();
+                        let zone_id_unlink = zone_id.clone();
+                        let linked = link_map.get(&zone_id).cloned();
+                        let backend = get_backend(&zone_id);
+
+                        rsx! {
+                            tr {
+                                td { "{zone.zone_name}" }
+                                td { small { "{backend}" } }
+                                td {
+                                    if let Some(ref inst) = linked {
+                                        strong { "{inst}" }
+                                    } else {
+                                        select {
+                                            if instances.is_empty() {
+                                                option { value: "default", "default" }
+                                            } else {
+                                                for inst in instances.iter() {
+                                                    option {
+                                                        value: "{inst.name}",
+                                                        "{inst.name} ({inst.host.as_deref().unwrap_or(\"unconfigured\")})"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                td {
+                                    if linked.is_some() {
+                                        button {
+                                            class: "outline secondary",
+                                            onclick: move |_| on_unlink.call(zone_id_unlink.clone()),
+                                            "Unlink"
+                                        }
+                                    } else {
+                                        button {
+                                            onclick: move |_| on_link.call((zone_id_link.clone(), "default".to_string())),
+                                            "Link"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
