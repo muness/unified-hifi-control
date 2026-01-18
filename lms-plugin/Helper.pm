@@ -35,11 +35,11 @@ use constant RESTART_RESET_TIME    => 300; # reset counter after 5 min stable
 use constant BINARY_BASE_URL => 'https://github.com/open-horizon-labs/unified-hifi-control/releases/download';
 use constant WEB_ASSETS_FILE => 'web-assets.tar.gz';
 use constant BINARY_MAP => {
-    'darwin-arm64'   => 'unified-hifi-darwin-arm64',
-    'darwin-x86_64'  => 'unified-hifi-darwin-x86_64',
-    'linux-x86_64'   => 'unified-hifi-linux-x86_64',
-    'linux-aarch64'  => 'unified-hifi-linux-aarch64',
-    'linux-armv7l'   => 'unified-hifi-linux-armv7l',
+    'darwin-arm64'   => 'unified-hifi-macos-universal',
+    'darwin-x86_64'  => 'unified-hifi-macos-universal',
+    'linux-x86_64'   => 'unified-hifi-linux-x64',
+    'linux-aarch64'  => 'unified-hifi-linux-arm64',
+    'linux-armv7l'   => 'unified-hifi-linux-armv7',
     'win64'          => 'unified-hifi-win64.exe',
 };
 

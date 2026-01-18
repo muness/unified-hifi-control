@@ -75,9 +75,6 @@ jobs:
   build-linux:
     name: Build Linux (musl static)
     runs-on: ubuntu-latest
-    env:
-      # Set CARGO_HOME inside workspace so cross container can mount it
-      CARGO_HOME: ${{ github.workspace }}/.cargo
     strategy:
       matrix:
         include:
@@ -95,28 +92,30 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache Rust (cross builds)
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          # Cross builds need all crates cached, not just dependencies
-          cache-all-crates: true
-          # shared-key replaces automatic job-based key entirely, ensuring each target
-          # gets a completely separate cache (key only adds a suffix to shared prefix)
-          shared-key: cross-${{ matrix.target }}
+          shared-key: zigbuild-${{ matrix.target }}
 
-      - name: Cache cross
-        id: cache-cross
-        uses: actions/cache@v4
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@v2
         with:
-          path: ${{ github.workspace }}/.cargo/bin/cross
-          key: cross-0.2.5
+          tool: cargo-zigbuild
 
-      - name: Install cross
-        if: steps.cache-cross.outputs.cache-hit != 'true'
-        run: cargo install cross@0.2.5
+      - name: Build with zigbuild
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+        run: cargo zigbuild --release --target ${{ matrix.target }}
 
-      - name: Build with cross
-        run: $CARGO_HOME/bin/cross build --release --target ${{ matrix.target }}
+      - name: Smoke test armv7 binary
+        if: matrix.target == 'armv7-unknown-linux-musleabihf'
+        run: |
+          sudo apt-get update && sudo apt-get install -y qemu-user-static
+          qemu-arm-static ./target/${{ matrix.target }}/release/unified-hifi-control --version
 
       - name: Rename binary
         run: |
@@ -148,22 +147,15 @@ jobs:
           retention-days: 1
 
   build-macos:
-    name: Build macOS
+    name: Build macOS (universal)
     runs-on: macos-latest
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-apple-darwin
-            output: unified-hifi-macos-x64
-          - target: aarch64-apple-darwin
-            output: unified-hifi-macos-arm64
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -171,35 +163,27 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Build
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Build universal binary
         env:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: "sccache"
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo zigbuild --release --target universal2-apple-darwin
 
-      - name: Rename binary
+      - name: Package binary
         run: |
           mkdir -p dist/bin
-          cp target/${{ matrix.target }}/release/unified-hifi-control dist/bin/${{ matrix.output }}
-
-      - name: Create LMS-compatible binary names
-        run: |
-          cd dist/bin
-          # Create LMS-compatible names for on-demand download
-          case "${{ matrix.output }}" in
-            unified-hifi-macos-x64)
-              cp unified-hifi-macos-x64 unified-hifi-darwin-x86_64
-              ;;
-            unified-hifi-macos-arm64)
-              cp unified-hifi-macos-arm64 unified-hifi-darwin-arm64
-              ;;
-          esac
-          ls -la
+          cp target/universal2-apple-darwin/release/unified-hifi-control dist/bin/unified-hifi-macos-universal
+          ls -la dist/bin/
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.target }}
+          name: binary-macos-universal
           path: dist/bin/
           retention-days: 1
 

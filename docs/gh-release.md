@@ -4,13 +4,13 @@ This document explains the caching and artifact reuse strategies in `.github/wor
 
 ## Overview
 
-The release workflow builds for 6 targets across 3 platforms, plus web assets, Docker images, and platform-specific packages. Without caching, each release would take 30+ minutes and compile identical dependencies repeatedly.
+The release workflow builds for 5 targets across 3 platforms, plus web assets, Docker images, and platform-specific packages. Using cargo-zigbuild enables effective caching for cross-compiled targets.
 
 ## Caching Strategies
 
-### 1. sccache + rust-cache for Native Builds
+### 1. sccache + rust-cache for All Builds
 
-**Used by:** Web Assets (WASM), macOS, Windows
+**Used by:** All builds (Web Assets, macOS, Windows, Linux)
 
 **Why both?** They cache different things:
 - **sccache**: Caches individual compilation units (`.o` files)
@@ -33,24 +33,45 @@ Proc-macros (serde_derive, dioxus, thiserror, etc.) can't be cached by sccache d
   run: cargo build --release
 ```
 
-### 2. rust-cache for Cross Builds
+### 2. cargo-zigbuild for Cross-Compilation
 
-**Used by:** Linux musl builds (x86_64, aarch64, armv7)
+**Used by:** Linux musl builds (x86_64, aarch64, armv7), macOS universal
 
-**Why:** Cross-compiled builds use the [cross](https://github.com/cross-rs/cross) tool which runs inside Docker containers. The host's sccache is not accessible from inside these containers.
+**Why zigbuild instead of cross:** The [cross](https://github.com/cross-rs/cross) tool runs cargo inside Docker containers, which breaks caching - container paths (`/project/`) don't match host paths, invalidating Cargo's fingerprints.
 
-**How:**
+[cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) uses Zig as a linker for cross-compilation without containers. This means:
+- sccache works normally (no container isolation)
+- rust-cache preserves compiled artifacts
+- No Docker image pulls (~15s saved per build)
+- Supports `universal2-apple-darwin` for fat macOS binaries
+
+**Linux builds:**
 ```yaml
-- name: Cache Rust (cross builds)
-  uses: Swatinem/rust-cache@v2
+- name: Install cargo-zigbuild
+  uses: taiki-e/install-action@v2
   with:
-    cache-all-crates: true
-    shared-key: cross-${{ matrix.target }}
+    tool: cargo-zigbuild
+
+- name: Build with zigbuild
+  env:
+    SCCACHE_GHA_ENABLED: "true"
+    RUSTC_WRAPPER: "sccache"
+  run: cargo zigbuild --release --target ${{ matrix.target }}
+
+- name: Smoke test armv7 binary
+  if: matrix.target == 'armv7-unknown-linux-musleabihf'
+  run: |
+    sudo apt-get install -y qemu-user-static
+    qemu-arm-static ./target/${{ matrix.target }}/release/binary --version
 ```
 
-**Why `shared-key` instead of `key`:** The `key` parameter only adds a suffix to the automatic job-based cache key. Since all Linux matrix jobs run on the same OS/arch runner, they can collide and restore each other's caches. Using `shared-key` completely replaces the automatic key, ensuring each target triple gets a completely separate cache.
+**macOS universal binary:**
+```yaml
+- name: Build universal binary
+  run: cargo zigbuild --release --target universal2-apple-darwin
+```
 
-**Why this works:** Cross mounts the host's `target/` directory into the container, so rust-cache's directory-based caching is effective here.
+This creates a single fat binary that works on both x86_64 and arm64 Macs, eliminating the need for separate builds.
 
 ### 3. Tool Binary Caching
 
@@ -65,15 +86,6 @@ Proc-macros (serde_derive, dioxus, thiserror, etc.) can't be cached by sccache d
 - name: Install Dioxus CLI
   if: steps.cache-dx.outputs.cache-hit != 'true'
   run: cargo install dioxus-cli@0.7.3 --locked
-```
-
-**Cross:**
-```yaml
-- name: Cache cross
-  uses: actions/cache@v4
-  with:
-    path: ${{ github.workspace }}/.cargo/bin/cross
-    key: cross-0.2.5
 ```
 
 **Why:** These tools take 2-3 minutes to compile. Caching the binaries saves this time on every run.
@@ -122,29 +134,26 @@ The LMS plugin downloads this tarball at runtime since it can't bundle large bin
 
 ## Build Matrix
 
-| Target | Caching | Base Image |
+| Target | Caching | Build Tool |
 |--------|---------|------------|
-| Web Assets (WASM) | sccache + rust-cache | N/A |
-| macOS x86_64 | sccache + rust-cache | N/A |
-| macOS aarch64 | sccache + rust-cache | N/A |
-| Windows x86_64 | sccache + rust-cache | N/A |
-| Linux x86_64-musl | rust-cache | GHCR |
-| Linux aarch64-musl | rust-cache | GHCR |
-| Linux armv7-musl | rust-cache | GHCR |
-| Docker multi-arch | N/A | GHCR |
+| Web Assets (WASM) | sccache + rust-cache | dx (dioxus-cli) |
+| macOS universal | sccache + rust-cache | cargo-zigbuild |
+| Windows x86_64 | sccache + rust-cache | cargo |
+| Linux x86_64-musl | sccache + rust-cache | cargo-zigbuild |
+| Linux aarch64-musl | sccache + rust-cache | cargo-zigbuild |
+| Linux armv7-musl | sccache + rust-cache | cargo-zigbuild |
+| Docker multi-arch | N/A | pre-built binaries |
 
 ## Lessons Learned
 
-1. **sccache + rust-cache:** Use both for native builds. sccache caches compilation units, rust-cache caches proc-macro dylibs. For containerized builds (cross), use rust-cache only since sccache can't run inside the container.
+1. **sccache + rust-cache:** Use both for all builds. sccache caches compilation units, rust-cache caches proc-macro dylibs and the target directory.
 
-2. **CARGO_HOME placement:** For cross builds, set `CARGO_HOME` inside the workspace so the container can mount it:
-   ```yaml
-   env:
-     CARGO_HOME: ${{ github.workspace }}/.cargo
-   ```
+2. **Avoid containerized cross-compilation:** Tools like `cross` run cargo in Docker containers, breaking Cargo's fingerprint-based caching (paths don't match). Use `cargo-zigbuild` instead - it cross-compiles without containers so caching works normally.
 
-3. **Cross binary path:** Use full path `$CARGO_HOME/bin/cross` since the modified `CARGO_HOME` isn't in `$PATH`.
+3. **Universal macOS binaries:** Use `cargo zigbuild --target universal2-apple-darwin` to create a single fat binary for both x86_64 and arm64, halving macOS build jobs.
 
-4. **Registry choice matters:** GHCR from GitHub Actions is ~10x faster than external registries due to network locality.
+4. **QEMU for cross-arch testing:** Test armv7 binaries on x86_64 runners using `qemu-user-static` for smoke tests.
 
-5. **Tool version pinning:** Pin tool versions in cache keys (`dx-cli-0.7.3`, `cross-0.2.5`) to ensure cache invalidation on upgrades.
+5. **Registry choice matters:** GHCR from GitHub Actions is ~10x faster than external registries due to network locality.
+
+6. **Tool version pinning:** Pin tool versions in cache keys (`dx-cli-0.7.3`) to ensure cache invalidation on upgrades.
