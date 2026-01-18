@@ -247,18 +247,20 @@ dx build --release --platform web
 ### Run
 
 ```bash
-# Recommended: Use dx serve for development (builds + runs + hot reload)
-PORT=8088 dx serve --release --platform web --features web --port 8088
+# Run the server (from dx build output directory)
+cd target/dx/unified-hifi-control/release/web
+PORT=8088 ./unified-hifi-control
 
 # Access at http://127.0.0.1:8088
 ```
 
-For production deployment, run the binary directly from the dx output directory:
+For development with hot reload:
 
 ```bash
-./target/dx/unified-hifi-control/release/web/unified-hifi-control
-# Access at http://127.0.0.1:8088
+PORT=8088 dx serve --release --platform web --features web --port 8088
 ```
+
+**Note:** `dx serve` runs a dev server proxy which may cause issues with Roon discovery (wrong port advertised). For testing with Roon, run the binary directly.
 
 **Important:** The server must be run from the `dx build` output directory where the `public/wasm/` folder exists. Running the binary from elsewhere will cause a panic or non-functional UI.
 

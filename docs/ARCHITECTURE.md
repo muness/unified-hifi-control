@@ -59,6 +59,44 @@ A source-agnostic hi-fi control platform where **complexity is absorbed by the b
 - Flushes zones on `AdapterStopping`
 - API calls this, never adapters directly
 
+### SSE (Server-Sent Events)
+Real-time event streaming for clients via `/events` endpoint.
+
+**Endpoint:** `GET /events`
+
+**Event Types:**
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `RoonConnected` | — | Roon core discovered |
+| `RoonDisconnected` | — | Roon core lost |
+| `ZoneUpdated` | `{ zone_id }` | Zone state changed |
+| `ZoneRemoved` | `{ zone_id }` | Zone no longer available |
+| `NowPlayingChanged` | `{ zone_id }` | Track/playback changed |
+| `VolumeChanged` | `{ zone_id }` | Volume level changed |
+| `SeekPositionChanged` | `{ zone_id }` | Playback position changed |
+| `HqpConnected` | — | HQPlayer connected |
+| `HqpDisconnected` | — | HQPlayer disconnected |
+| `HqpStateChanged` | — | HQPlayer state changed |
+| `HqpPipelineChanged` | — | HQPlayer DSP pipeline changed |
+| `LmsConnected` | — | LMS server connected |
+| `LmsDisconnected` | — | LMS server disconnected |
+| `LmsPlayerStateChanged` | `{ player_id }` | LMS player state changed |
+| `OpenHomeDeviceFound` | — | OpenHome device discovered |
+| `OpenHomeDeviceLost` | — | OpenHome device lost |
+| `UpnpRendererFound` | — | UPnP renderer discovered |
+| `UpnpRendererLost` | — | UPnP renderer lost |
+
+**Message Format:**
+```json
+{"type":"NowPlayingChanged","payload":{"zone_id":"roon:1234567890"}}
+```
+
+**Usage:**
+- Web UI uses EventSource API for reactive updates
+- Any HTTP client can subscribe (curl, ESP32, etc.)
+- Auto-reconnects on connection loss (EventSource spec)
+- Closes gracefully on server shutdown
+
 ## Principles
 
 1. **Disabled adapter = not started = nothing to show**

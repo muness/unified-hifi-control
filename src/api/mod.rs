@@ -19,7 +19,7 @@ use axum::{
     },
     Json,
 };
-use futures::stream::{self, Stream};
+use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -704,11 +704,12 @@ pub async fn events_handler(
             }
             Err(_) => None, // Skip lagged messages
         })
-        // Ensure guard lives until stream ends (decrements counter on drop)
-        .chain(stream::once(async move {
-            drop(guard);
-            std::future::pending::<Result<Event, Infallible>>().await
-        }));
+        // Use map + flatten to attach guard lifetime to stream
+        // When stream ends, guard is dropped (decrementing counter)
+        .map(move |item| {
+            let _ = &guard; // Keep guard alive while stream produces items
+            item
+        });
 
     Sse::new(stream).keep_alive(
         KeepAlive::new()
