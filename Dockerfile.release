@@ -1,6 +1,7 @@
 # Minimal runtime image using pre-built musl binary
 # Used by CI - expects binary and assets in build context
-FROM alpine:3.20
+# Use Chainguard's wolfi-base - avoids Docker Hub rate limits
+FROM cgr.dev/chainguard/wolfi-base:latest
 
 WORKDIR /app
 
