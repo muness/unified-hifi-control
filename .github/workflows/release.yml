@@ -24,6 +24,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: "wasm-build"
           cache-directories: target/dx
 
       - name: Cache Dioxus CLI
