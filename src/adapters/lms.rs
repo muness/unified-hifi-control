@@ -96,11 +96,12 @@ pub enum CliEvent {
         /// Playlist index for newsong events
         index: Option<u32>,
     },
-    /// Mixer changed (volume)
+    /// Mixer changed (volume, muting)
     Mixer {
         player_id: String,
         param: String,
-        value: i32,
+        /// Value is None when parsing fails (avoids silent conversion to 0)
+        value: Option<i32>,
     },
     /// Power state changed
     Power { player_id: String, state: bool },
@@ -161,7 +162,7 @@ pub fn parse_cli_event(line: &str) -> CliEvent {
         }
         "mixer" => {
             let param = parts.get(2).copied().unwrap_or("volume");
-            let value = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let value = parts.get(3).and_then(|s| s.parse().ok());
 
             CliEvent::Mixer {
                 player_id,
@@ -1270,6 +1271,15 @@ async fn handle_cli_event(
             param,
             value,
         } => {
+            // Only process mixer events when value was successfully parsed
+            let Some(value) = value else {
+                debug!(
+                    "Ignoring mixer event with unparseable value for {}: {}",
+                    player_id, param
+                );
+                return;
+            };
+
             if param == "volume" {
                 debug!("Volume change for {}: {}", player_id, value);
 
@@ -1334,31 +1344,59 @@ async fn handle_cli_event(
 
             match action.as_str() {
                 "new" | "reconnect" => {
-                    // New client - refresh player list
-                    if let Ok(status) = rpc.get_player_status(&player_id).await {
-                        let mut s = state.write().await;
-                        let is_new = !s.players.contains_key(&player_id);
+                    // Get status and player name before locking state
+                    let Ok(status) = rpc.get_player_status(&player_id).await else {
+                        return;
+                    };
 
-                        // Create or update player
-                        let player = LmsPlayer {
-                            playerid: player_id.clone(),
-                            connected: true,
-                            power: status.power,
-                            state: status.state,
-                            mode: status.mode,
-                            volume: status.volume,
-                            title: status.title,
-                            artist: status.artist,
-                            album: status.album,
-                            ..Default::default()
-                        };
+                    // Try to get player name from existing state first (for reconnect)
+                    let existing_name = {
+                        let s = state.read().await;
+                        s.players
+                            .get(&player_id)
+                            .map(|p| p.name.clone())
+                            .filter(|n| !n.is_empty())
+                    };
 
-                        s.players.insert(player_id.clone(), player.clone());
+                    // If no existing name, fetch from player list; fall back to player_id
+                    let player_name = match existing_name {
+                        Some(name) => name,
+                        None => match rpc.get_players().await {
+                            Ok(players) => players
+                                .iter()
+                                .find(|p| p.playerid == player_id)
+                                .map(|p| p.name.clone())
+                                .filter(|n| !n.is_empty())
+                                .unwrap_or_else(|| player_id.clone()),
+                            Err(_) => player_id.clone(),
+                        },
+                    };
 
-                        if is_new {
-                            let zone = lms_player_to_zone(&player);
-                            bus.publish(BusEvent::ZoneDiscovered { zone });
-                        }
+                    // Now lock and update state
+                    let mut s = state.write().await;
+                    let is_new = !s.players.contains_key(&player_id);
+
+                    // Create or update player
+                    let player = LmsPlayer {
+                        playerid: player_id.clone(),
+                        name: player_name,
+                        connected: true,
+                        power: status.power,
+                        state: status.state,
+                        mode: status.mode,
+                        volume: status.volume,
+                        title: status.title,
+                        artist: status.artist,
+                        album: status.album,
+                        ..Default::default()
+                    };
+
+                    s.players.insert(player_id.clone(), player.clone());
+                    drop(s);
+
+                    if is_new {
+                        let zone = lms_player_to_zone(&player);
+                        bus.publish(BusEvent::ZoneDiscovered { zone });
                     }
                 }
                 "disconnect" => {
