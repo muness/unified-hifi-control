@@ -98,8 +98,10 @@ jobs:
       - name: Cache Rust (cross builds)
         uses: Swatinem/rust-cache@v2
         with:
-          # Cache target dir which cross mounts
-          cache-directories: target/${{ matrix.target }}
+          # Cross builds need all crates cached, not just dependencies
+          cache-all-crates: true
+          # Use target as key to avoid cache collisions between architectures
+          key: cross-${{ matrix.target }}
 
       - name: Cache cross
         id: cache-cross
