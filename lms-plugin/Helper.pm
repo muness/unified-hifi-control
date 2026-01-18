@@ -8,6 +8,7 @@ use warnings;
 
 use File::Spec::Functions qw(catfile catdir);
 use File::Path qw(make_path);
+use File::Basename;
 use JSON::XS;
 use Proc::Background;
 
@@ -32,6 +33,7 @@ use constant RESTART_RESET_TIME    => 300; # reset counter after 5 min stable
 
 # Binary download configuration
 use constant BINARY_BASE_URL => 'https://github.com/open-horizon-labs/unified-hifi-control/releases/download';
+use constant WEB_ASSETS_FILE => 'web-assets.tar.gz';
 use constant BINARY_MAP => {
     'darwin-arm64'   => 'unified-hifi-darwin-arm64',
     'darwin-x86_64'  => 'unified-hifi-darwin-x86_64',
@@ -89,12 +91,20 @@ sub needsBinaryDownload {
     return !(-e $binaryPath && -x _);
 }
 
+# Check if web assets need download
+sub needsWebAssetsDownload {
+    my $class = shift;
+
+    my $publicDir = catdir(binDir(), 'public');
+    return !(-d $publicDir);
+}
+
 # Get binary status for UI
 sub binaryStatus {
     my $class = shift;
 
     return 'downloading' if $downloadInProgress;
-    return $class->needsBinaryDownload() ? 'not_downloaded' : 'installed';
+    return ($class->needsBinaryDownload() || $class->needsWebAssetsDownload()) ? 'not_downloaded' : 'installed';
 }
 
 # Download binary for current platform (async-friendly)
@@ -112,9 +122,23 @@ sub ensureBinary {
 
     my $binaryPath = $class->bin();
 
+    # Callback wrapper that ensures web assets before final callback
+    my $withWebAssets = sub {
+        my $path = shift;
+        $class->ensureWebAssets(sub {
+            my ($success, $error) = @_;
+            if ($success) {
+                $callback->($path) if $callback;
+            } else {
+                $callback->(undef, "Web assets download failed: $error") if $callback;
+            }
+        });
+    };
+
     # Already exists and executable
     if (-e $binaryPath && -x _) {
-        $callback->($binaryPath) if $callback;
+        # Binary exists, ensure web assets too
+        $withWebAssets->($binaryPath);
         return $binaryPath;
     }
 
@@ -129,7 +153,8 @@ sub ensureBinary {
         if ($success) {
             chmod 0755, $binaryPath;
             $log->info("Binary downloaded successfully: $binaryPath");
-            $callback->($binaryPath) if $callback;
+            # Now ensure web assets
+            $withWebAssets->($binaryPath);
         } else {
             $log->error("Binary download failed: $error");
             $callback->(undef, $error) if $callback;
@@ -137,6 +162,142 @@ sub ensureBinary {
     });
 
     return;  # Async - result via callback
+}
+
+# Download and extract web assets tarball
+sub ensureWebAssets {
+    my ($class, $callback) = @_;
+
+    my $publicDir = catdir(binDir(), 'public');
+
+    # Already exists
+    if (-d $publicDir) {
+        $log->debug("Web assets already present at $publicDir");
+        $callback->(1) if $callback;
+        return 1;
+    }
+
+    $log->info("Web assets not found, downloading...");
+
+    my $version = $class->pluginVersion();
+    my $url = BINARY_BASE_URL . "/v$version/" . WEB_ASSETS_FILE;
+    my $tarballPath = catfile(binDir(), WEB_ASSETS_FILE);
+
+    $class->downloadFile($url, $tarballPath, sub {
+        my ($success, $error) = @_;
+        if ($success) {
+            # Extract tarball
+            my $result = $class->extractTarball($tarballPath, binDir());
+            unlink $tarballPath;  # Clean up tarball
+            if ($result) {
+                $log->info("Web assets extracted to $publicDir");
+                $callback->(1) if $callback;
+            } else {
+                $callback->(0, "Failed to extract web assets") if $callback;
+            }
+        } else {
+            $log->error("Web assets download failed: $error");
+            $callback->(0, $error) if $callback;
+        }
+    });
+
+    return;  # Async
+}
+
+# Extract tarball to destination directory
+sub extractTarball {
+    my ($class, $tarball, $destDir) = @_;
+
+    eval {
+        require Archive::Tar;
+        my $tar = Archive::Tar->new($tarball);
+        $tar->setcwd($destDir);
+        $tar->extract();
+        return 1;
+    };
+
+    if ($@) {
+        # Fallback to system tar command
+        $log->debug("Archive::Tar not available, using system tar");
+        my $result = system("tar", "-xzf", $tarball, "-C", $destDir);
+        return $result == 0;
+    }
+
+    return 1;
+}
+
+# Download file from URL (with redirect handling) - generic version
+sub downloadFile {
+    my ($class, $url, $dest, $callback, $redirectCount) = @_;
+    $redirectCount //= 0;
+
+    # Prevent infinite redirects
+    if ($redirectCount > 5) {
+        $downloadInProgress = 0;
+        $callback->(0, "Too many redirects") if $callback;
+        return;
+    }
+
+    $downloadInProgress = 1 if $redirectCount == 0;
+
+    # Ensure destination directory exists
+    my $destDir = dirname($dest);
+    make_path($destDir) unless -d $destDir;
+
+    $log->info("Downloading from $url" . ($redirectCount ? " (redirect $redirectCount)" : ""));
+
+    eval {
+        my $http = Slim::Networking::SimpleAsyncHTTP->new(
+            sub {
+                my $response = shift;
+
+                my $code = $response->code;
+
+                # Handle redirects (301, 302, 303, 307, 308)
+                if ($code >= 300 && $code < 400) {
+                    my $location = $response->headers->header('Location');
+                    if ($location) {
+                        $log->debug("Following redirect to: $location");
+                        $class->downloadFile($location, $dest, $callback, $redirectCount + 1);
+                        return;
+                    }
+                }
+
+                $downloadInProgress = 0;
+
+                if ($code == 200) {
+                    # Write to file
+                    open my $fh, '>', $dest or do {
+                        $callback->(0, "Cannot write to $dest: $!") if $callback;
+                        return;
+                    };
+                    binmode $fh;
+                    print $fh $response->content;
+                    close $fh;
+
+                    $callback->(1) if $callback;
+                } else {
+                    $callback->(0, "HTTP $code: " . $response->message) if $callback;
+                }
+            },
+            sub {
+                my ($response, $error) = @_;
+                $downloadInProgress = 0;
+                $callback->(0, $error // "Download failed") if $callback;
+            },
+            {
+                timeout => 300,  # 5 minute timeout
+            }
+        );
+
+        $http->get($url);
+    };
+
+    if ($@) {
+        $downloadInProgress = 0;
+        $log->error("Download error: $@");
+        $callback->(0, $@) if $callback;
+    }
 }
 
 # Download binary from URL (with redirect handling)
