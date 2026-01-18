@@ -102,6 +102,9 @@ jobs:
           shared-key: "cross-${{ matrix.target }}"
           cache-all-crates: true
           workspaces: ". -> target"
+          # Preserve cross-compilation target directories
+          cache-directories: |
+            target/${{ matrix.target }}
 
       - name: Cache cross
         id: cache-cross
