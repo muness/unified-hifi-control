@@ -43,9 +43,29 @@ use constant BINARY_MAP => {
     'win64'          => 'unified-hifi-win64.exe',
 };
 
+# Get the plugin data directory (survives plugin updates)
+# Uses LMS server cache directory, not plugin install directory
+sub dataDir {
+    my $class = shift;
+
+    my $cacheDir = $serverPrefs->get('cachedir');
+    return unless $cacheDir;
+
+    my $dataDir = catdir($cacheDir, 'UnifiedHiFi');
+    make_path($dataDir) unless -d $dataDir;
+
+    return $dataDir;
+}
+
 sub binDir {
-	my $binDir = catdir(Plugins::UnifiedHiFi::Plugin->_pluginDataFor('basedir'), 'Bin');
-    make_path($binDir) unless (-d $binDir);
+    my $class = shift;
+
+    my $dataDir = $class->dataDir();
+    return unless $dataDir;
+
+    my $binDir = catdir($dataDir, 'Bin');
+    make_path($binDir) unless -d $binDir;
+
     return $binDir;
 }
 
@@ -95,7 +115,7 @@ sub needsBinaryDownload {
 sub needsWebAssetsDownload {
     my $class = shift;
 
-    my $publicDir = catdir(binDir(), 'public');
+    my $publicDir = catdir($class->binDir(), 'public');
     return !(-d $publicDir);
 }
 
@@ -168,7 +188,8 @@ sub ensureBinary {
 sub ensureWebAssets {
     my ($class, $callback) = @_;
 
-    my $publicDir = catdir(binDir(), 'public');
+    my $binDir = $class->binDir();
+    my $publicDir = catdir($binDir, 'public');
 
     # Already exists
     if (-d $publicDir) {
@@ -181,13 +202,13 @@ sub ensureWebAssets {
 
     my $version = $class->pluginVersion();
     my $url = BINARY_BASE_URL . "/v$version/" . WEB_ASSETS_FILE;
-    my $tarballPath = catfile(binDir(), WEB_ASSETS_FILE);
+    my $tarballPath = catfile($binDir, WEB_ASSETS_FILE);
 
     $class->downloadFile($url, $tarballPath, sub {
         my ($success, $error) = @_;
         if ($success) {
             # Extract tarball
-            my $result = $class->extractTarball($tarballPath, binDir());
+            my $result = $class->extractTarball($tarballPath, $binDir);
             unlink $tarballPath;  # Clean up tarball
             if ($result) {
                 $log->info("Web assets extracted to $publicDir");
@@ -315,7 +336,7 @@ sub downloadBinary {
     $downloadInProgress = 1 if $redirectCount == 0;
 
     # Ensure Bin directory exists
-    my $bindir = binDir();
+    my $bindir = $class->binDir();
     make_path($bindir) unless -d $bindir;
 
     $log->info("Downloading binary from $url" . ($redirectCount ? " (redirect $redirectCount)" : ""));
@@ -388,7 +409,7 @@ sub bin {
 
     return unless $selected;
 
-    my $binaryPath = catfile(binDir(), $selected);
+    my $binaryPath = catfile($class->binDir(), $selected);
     chmod 0755, $binaryPath if !main::ISWINDOWS && -f $binaryPath && !-x _;
 
     return $binaryPath;
@@ -435,7 +456,8 @@ sub _doStart {
     my $loglevel = $prefs->get('loglevel') || 'info';
 
     # Build environment for subprocess
-    my $configDir = Slim::Utils::OSDetect::dirsFor('prefs');
+    # Use plugin's data directory (survives plugin updates)
+    my $configDir = $class->dataDir();
     my $lmsPort = $serverPrefs->get('httpport');
 
     $log->info("Starting Unified Hi-Fi Control: $binaryPath on port $port");
