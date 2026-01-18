@@ -126,9 +126,26 @@
     @apply flex flex-col gap-1 py-2;
   }
 
-  /* Nav link styling */
-  .nav-link {
+  /* Mobile menu toggle button */
+  .nav-mobile-toggle {
+    @apply inline-flex items-center justify-center p-2 rounded-md;
+    color: var(--text-muted);
+  }
+  .nav-mobile-toggle:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+  .nav-mobile-toggle:focus {
+    outline: none;
+  }
+
+  /* Nav link base styling */
+  .nav-link,
+  .nav-link-active {
     @apply block px-3 py-2 rounded-md text-sm font-medium;
+  }
+
+  .nav-link {
     color: var(--text-secondary);
   }
   .nav-link:hover {
@@ -138,7 +155,6 @@
 
   /* Active nav item styling */
   .nav-link-active {
-    @apply block px-3 py-2 rounded-md text-sm font-medium;
     background: var(--surface-hover);
     color: var(--text-primary);
   }

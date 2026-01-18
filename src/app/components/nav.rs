@@ -65,7 +65,7 @@ pub fn Nav(props: NavProps) -> Element {
                 // Mobile menu button
                 div { class: "lg:hidden",
                     button {
-                        class: "inline-flex items-center justify-center p-2 rounded-md text-muted hover:text-primary hover:bg-hover focus:outline-none",
+                        class: "nav-mobile-toggle",
                         r#type: "button",
                         onclick: move |_| menu_open.toggle(),
                         span { class: "sr-only", "Toggle menu" }

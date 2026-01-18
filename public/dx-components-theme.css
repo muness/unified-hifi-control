@@ -40,13 +40,10 @@ body {
   --light: ;
 }
 
+/* OLED black: pure black surfaces for AMOLED screens */
 :root.theme-oled {
   --dark: initial;
   --light: ;
-}
-
-/* OLED black: pure black surfaces for AMOLED screens */
-:root.theme-oled {
   --primary-color-1: #000;
   --primary-color-2: #000;
   --primary-color-3: #000;

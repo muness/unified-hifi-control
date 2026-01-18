@@ -301,9 +301,6 @@
   .inline {
     display: inline;
   }
-  .inline-flex {
-    display: inline-flex;
-  }
   .table {
     display: table;
   }
@@ -407,9 +404,6 @@
   .rounded-lg {
     border-radius: var(--radius-lg);
   }
-  .rounded-md {
-    border-radius: var(--radius-md);
-  }
   .border {
     border-style: var(--tw-border-style);
     border-width: 1px;
@@ -430,9 +424,6 @@
   }
   .object-cover {
     object-fit: cover;
-  }
-  .p-2 {
-    padding: calc(var(--spacing) * 2);
   }
   .p-4 {
     padding: calc(var(--spacing) * 4);
@@ -521,12 +512,6 @@
       @media (hover: hover) {
         color: var(--color-white);
       }
-    }
-  }
-  .focus\:outline-none {
-    &:focus {
-      --tw-outline-style: none;
-      outline-style: none;
     }
   }
   .sm\:px-6 {
@@ -660,7 +645,22 @@
     gap: calc(var(--spacing) * 1);
     padding-block: calc(var(--spacing) * 2);
   }
-  .nav-link {
+  .nav-mobile-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    padding: calc(var(--spacing) * 2);
+    color: var(--text-muted);
+  }
+  .nav-mobile-toggle:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+  .nav-mobile-toggle:focus {
+    outline: none;
+  }
+  .nav-link, .nav-link-active {
     display: block;
     border-radius: var(--radius-md);
     padding-inline: calc(var(--spacing) * 3);
@@ -669,6 +669,8 @@
     line-height: var(--tw-leading, var(--text-sm--line-height));
     --tw-font-weight: var(--font-weight-medium);
     font-weight: var(--font-weight-medium);
+  }
+  .nav-link {
     color: var(--text-secondary);
   }
   .nav-link:hover {
@@ -676,14 +678,6 @@
     background: var(--surface-hover);
   }
   .nav-link-active {
-    display: block;
-    border-radius: var(--radius-md);
-    padding-inline: calc(var(--spacing) * 3);
-    padding-block: calc(var(--spacing) * 2);
-    font-size: var(--text-sm);
-    line-height: var(--tw-leading, var(--text-sm--line-height));
-    --tw-font-weight: var(--font-weight-medium);
-    font-weight: var(--font-weight-medium);
     background: var(--surface-hover);
     color: var(--text-primary);
   }
