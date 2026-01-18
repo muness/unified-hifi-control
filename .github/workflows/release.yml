@@ -23,6 +23,8 @@ jobs:
         with:
           shared-key: "wasm-build"
           cache-all-crates: true
+          # Include dioxus target directory
+          workspaces: ". -> target"
 
       - name: Cache Dioxus CLI
         id: cache-dx
@@ -34,6 +36,12 @@ jobs:
       - name: Install Dioxus CLI
         if: steps.cache-dx.outputs.cache-hit != 'true'
         run: cargo install dioxus-cli@0.7.3 --locked
+
+      - name: Debug cache info
+        run: |
+          echo "dx cache hit: ${{ steps.cache-dx.outputs.cache-hit }}"
+          ls -la ~/.cargo/bin/dx 2>/dev/null || echo "dx not found"
+          ls -la ~/.cargo/registry/cache 2>/dev/null | head -10 || echo "No registry cache"
 
       - name: Build Tailwind CSS
         run: make css
@@ -95,12 +103,19 @@ jobs:
         id: cache-cross
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cross
+          path: ${{ github.workspace }}/.cargo/bin/cross
           key: cross-0.2.5
 
       - name: Install cross
         if: steps.cache-cross.outputs.cache-hit != 'true'
         run: cargo install cross@0.2.5
+
+      - name: Debug cache info
+        run: |
+          echo "CARGO_HOME=$CARGO_HOME"
+          echo "Cache key: cross-${{ matrix.target }}"
+          ls -la $CARGO_HOME/registry/cache 2>/dev/null | head -20 || echo "No registry cache"
+          ls -la $CARGO_HOME/registry/index 2>/dev/null | head -5 || echo "No registry index"
 
       - name: Build with cross
         run: cross build --release --target ${{ matrix.target }}
