@@ -10,7 +10,8 @@
 //! subscribes to `playlist,mixer,power,client` events. This dramatically reduces CPU usage
 //! compared to polling, especially with many players (22+).
 //!
-//! The polling fallback runs at reduced frequency (30s vs 2s) when subscription is active.
+//! The polling fallback runs at reduced frequency (15x base interval) when subscription is active.
+//! The base poll interval can be configured via `LMS_POLL_INTERVAL` env var (default: 2 seconds).
 
 use anyhow::{anyhow, Result};
 use reqwest::Client;
@@ -52,10 +53,25 @@ fn config_path() -> PathBuf {
 const DEFAULT_PORT: u16 = 9000;
 /// CLI telnet port for event subscription
 const CLI_PORT: u16 = 9090;
-/// Fast polling interval (when no subscription active)
-const POLL_INTERVAL: Duration = Duration::from_secs(2);
-/// Slow polling interval (when subscription is active, serves as fallback)
-const POLL_INTERVAL_WITH_SUBSCRIPTION: Duration = Duration::from_secs(30);
+/// Default poll interval in seconds (when no subscription active)
+const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
+/// Multiplier for poll interval when subscription is active (15x base interval)
+const SUBSCRIPTION_INTERVAL_MULTIPLIER: u64 = 15;
+
+/// Get the poll interval from LMS_POLL_INTERVAL env var, or use default
+fn get_poll_interval() -> Duration {
+    std::env::var("LMS_POLL_INTERVAL")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS))
+}
+
+/// Get the poll interval when subscription is active (15x base interval)
+fn get_poll_interval_with_subscription() -> Duration {
+    let base = get_poll_interval();
+    Duration::from_secs(base.as_secs() * SUBSCRIPTION_INTERVAL_MULTIPLIER)
+}
 /// Reconnection delay for CLI subscription
 const CLI_RECONNECT_DELAY: Duration = Duration::from_secs(5);
 /// Maximum reconnection delay (exponential backoff cap)
@@ -674,7 +690,7 @@ impl LmsAdapter {
 
         tokio::spawn(async move {
             // Start with fast polling; will switch to slow when subscription is active
-            let mut current_interval = POLL_INTERVAL;
+            let mut current_interval = get_poll_interval();
             let mut poll_timer = interval(current_interval);
 
             loop {
@@ -687,9 +703,9 @@ impl LmsAdapter {
                         // Check if we need to adjust polling interval
                         let subscription_active = state.read().await.cli_subscription_active;
                         let target_interval = if subscription_active {
-                            POLL_INTERVAL_WITH_SUBSCRIPTION
+                            get_poll_interval_with_subscription()
                         } else {
-                            POLL_INTERVAL
+                            get_poll_interval()
                         };
 
                         if target_interval != current_interval {
