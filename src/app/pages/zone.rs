@@ -287,20 +287,20 @@ fn ZoneDisplay(
 
     rsx! {
         article { id: "zone-display",
-            div { style: "display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;",
+            div { class: "flex gap-6 items-start flex-wrap",
                 img {
                     id: "zone-art",
                     src: "{image_url}",
                     alt: "Album art",
-                    style: "width:200px;height:200px;object-fit:cover;border-radius:8px;background:#222;"
+                    class: "w-[200px] h-[200px] object-cover rounded-lg bg-elevated"
                 }
-                div { style: "flex:1;min-width:200px;",
-                    h2 { id: "zone-name", style: "margin-bottom:0.25rem;", "{zone.zone_name}" }
-                    p { style: "margin:0;",
+                div { class: "flex-1 min-w-[200px]",
+                    h2 { id: "zone-name", class: "mb-1", "{zone.zone_name}" }
+                    p { class: "m-0",
                         small { if is_playing { "playing" } else { "stopped" } }
                     }
                     hr {}
-                    p { style: "margin:0.5rem 0;",
+                    p { class: "my-2",
                         if !track.is_empty() {
                             strong { "{track}" }
                         } else {
@@ -308,13 +308,13 @@ fn ZoneDisplay(
                         }
                     }
                     if !artist.is_empty() {
-                        p { style: "margin:0;", small { "{artist}" } }
+                        p { class: "m-0", small { "{artist}" } }
                     }
                     if !album.is_empty() {
-                        p { class: "text-gray-500", style: "margin:0;", small { "{album}" } }
+                        p { class: "text-muted m-0", small { "{album}" } }
                     }
                     hr {}
-                    div { style: "display:flex;gap:0.5rem;align-items:center;margin:1rem 0;",
+                    div { class: "flex gap-2 items-center my-4",
                         button {
                             disabled: !can_prev,
                             onclick: move |_| on_control.call(("previous", None)),
@@ -332,17 +332,17 @@ fn ZoneDisplay(
                         // Volume controls (hidden for fixed volume outputs)
                         if has_volume || is_incremental {
                             if !is_incremental {
-                                span { style: "margin-left:1rem;", "Volume: ", strong { "{volume_display}" } }
+                                span { class: "ml-4", "Volume: ", strong { "{volume_display}" } }
                             } else {
-                                span { style: "margin-left:1rem;", "Volume:" }
+                                span { class: "ml-4", "Volume:" }
                             }
                             button {
-                                style: "width:2.5rem;",
+                                class: "w-10",
                                 onclick: move |_| on_control.call(("vol_down", Some(2))),
                                 "−"
                             }
                             button {
-                                style: "width:2.5rem;",
+                                class: "w-10",
                                 onclick: move |_| on_control.call(("vol_up", Some(2))),
                                 "+"
                             }

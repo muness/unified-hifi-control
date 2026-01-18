@@ -65,10 +65,10 @@ pub fn Dashboard() -> Element {
                     p { span { class: "font-semibold", "Uptime:" } " {app_status.uptime_secs}s" }
                     p { span { class: "font-semibold", "Event Bus Subscribers:" } " {app_status.bus_subscribers}" }
                 }
-                div { class: "border-t border-gray-700 my-4" }
+                div { class: "border-t border-default my-4" }
                 table { class: "w-full",
                     thead {
-                        tr { class: "border-b border-gray-700",
+                        tr { class: "border-b border-default",
                             th { class: "text-left py-2 px-3 font-semibold", "Adapter" }
                             th { class: "text-left py-2 px-3 font-semibold", "Status" }
                             th { class: "text-left py-2 px-3 font-semibold", "Details" }
@@ -76,7 +76,7 @@ pub fn Dashboard() -> Element {
                     }
                     tbody {
                         // Roon row
-                        tr { class: "border-b border-gray-800",
+                        tr { class: "border-b border-default",
                             td { class: "py-2 px-3", "Roon" }
                             td { class: "py-2 px-3",
                                 span {
@@ -84,7 +84,7 @@ pub fn Dashboard() -> Element {
                                     if roon_status.connected { "✓ Connected" } else { "✗ Disconnected" }
                                 }
                             }
-                            td { class: "py-2 px-3 text-sm text-gray-400",
+                            td { class: "py-2 px-3 text-sm text-muted",
                                 if let Some(name) = &roon_status.core_name {
                                     "{name} "
                                 }
@@ -94,7 +94,7 @@ pub fn Dashboard() -> Element {
                             }
                         }
                         // HQPlayer row
-                        tr { class: "border-b border-gray-800",
+                        tr { class: "border-b border-default",
                             td { class: "py-2 px-3", "HQPlayer" }
                             td { class: "py-2 px-3",
                                 span {
@@ -102,7 +102,7 @@ pub fn Dashboard() -> Element {
                                     if hqp_status.connected { "✓ Connected" } else { "✗ Disconnected" }
                                 }
                             }
-                            td { class: "py-2 px-3 text-sm text-gray-400",
+                            td { class: "py-2 px-3 text-sm text-muted",
                                 if let Some(host) = &hqp_status.host {
                                     "{host}"
                                 }
@@ -117,7 +117,7 @@ pub fn Dashboard() -> Element {
                                     if lms_status.connected { "✓ Connected" } else { "✗ Disconnected" }
                                 }
                             }
-                            td { class: "py-2 px-3 text-sm text-gray-400",
+                            td { class: "py-2 px-3 text-sm text-muted",
                                 if let (Some(host), Some(port)) = (&lms_status.host, lms_status.port) {
                                     "{host}:{port}"
                                 }
@@ -139,7 +139,7 @@ pub fn Dashboard() -> Element {
             section { id: "status",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Service Status" }
-                    p { class: "text-gray-400 text-sm", "Connection status for all adapters" }
+                    p { class: "text-muted text-sm", "Connection status for all adapters" }
                 }
                 {status_content}
             }

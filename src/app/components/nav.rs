@@ -1,5 +1,6 @@
 //! Navigation component using Tailwind CSS.
 
+use crate::app::Route;
 use dioxus::prelude::*;
 
 #[derive(Props, Clone, PartialEq)]
@@ -24,9 +25,9 @@ pub fn Nav(props: NavProps) -> Element {
 
     let nav_link_class = |page: &str| {
         if props.active == page {
-            "block px-3 py-2 rounded-md text-sm font-medium text-white bg-gray-900"
+            "nav-link-active"
         } else {
-            "block px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700"
+            "nav-link"
         }
     };
 
@@ -37,70 +38,68 @@ pub fn Nav(props: NavProps) -> Element {
     };
 
     rsx! {
-        nav { class: "bg-gray-800",
-            div { class: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
-                div { class: "flex items-center justify-between h-16",
-                    // Logo / Brand
-                    div { class: "flex items-center",
-                        a { class: "text-white font-bold text-xl", href: "/", "Hi-Fi Control" }
-                    }
+        nav { class: "nav-container",
+            div { class: "nav-inner",
+                // Logo / Brand
+                div { class: "flex items-center",
+                    Link { class: "nav-brand", to: Route::Dashboard {}, "Hi-Fi Control" }
+                }
 
-                    // Desktop navigation
-                    div { class: "hidden lg:flex items-center space-x-4",
-                        a { class: nav_link_class("dashboard"), href: "/", "Dashboard" }
-                        a { class: nav_link_class("zones"), href: "/ui/zones", "Zones" }
-                        a { class: nav_link_class("zone"), href: "/zone", "Zone" }
-                        if !props.hide_hqp {
-                            a { class: nav_link_class("hqplayer"), href: "/hqplayer", "HQPlayer" }
-                        }
-                        if !props.hide_lms {
-                            a { class: nav_link_class("lms"), href: "/lms", "LMS" }
-                        }
-                        if !props.hide_knobs {
-                            a { class: nav_link_class("knobs"), href: "/knobs", "Knobs" }
-                        }
-                        a { class: nav_link_class("settings"), href: "/settings", "Settings" }
+                // Desktop navigation - use Link for client-side routing (no page reload)
+                div { class: "hidden lg:flex items-center space-x-4",
+                    Link { class: nav_link_class("dashboard"), to: Route::Dashboard {}, "Dashboard" }
+                    Link { class: nav_link_class("zones"), to: Route::Zones {}, "Zones" }
+                    Link { class: nav_link_class("zone"), to: Route::Zone {}, "Zone" }
+                    if !props.hide_hqp {
+                        Link { class: nav_link_class("hqplayer"), to: Route::HqPlayer {}, "HQPlayer" }
                     }
+                    if !props.hide_lms {
+                        Link { class: nav_link_class("lms"), to: Route::Lms {}, "LMS" }
+                    }
+                    if !props.hide_knobs {
+                        Link { class: nav_link_class("knobs"), to: Route::Knobs {}, "Knobs" }
+                    }
+                    Link { class: nav_link_class("settings"), to: Route::Settings {}, "Settings" }
+                }
 
-                    // Mobile menu button
-                    div { class: "lg:hidden",
-                        button {
-                            class: "inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none",
-                            r#type: "button",
-                            onclick: move |_| menu_open.toggle(),
-                            span { class: "sr-only", "Toggle menu" }
-                            if menu_open() {
-                                // X icon
-                                svg { class: "h-6 w-6", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", "stroke-width": "2",
-                                    path { "stroke-linecap": "round", "stroke-linejoin": "round", d: "M6 18L18 6M6 6l12 12" }
-                                }
-                            } else {
-                                // Hamburger icon
-                                svg { class: "h-6 w-6", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", "stroke-width": "2",
-                                    path { "stroke-linecap": "round", "stroke-linejoin": "round", d: "M4 6h16M4 12h16M4 18h16" }
-                                }
+                // Mobile menu button
+                div { class: "lg:hidden",
+                    button {
+                        class: "nav-mobile-toggle",
+                        r#type: "button",
+                        onclick: move |_| menu_open.toggle(),
+                        span { class: "sr-only", "Toggle menu" }
+                        if menu_open() {
+                            // X icon
+                            svg { class: "h-6 w-6", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", "stroke-width": "2",
+                                path { "stroke-linecap": "round", "stroke-linejoin": "round", d: "M6 18L18 6M6 6l12 12" }
+                            }
+                        } else {
+                            // Hamburger icon
+                            svg { class: "h-6 w-6", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", "stroke-width": "2",
+                                path { "stroke-linecap": "round", "stroke-linejoin": "round", d: "M4 6h16M4 12h16M4 18h16" }
                             }
                         }
                     }
                 }
             }
 
-            // Mobile menu
+            // Mobile menu - use Link for client-side routing
             div { class: "{mobile_menu_class}", id: "mobile-menu",
                 div { class: "px-2 pt-2 pb-3 space-y-1",
-                    a { class: nav_link_class("dashboard"), href: "/", onclick: move |_| menu_open.set(false), "Dashboard" }
-                    a { class: nav_link_class("zones"), href: "/ui/zones", onclick: move |_| menu_open.set(false), "Zones" }
-                    a { class: nav_link_class("zone"), href: "/zone", onclick: move |_| menu_open.set(false), "Zone" }
+                    Link { class: nav_link_class("dashboard"), to: Route::Dashboard {}, onclick: move |_| menu_open.set(false), "Dashboard" }
+                    Link { class: nav_link_class("zones"), to: Route::Zones {}, onclick: move |_| menu_open.set(false), "Zones" }
+                    Link { class: nav_link_class("zone"), to: Route::Zone {}, onclick: move |_| menu_open.set(false), "Zone" }
                     if !props.hide_hqp {
-                        a { class: nav_link_class("hqplayer"), href: "/hqplayer", onclick: move |_| menu_open.set(false), "HQPlayer" }
+                        Link { class: nav_link_class("hqplayer"), to: Route::HqPlayer {}, onclick: move |_| menu_open.set(false), "HQPlayer" }
                     }
                     if !props.hide_lms {
-                        a { class: nav_link_class("lms"), href: "/lms", onclick: move |_| menu_open.set(false), "LMS" }
+                        Link { class: nav_link_class("lms"), to: Route::Lms {}, onclick: move |_| menu_open.set(false), "LMS" }
                     }
                     if !props.hide_knobs {
-                        a { class: nav_link_class("knobs"), href: "/knobs", onclick: move |_| menu_open.set(false), "Knobs" }
+                        Link { class: nav_link_class("knobs"), to: Route::Knobs {}, onclick: move |_| menu_open.set(false), "Knobs" }
                     }
-                    a { class: nav_link_class("settings"), href: "/settings", onclick: move |_| menu_open.set(false), "Settings" }
+                    Link { class: nav_link_class("settings"), to: Route::Settings {}, onclick: move |_| menu_open.set(false), "Settings" }
                 }
             }
         }

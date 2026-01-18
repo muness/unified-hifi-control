@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use crate::app::api::{AdapterSettings, AppSettings, RoonStatus};
 use crate::app::components::Layout;
 use crate::app::sse::use_sse;
+use crate::app::theme::{use_theme, Theme};
 
 /// OpenHome status response
 #[derive(Clone, Debug, Default, serde::Deserialize, PartialEq)]
@@ -24,6 +25,7 @@ struct UpnpStatus {
 #[component]
 pub fn Settings() -> Element {
     let sse = use_sse();
+    let theme_ctx = use_theme();
 
     // Adapter toggle signals
     let mut roon_enabled = use_signal(|| true);
@@ -106,7 +108,7 @@ pub fn Settings() -> Element {
             section { class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Adapter Settings" }
-                    p { class: "text-gray-400 text-sm", "Enable or disable zone sources" }
+                    p { class: "text-muted text-sm", "Enable or disable zone sources" }
                 }
 
                 div { class: "card p-6",
@@ -160,8 +162,36 @@ pub fn Settings() -> Element {
                             "UPnP/DLNA"
                         }
                     }
-                    p { class: "mt-3 text-sm text-gray-400",
+                    p { class: "mt-3 text-sm text-muted",
                         "Changes take effect immediately. Disabled adapters won't contribute zones."
+                    }
+                }
+            }
+
+            // Theme Settings section
+            section { class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Appearance" }
+                    p { class: "text-muted text-sm", "Choose your preferred color theme" }
+                }
+
+                div { class: "card p-6",
+                    div { class: "flex flex-wrap gap-3",
+                        for theme in [Theme::System, Theme::Light, Theme::Dark, Theme::Oled] {
+                            button {
+                                class: if theme_ctx.get() == theme { "btn-primary" } else { "btn-outline" },
+                                onclick: move |_| theme_ctx.set(theme),
+                                "{theme.label()}"
+                            }
+                        }
+                    }
+                    p { class: "mt-3 text-sm text-muted",
+                        match theme_ctx.get() {
+                            Theme::System => "Using your system's color scheme preference.",
+                            Theme::Light => "Light theme for bright environments.",
+                            Theme::Dark => "Dark theme for low-light environments.",
+                            Theme::Oled => "Pure black theme for AMOLED displays.",
+                        }
                     }
                 }
             }
@@ -170,13 +200,13 @@ pub fn Settings() -> Element {
             section {
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Auto-Discovery" }
-                    p { class: "text-gray-400 text-sm", "Devices found via SSDP (no configuration needed)" }
+                    p { class: "text-muted text-sm", "Devices found via SSDP (no configuration needed)" }
                 }
 
                 div { class: "card p-6",
                     table { class: "w-full", id: "discovery-table",
                         thead {
-                            tr { class: "border-b border-gray-700",
+                            tr { class: "border-b border-default",
                                 th { class: "text-left py-2 px-3 font-semibold", "Protocol" }
                                 th { class: "text-left py-2 px-3 font-semibold", "Status" }
                                 th { class: "text-left py-2 px-3 font-semibold", "Devices" }
@@ -184,7 +214,7 @@ pub fn Settings() -> Element {
                         }
                         tbody {
                             // Roon row
-                            tr { class: "border-b border-gray-800",
+                            tr { class: "border-b border-default",
                                 td { class: "py-2 px-3", "Roon" }
                                 td { class: "py-2 px-3",
                                     if !roon_enabled() {
@@ -199,7 +229,7 @@ pub fn Settings() -> Element {
                                         "Loading..."
                                     }
                                 }
-                                td { class: "py-2 px-3 text-gray-400",
+                                td { class: "py-2 px-3 text-muted",
                                     if !roon_enabled() {
                                         "-"
                                     } else if let Some(ref status) = roon_st {
@@ -218,7 +248,7 @@ pub fn Settings() -> Element {
                                 }
                             }
                             // OpenHome row
-                            tr { class: "border-b border-gray-800",
+                            tr { class: "border-b border-default",
                                 td { class: "py-2 px-3", "OpenHome" }
                                 td { class: "py-2 px-3",
                                     if !openhome_enabled() {
@@ -233,7 +263,7 @@ pub fn Settings() -> Element {
                                         "Loading..."
                                     }
                                 }
-                                td { class: "py-2 px-3 text-gray-400",
+                                td { class: "py-2 px-3 text-muted",
                                     if !openhome_enabled() {
                                         "-"
                                     } else if let Some(ref status) = openhome_st {
@@ -259,7 +289,7 @@ pub fn Settings() -> Element {
                                         "Loading..."
                                     }
                                 }
-                                td { class: "py-2 px-3 text-gray-400",
+                                td { class: "py-2 px-3 text-muted",
                                     if !upnp_enabled() {
                                         "-"
                                     } else if let Some(ref status) = upnp_st {

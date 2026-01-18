@@ -7,6 +7,7 @@
  * Theme: Uses dioxus-primitives CSS variables from dx-components-theme.css
  * --primary-color-* : background shades (dark theme: darker = lower number)
  * --secondary-color-* : text/foreground shades (dark theme: lighter = lower number)
+ * --text-*, --surface-*, --border-*, --accent-* : semantic aliases
  */
 
 /* Base styles - integrate with dioxus-primitives theme */
@@ -19,15 +20,63 @@
 
 /* Custom utility classes for the app */
 @layer components {
-  /* Status indicators - using standard Tailwind colors */
+  /* Status indicators - using theme success/error colors */
   .status-ok {
-    @apply text-green-500;
+    color: var(--secondary-success-color);
   }
   .status-err {
-    @apply text-red-500;
+    color: var(--primary-error-color);
   }
   .status-disabled {
-    @apply text-gray-500;
+    color: var(--text-disabled);
+  }
+
+  /* Semantic text utilities */
+  .text-primary {
+    color: var(--text-primary);
+  }
+  .text-secondary {
+    color: var(--text-secondary);
+  }
+  .text-muted {
+    color: var(--text-muted);
+  }
+
+  /* Surface utilities */
+  .bg-elevated {
+    background: var(--surface-elevated);
+  }
+  .bg-hover {
+    background: var(--surface-hover);
+  }
+
+  /* Border utilities */
+  .border-default {
+    border-color: var(--border-default);
+  }
+  .border-subtle {
+    border-color: var(--border-subtle);
+  }
+
+  /* Link styling */
+  .link {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+  .link:hover {
+    color: var(--accent-hover);
+  }
+
+  /* Code/monospace styling */
+  .code {
+    @apply text-xs px-1 rounded;
+    background: var(--surface-elevated);
+  }
+
+  /* Table row with border */
+  .table-row {
+    @apply border-b;
+    border-color: var(--border-default);
   }
 
   /* Zone grid layout */
@@ -46,7 +95,7 @@
 
   /* Navigation container */
   .nav-container {
-    background: var(--primary-color-5);
+    background: var(--surface-elevated);
   }
 
   .nav-inner {
@@ -55,12 +104,12 @@
 
   .nav-brand {
     @apply text-xl font-bold;
-    color: var(--secondary-color-1);
+    color: var(--text-primary);
     text-decoration: none;
   }
 
   .nav-brand:hover {
-    color: var(--secondary-color-2);
+    color: var(--text-secondary);
   }
 
   /* Desktop nav - hidden on mobile */
@@ -77,17 +126,44 @@
     @apply flex flex-col gap-1 py-2;
   }
 
+  /* Mobile menu toggle button */
+  .nav-mobile-toggle {
+    @apply inline-flex items-center justify-center p-2 rounded-md;
+    color: var(--text-muted);
+  }
+  .nav-mobile-toggle:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+  .nav-mobile-toggle:focus {
+    outline: none;
+  }
+
+  /* Nav link base styling */
+  .nav-link,
+  .nav-link-active {
+    @apply block px-3 py-2 rounded-md text-sm font-medium;
+  }
+
+  .nav-link {
+    color: var(--text-secondary);
+  }
+  .nav-link:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+
   /* Active nav item styling */
-  .navbar-item-active {
-    background: var(--primary-color-7);
-    color: var(--secondary-color-1);
+  .nav-link-active {
+    background: var(--surface-hover);
+    color: var(--text-primary);
   }
 
   /* Card component */
   .card {
     @apply rounded-lg;
-    background: var(--primary-color-5);
-    border: 1px solid var(--primary-color-6);
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-default);
   }
 
   /* Badge components */
@@ -96,22 +172,40 @@
   }
 
   .badge-primary {
-    @apply bg-indigo-600 text-white;
+    background: var(--accent-color);
+    color: var(--surface-base);
   }
 
   .badge-secondary {
-    background: var(--primary-color-7);
-    color: var(--secondary-color-3);
+    background: var(--surface-hover);
+    color: var(--text-secondary);
   }
 
   /* Checkbox styling */
   .checkbox {
-    @apply w-4 h-4 rounded border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-gray-800;
+    @apply w-4 h-4 rounded;
+    border-color: var(--border-default);
+    background: var(--surface-elevated);
+    accent-color: var(--accent-color);
+  }
+  .checkbox:focus {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
   }
 
   /* Form input styling */
   .input {
-    @apply block w-full rounded-md border-0 py-1.5 px-3 bg-gray-700 text-white shadow-sm ring-1 ring-inset ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6;
+    @apply block w-full rounded-md border-0 py-1.5 px-3 shadow-sm ring-1 ring-inset sm:text-sm sm:leading-6;
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+    --tw-ring-color: var(--border-default);
+  }
+  .input::placeholder {
+    color: var(--text-muted);
+  }
+  .input:focus {
+    @apply ring-2 ring-inset;
+    --tw-ring-color: var(--accent-color);
   }
 
   /* Form grid */
@@ -121,19 +215,36 @@
 
   /* Button styles */
   .btn {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
+    --tw-ring-offset-color: var(--surface-base);
   }
 
   .btn-primary {
-    @apply bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500;
+    background: var(--accent-color);
+    color: var(--surface-base);
+    --tw-ring-color: var(--accent-color);
+  }
+  .btn-primary:hover {
+    background: var(--accent-hover);
   }
 
   .btn-ghost {
-    @apply text-gray-300 hover:text-white hover:bg-gray-700 focus:ring-gray-500;
+    color: var(--text-secondary);
+    --tw-ring-color: var(--border-default);
+  }
+  .btn-ghost:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
   }
 
   .btn-outline {
-    @apply border border-gray-600 text-gray-300 hover:text-white hover:bg-gray-700 focus:ring-gray-500;
+    border: 1px solid var(--border-default);
+    color: var(--text-secondary);
+    --tw-ring-color: var(--border-default);
+  }
+  .btn-outline:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
   }
 
   .btn-sm {

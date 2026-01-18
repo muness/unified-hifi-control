@@ -222,7 +222,7 @@ pub fn HqPlayer() -> Element {
             section { id: "hqp-config", class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Configuration" }
-                    p { class: "text-gray-400 text-sm", "HQPlayer connection settings" }
+                    p { class: "text-muted text-sm", "HQPlayer connection settings" }
                 }
                 div { class: "card p-6",
                     div { class: "mb-4",
@@ -265,7 +265,7 @@ pub fn HqPlayer() -> Element {
                                     }
                                 }
                             }
-                            p { class: "text-gray-500 text-xs mt-1", "For profile loading (HQPlayer Embedded)" }
+                            p { class: "text-muted text-xs mt-1", "For profile loading (HQPlayer Embedded)" }
                         }
                     }
                     div { class: "form-grid mb-4",
@@ -290,7 +290,7 @@ pub fn HqPlayer() -> Element {
                             }
                         }
                     }
-                    p { class: "text-gray-500 text-xs mb-4", "Web credentials enable profile switching via HQPlayer's web UI" }
+                    p { class: "text-muted text-xs mb-4", "Web credentials enable profile switching via HQPlayer's web UI" }
                     div { class: "flex items-center gap-4",
                         button { class: "btn btn-primary", onclick: save_config, "Save Configuration" }
                         if let Some(ref status_msg) = config_status() {
@@ -299,7 +299,7 @@ pub fn HqPlayer() -> Element {
                             } else if status_msg.starts_with("Error") {
                                 span { class: "status-err", "{status_msg}" }
                             } else {
-                                span { class: "text-gray-400", "{status_msg}" }
+                                span { class: "text-muted", "{status_msg}" }
                             }
                         }
                     }
@@ -310,7 +310,7 @@ pub fn HqPlayer() -> Element {
             section { id: "hqp-status", class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Connection Status" }
-                    p { class: "text-gray-400 text-sm", "HQPlayer DSP engine connection" }
+                    p { class: "text-muted text-sm", "HQPlayer DSP engine connection" }
                 }
                 div { class: "card p-6",
                     if let Some(ref s) = current_status {
@@ -333,7 +333,7 @@ pub fn HqPlayer() -> Element {
             section { id: "hqp-pipeline", class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Pipeline Settings" }
-                    p { class: "text-gray-400 text-sm", "Current DSP configuration" }
+                    p { class: "text-muted text-sm", "Current DSP configuration" }
                 }
                 div { class: "card p-6",
                     if let Some(ref pipe) = current_pipeline {
@@ -350,22 +350,22 @@ pub fn HqPlayer() -> Element {
             section { id: "hqp-profiles", class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Profiles" }
-                    p { class: "text-gray-400 text-sm", "Saved configurations (requires web credentials)" }
+                    p { class: "text-muted text-sm", "Saved configurations (requires web credentials)" }
                 }
                 div { class: "card p-6",
                     if profiles_list.is_empty() {
-                        p { class: "text-gray-400", "No profiles available" }
+                        p { class: "text-muted", "No profiles available" }
                     } else {
                         table { class: "w-full",
                             thead {
-                                tr { class: "border-b border-gray-700",
+                                tr { class: "border-b border-default",
                                     th { class: "text-left py-2", "Profile" }
                                     th { class: "text-left py-2", "Action" }
                                 }
                             }
                             tbody {
                                 for profile in profiles_list {
-                                    tr { class: "border-b border-gray-700",
+                                    tr { class: "border-b border-default",
                                         td { class: "py-2", "{profile.title.as_deref().or(profile.name.as_deref()).unwrap_or(\"Unknown\")}" }
                                         td { class: "py-2",
                                             button { class: "btn btn-outline btn-sm", "Load" }
@@ -382,7 +382,7 @@ pub fn HqPlayer() -> Element {
             section { id: "hqp-zone-links", class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Zone Linking" }
-                    p { class: "text-gray-400 text-sm", "Link audio zones to HQPlayer for DSP processing" }
+                    p { class: "text-muted text-sm", "Link audio zones to HQPlayer for DSP processing" }
                 }
                 div { class: "card p-6",
                     ZoneLinkTable {
@@ -415,20 +415,20 @@ fn PipelineDisplay(pipeline: HqpPipeline) -> Element {
     rsx! {
         table { class: "w-full",
             tbody {
-                tr { class: "border-b border-gray-700",
-                    td { class: "py-2 text-gray-400", "Mode" }
+                tr { class: "border-b border-default",
+                    td { class: "py-2 text-muted", "Mode" }
                     td { class: "py-2", "{status.and_then(|s| s.active_mode.as_deref()).unwrap_or(\"N/A\")}" }
                 }
-                tr { class: "border-b border-gray-700",
-                    td { class: "py-2 text-gray-400", "Filter" }
+                tr { class: "border-b border-default",
+                    td { class: "py-2 text-muted", "Filter" }
                     td { class: "py-2", "{status.and_then(|s| s.active_filter.as_deref()).unwrap_or(\"N/A\")}" }
                 }
-                tr { class: "border-b border-gray-700",
-                    td { class: "py-2 text-gray-400", "Shaper" }
+                tr { class: "border-b border-default",
+                    td { class: "py-2 text-muted", "Shaper" }
                     td { class: "py-2", "{status.and_then(|s| s.active_shaper.as_deref()).unwrap_or(\"N/A\")}" }
                 }
-                tr { class: "border-b border-gray-700",
-                    td { class: "py-2 text-gray-400", "Sample Rate" }
+                tr { class: "border-b border-default",
+                    td { class: "py-2 text-muted", "Sample Rate" }
                     td { class: "py-2",
                         if let Some(rate) = status.and_then(|s| s.active_rate) {
                             "{format_rate(rate)}"
@@ -438,7 +438,7 @@ fn PipelineDisplay(pipeline: HqpPipeline) -> Element {
                     }
                 }
                 tr {
-                    td { class: "py-2 text-gray-400", "Volume" }
+                    td { class: "py-2 text-muted", "Volume" }
                     td { class: "py-2",
                         if let Some(v) = volume.and_then(|vol| vol.value) {
                             "{v} dB"
@@ -466,7 +466,7 @@ fn ZoneLinkTable(
 ) -> Element {
     if zones.is_empty() {
         return rsx! {
-            p { class: "text-gray-400", "No audio zones available. Check that adapters are connected." }
+            p { class: "text-muted", "No audio zones available. Check that adapters are connected." }
         };
     }
 
@@ -491,7 +491,7 @@ fn ZoneLinkTable(
     rsx! {
         table { class: "w-full",
             thead {
-                tr { class: "border-b border-gray-700",
+                tr { class: "border-b border-default",
                     th { class: "text-left py-2", "Zone" }
                     th { class: "text-left py-2", "Source" }
                     th { class: "text-left py-2", "HQPlayer Instance" }
@@ -508,9 +508,9 @@ fn ZoneLinkTable(
                         let backend = get_backend(&zone_id);
 
                         rsx! {
-                            tr { class: "border-b border-gray-700",
+                            tr { class: "border-b border-default",
                                 td { class: "py-2", "{zone.zone_name}" }
-                                td { class: "py-2", span { class: "text-sm text-gray-400", "{backend}" } }
+                                td { class: "py-2", span { class: "text-sm text-muted", "{backend}" } }
                                 td { class: "py-2",
                                     if let Some(ref inst) = linked {
                                         span { class: "font-semibold", "{inst}" }

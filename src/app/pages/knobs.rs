@@ -163,9 +163,9 @@ pub fn Knobs() -> Element {
 
             h1 { class: "text-2xl font-bold mb-6", "Knob Devices" }
 
-            p { class: "mb-6 text-gray-400",
+            p { class: "mb-6 text-muted",
                 a {
-                    class: "text-indigo-400 hover:text-indigo-300",
+                    class: "link",
                     href: "https://community.roonlabs.com/t/50-esp32-s3-knob-roon-controller/311363",
                     target: "_blank",
                     rel: "noopener",
@@ -179,12 +179,12 @@ pub fn Knobs() -> Element {
                 if is_loading {
                     div { class: "card p-6", aria_busy: "true", "Loading knobs..." }
                 } else if knobs_list.is_empty() {
-                    div { class: "card p-6 text-gray-400", "No knobs registered. Connect a knob to see it here." }
+                    div { class: "card p-6 text-muted", "No knobs registered. Connect a knob to see it here." }
                 } else {
                     div { class: "card p-6 overflow-x-auto",
                         table { class: "w-full",
                             thead {
-                                tr { class: "border-b border-gray-700",
+                                tr { class: "border-b border-default",
                                     th { class: "text-left py-2 text-sm", "ID" }
                                     th { class: "text-left py-2 text-sm", "Name" }
                                     th { class: "text-left py-2 text-sm", "Version" }
@@ -213,7 +213,7 @@ pub fn Knobs() -> Element {
             section { id: "firmware-section", class: "mb-8",
                 div { class: "mb-4",
                     h2 { class: "text-xl font-semibold", "Firmware" }
-                    p { class: "text-gray-400 text-sm", "Manage knob firmware updates" }
+                    p { class: "text-muted text-sm", "Manage knob firmware updates" }
                 }
                 div { class: "card p-6",
                     p { class: "mb-4",
@@ -235,7 +235,7 @@ pub fn Knobs() -> Element {
                             onclick: fetch_firmware,
                             "Fetch Latest from GitHub"
                         }
-                        a { class: "text-indigo-400 hover:text-indigo-300", href: "/knobs/flash", "Flash a new knob" }
+                        a { class: "link", href: "/knobs/flash", "Flash a new knob" }
                         if let Some((is_err, ref msg)) = fw_message() {
                             if is_err {
                                 span { class: "status-err", "{msg}" }
@@ -359,14 +359,14 @@ fn KnobRow(knob: KnobDevice, zones: Vec<Zone>, on_config: EventHandler<String>) 
     let last_seen = format_ago(knob.last_seen.as_deref());
 
     rsx! {
-        tr { class: "border-b border-gray-700",
-            td { class: "py-2", code { class: "text-xs bg-gray-800 px-1 rounded", "{knob.knob_id}" } }
-            td { class: "py-2 text-sm text-gray-400", "{display_name}" }
+        tr { class: "border-b border-default",
+            td { class: "py-2", code { class: "text-xs bg-elevated px-1 rounded", "{knob.knob_id}" } }
+            td { class: "py-2 text-sm text-muted", "{display_name}" }
             td { class: "py-2", "{version}" }
             td { class: "py-2", "{ip}" }
             td { class: "py-2", "{zone_name}" }
             td { class: "py-2", "{battery}" }
-            td { class: "py-2 text-sm text-gray-400", "{last_seen}" }
+            td { class: "py-2 text-sm text-muted", "{last_seen}" }
             td { class: "py-2",
                 button {
                     class: "btn btn-outline btn-sm",
@@ -405,7 +405,7 @@ fn ConfigModal(
                 div { class: "flex items-center justify-between mb-6",
                     h2 { class: "text-xl font-semibold", "Knob Configuration" }
                     button {
-                        class: "text-gray-400 hover:text-white text-xl",
+                        class: "text-muted hover:text-white text-xl",
                         aria_label: "Close",
                         onclick: move |_| on_close.call(()),
                         "×"
@@ -413,7 +413,7 @@ fn ConfigModal(
                 }
 
                 if loading {
-                    p { class: "text-gray-400", aria_busy: "true", "Loading configuration..." }
+                    p { class: "text-muted", aria_busy: "true", "Loading configuration..." }
                 } else {
                     form {
                         onsubmit: move |e| {
@@ -436,7 +436,7 @@ fn ConfigModal(
                             legend { class: "text-sm font-medium mb-2", "Display Rotation" }
                             div { class: "form-grid",
                                 div {
-                                    label { class: "block text-sm text-gray-400 mb-1", "Charging" }
+                                    label { class: "block text-sm text-muted mb-1", "Charging" }
                                     select {
                                         class: "input",
                                         value: "{rotation_charging}",
@@ -450,7 +450,7 @@ fn ConfigModal(
                                     }
                                 }
                                 div {
-                                    label { class: "block text-sm text-gray-400 mb-1", "Battery" }
+                                    label { class: "block text-sm text-muted mb-1", "Battery" }
                                     select {
                                         class: "input",
                                         value: "{rotation_not_charging}",
@@ -472,7 +472,7 @@ fn ConfigModal(
                                     if status.starts_with("Error") {
                                         span { class: "status-err", "{status}" }
                                     } else {
-                                        span { class: "text-gray-400", "{status}" }
+                                        span { class: "text-muted", "{status}" }
                                     }
                                 }
                             }

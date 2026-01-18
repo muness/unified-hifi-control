@@ -219,9 +219,9 @@ fn ZoneCard(
             div { class: "min-h-[40px] overflow-hidden mb-4",
                 if !track.is_empty() {
                     p { class: "font-medium text-sm truncate", "{track}" }
-                    p { class: "text-sm text-gray-400 truncate", "{artist}" }
+                    p { class: "text-sm text-muted truncate", "{artist}" }
                 } else {
-                    p { class: "text-sm text-gray-500", "Nothing playing" }
+                    p { class: "text-sm text-muted", "Nothing playing" }
                 }
             }
 
