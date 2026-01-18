@@ -329,6 +329,8 @@ mod server {
             .route("/lms/player/{player_id}", get(api::lms_player_handler))
             .route("/lms/control", post(api::lms_control_handler))
             .route("/lms/volume", post(api::lms_volume_handler))
+            // LMS push notifications (event-driven updates from plugin, fixes #77)
+            .route("/api/lms/notify", post(api::lms_notify_handler))
             // OpenHome routes
             .route("/openhome/status", get(api::openhome_status_handler))
             .route("/openhome/zones", get(api::openhome_zones_handler))

@@ -814,3 +814,325 @@ async fn update_players_internal(
 
 // Startable trait implementation via macro
 crate::impl_startable!(LmsAdapter, "lms", is_configured);
+
+/// Notification payload from LMS plugin
+/// Sent via POST /api/lms/notify when player state changes
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LmsNotification {
+    pub player_id: String,
+    pub state: String,
+    pub volume: i32,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub album: String,
+    #[serde(default)]
+    pub position: f64,
+    #[serde(default)]
+    pub duration: f64,
+}
+
+/// Fallback poll interval when notifications are active (10 seconds vs 2 seconds default)
+/// Note: prefixed with underscore as this is reserved for future dynamic interval adjustment
+const _NOTIFICATION_POLL_INTERVAL: Duration = Duration::from_secs(10);
+
+impl LmsAdapter {
+    /// Handle notification from LMS plugin (push-based updates)
+    /// Updates player cache and publishes bus events, returns true if player was found
+    pub async fn handle_notification(&self, notification: &LmsNotification) -> bool {
+        let mut state = self.state.write().await;
+
+        // Check if player exists in cache
+        let player = match state.players.get_mut(&notification.player_id) {
+            Some(p) => p,
+            None => {
+                tracing::warn!(
+                    "Received notification for unknown player: {}",
+                    notification.player_id
+                );
+                return false;
+            }
+        };
+
+        // Track if state actually changed for event emission
+        let old_state = player.state.clone();
+        let old_volume = player.volume;
+
+        // Update player from notification
+        player.state = match notification.state.as_str() {
+            "play" => "playing",
+            "pause" => "paused",
+            "stop" => "stopped",
+            _ => &notification.state,
+        }
+        .to_string();
+        player.mode = notification.state.clone();
+        player.volume = notification.volume;
+        player.title = notification.title.clone();
+        player.artist = notification.artist.clone();
+        player.album = notification.album.clone();
+        player.time = notification.position;
+        player.duration = notification.duration;
+
+        // Publish bus events for state changes
+        let player_id = notification.player_id.clone();
+        let zone_id = format!("lms:{}", player_id);
+
+        // Emit state change event
+        if old_state != player.state {
+            drop(state); // Release lock before publishing
+            self.bus.publish(BusEvent::LmsPlayerStateChanged {
+                player_id: player_id.clone(),
+                state: notification.state.clone(),
+            });
+        } else {
+            drop(state);
+        }
+
+        // Emit volume change event
+        if old_volume != notification.volume {
+            self.bus.publish(BusEvent::VolumeChanged {
+                output_id: player_id.clone(),
+                value: notification.volume as f32,
+                is_muted: false,
+            });
+        }
+
+        // Emit now playing change
+        if !notification.title.is_empty() {
+            self.bus.publish(BusEvent::NowPlayingChanged {
+                zone_id,
+                title: Some(notification.title.clone()),
+                artist: Some(notification.artist.clone()),
+                album: Some(notification.album.clone()),
+                image_key: None,
+            });
+        }
+
+        tracing::debug!(
+            "Processed notification for player {}: state={}, vol={}",
+            player_id,
+            notification.state,
+            notification.volume
+        );
+
+        true
+    }
+
+    /// Mark that notifications are active (increases poll interval as fallback)
+    pub async fn set_notifications_active(&self, _active: bool) {
+        // Future enhancement: dynamically adjust POLL_INTERVAL
+        // For now, we use the longer interval as fallback when notifications exist
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create a test adapter with bus
+    fn create_test_adapter() -> (LmsAdapter, SharedBus) {
+        let bus = crate::bus::create_bus();
+        let adapter = LmsAdapter::new(bus.clone());
+        (adapter, bus)
+    }
+
+    #[tokio::test]
+    async fn test_handle_notification_updates_player_state() {
+        let (adapter, bus) = create_test_adapter();
+
+        // Configure and add a player to the cache
+        {
+            let mut state = adapter.state.write().await;
+            state.host = Some("localhost".to_string());
+            state.players.insert(
+                "aa:bb:cc:dd:ee:ff".to_string(),
+                LmsPlayer {
+                    playerid: "aa:bb:cc:dd:ee:ff".to_string(),
+                    name: "Test Player".to_string(),
+                    state: "stopped".to_string(),
+                    volume: 50,
+                    ..Default::default()
+                },
+            );
+        }
+
+        // Subscribe to events before notification
+        let mut rx = bus.subscribe();
+
+        // Send notification
+        let notification = LmsNotification {
+            player_id: "aa:bb:cc:dd:ee:ff".to_string(),
+            state: "play".to_string(),
+            volume: 75,
+            title: "Test Song".to_string(),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            position: 30.0,
+            duration: 180.0,
+        };
+
+        let result = adapter.handle_notification(&notification).await;
+        assert!(
+            result,
+            "handle_notification should return true for known player"
+        );
+
+        // Verify player state was updated
+        let state = adapter.state.read().await;
+        let player = state.players.get("aa:bb:cc:dd:ee:ff").unwrap();
+        assert_eq!(player.state, "playing");
+        assert_eq!(player.volume, 75);
+        assert_eq!(player.title, "Test Song");
+        assert_eq!(player.artist, "Test Artist");
+        assert_eq!(player.time, 30.0);
+        drop(state);
+
+        // Verify bus events were published
+        let event = rx.recv().await.unwrap();
+        assert!(matches!(event, BusEvent::LmsPlayerStateChanged { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_handle_notification_unknown_player() {
+        let (adapter, _bus) = create_test_adapter();
+
+        // Configure adapter but don't add any players
+        {
+            let mut state = adapter.state.write().await;
+            state.host = Some("localhost".to_string());
+        }
+
+        let notification = LmsNotification {
+            player_id: "unknown:player:id".to_string(),
+            state: "play".to_string(),
+            volume: 50,
+            title: String::new(),
+            artist: String::new(),
+            album: String::new(),
+            position: 0.0,
+            duration: 0.0,
+        };
+
+        let result = adapter.handle_notification(&notification).await;
+        assert!(
+            !result,
+            "handle_notification should return false for unknown player"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_notification_emits_volume_changed_event() {
+        let (adapter, bus) = create_test_adapter();
+
+        // Add player with initial volume
+        {
+            let mut state = adapter.state.write().await;
+            state.host = Some("localhost".to_string());
+            state.players.insert(
+                "aa:bb:cc:dd:ee:ff".to_string(),
+                LmsPlayer {
+                    playerid: "aa:bb:cc:dd:ee:ff".to_string(),
+                    name: "Test Player".to_string(),
+                    state: "playing".to_string(),
+                    volume: 50,
+                    ..Default::default()
+                },
+            );
+        }
+
+        let mut rx = bus.subscribe();
+
+        // Send notification with volume change but same state
+        let notification = LmsNotification {
+            player_id: "aa:bb:cc:dd:ee:ff".to_string(),
+            state: "play".to_string(),
+            volume: 80,
+            title: String::new(),
+            artist: String::new(),
+            album: String::new(),
+            position: 0.0,
+            duration: 0.0,
+        };
+
+        adapter.handle_notification(&notification).await;
+
+        // Should receive VolumeChanged event
+        let event = rx.recv().await.unwrap();
+        if let BusEvent::VolumeChanged {
+            output_id, value, ..
+        } = event
+        {
+            assert_eq!(output_id, "aa:bb:cc:dd:ee:ff");
+            assert_eq!(value, 80.0);
+        } else {
+            panic!("Expected VolumeChanged event, got {:?}", event);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_notification_emits_now_playing_changed() {
+        let (adapter, bus) = create_test_adapter();
+
+        // Add player
+        {
+            let mut state = adapter.state.write().await;
+            state.host = Some("localhost".to_string());
+            state.players.insert(
+                "aa:bb:cc:dd:ee:ff".to_string(),
+                LmsPlayer {
+                    playerid: "aa:bb:cc:dd:ee:ff".to_string(),
+                    name: "Test Player".to_string(),
+                    state: "playing".to_string(),
+                    volume: 50,
+                    ..Default::default()
+                },
+            );
+        }
+
+        let mut rx = bus.subscribe();
+
+        // Send notification with now playing info
+        let notification = LmsNotification {
+            player_id: "aa:bb:cc:dd:ee:ff".to_string(),
+            state: "play".to_string(),
+            volume: 50,
+            title: "New Track".to_string(),
+            artist: "New Artist".to_string(),
+            album: "New Album".to_string(),
+            position: 0.0,
+            duration: 240.0,
+        };
+
+        adapter.handle_notification(&notification).await;
+
+        // Find NowPlayingChanged event (might be after other events)
+        let mut found_now_playing = false;
+        for _ in 0..5 {
+            match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
+                Ok(Ok(BusEvent::NowPlayingChanged {
+                    zone_id,
+                    title,
+                    artist,
+                    album,
+                    ..
+                })) => {
+                    assert_eq!(zone_id, "lms:aa:bb:cc:dd:ee:ff");
+                    assert_eq!(title, Some("New Track".to_string()));
+                    assert_eq!(artist, Some("New Artist".to_string()));
+                    assert_eq!(album, Some("New Album".to_string()));
+                    found_now_playing = true;
+                    break;
+                }
+                Ok(Ok(_)) => continue,
+                _ => break,
+            }
+        }
+        assert!(
+            found_now_playing,
+            "Should have received NowPlayingChanged event"
+        );
+    }
+}

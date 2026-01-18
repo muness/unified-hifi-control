@@ -48,6 +48,7 @@ GET /status
 GET /upnp/status
 GET /upnp/zones
 GET /zones
+POST /api/lms/notify
 POST /api/settings
 POST /control
 POST /hqp/detect

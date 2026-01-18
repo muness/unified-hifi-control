@@ -657,6 +657,41 @@ pub async fn lms_volume_handler(
     }
 }
 
+/// POST /api/lms/notify - Receive push notifications from LMS plugin
+/// This endpoint is called by the LMS plugin when player state changes,
+/// enabling event-driven updates instead of polling (fixes #77 CPU issues)
+pub async fn lms_notify_handler(
+    State(state): State<AppState>,
+    Json(notification): Json<crate::adapters::lms::LmsNotification>,
+) -> impl IntoResponse {
+    tracing::debug!(
+        "Received LMS notification for player {}: state={}",
+        notification.player_id,
+        notification.state
+    );
+
+    let found = state.lms.handle_notification(&notification).await;
+
+    if found {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "ok": true,
+                "player_id": notification.player_id
+            })),
+        )
+            .into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: format!("Unknown player: {}", notification.player_id),
+            }),
+        )
+            .into_response()
+    }
+}
+
 // =============================================================================
 // SSE Events
 // =============================================================================
