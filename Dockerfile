@@ -8,6 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     pkg-config \
     curl \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install wasm32 target for client build

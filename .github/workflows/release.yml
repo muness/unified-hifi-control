@@ -483,6 +483,7 @@ jobs:
           cp -r dist/public qnap-build/shared/public
           cp build/qnap/shared/*.sh qnap-build/shared/
           chmod +x qnap-build/shared/*.sh
+          cp -r build/qnap/shared/icons qnap-build/shared/
           sed "s/{{VERSION}}/${{ steps.version.outputs.version }}/" build/qnap/qpkg.cfg > qnap-build/qpkg.cfg
           echo '#!/bin/sh' > qnap-build/package_routines
 

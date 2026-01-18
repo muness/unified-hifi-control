@@ -13,7 +13,7 @@ watch_path = ["src", "public"]
 base_path = "/"
 
 [web.resource]
-style = ["/tailwind.css"]
+style = ["/dx-components-theme.css", "/tailwind.css"]
 
 # Favicons
 [[web.resource.head]]
