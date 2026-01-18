@@ -16,6 +16,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Override .cargo/config.toml sccache setting (not installed on runners)
+  RUSTC_WRAPPER: ""
+
 jobs:
   lint:
     name: Lint
@@ -30,6 +34,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "native-build"
 
       - name: Check formatting
         run: cargo fmt --check
@@ -48,6 +54,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "native-build"
 
       - name: Run tests
         run: cargo test --workspace

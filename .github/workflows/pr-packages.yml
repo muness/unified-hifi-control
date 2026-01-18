@@ -13,6 +13,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Override .cargo/config.toml sccache setting (not installed on runners)
+  RUSTC_WRAPPER: ""
+
 jobs:
   lint:
     name: Lint
@@ -27,6 +31,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "native-build"
 
       - name: Check formatting
         run: cargo fmt --check
@@ -45,6 +51,8 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "native-build"
 
       - name: Run tests
         run: cargo test --workspace
@@ -64,8 +72,19 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "wasm-build"
+          cache-all-crates: true
+
+      - name: Cache Dioxus CLI
+        id: cache-dx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/dx
+          key: dx-cli-0.6
 
       - name: Install Dioxus CLI
+        if: steps.cache-dx.outputs.cache-hit != 'true'
         run: cargo install dioxus-cli --locked
 
       - name: Build web assets

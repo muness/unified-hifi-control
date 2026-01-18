@@ -1,0 +1,4 @@
+# Shared compilation cache - caches compiled crates across projects
+# Install sccache first: brew install sccache (macOS) or cargo install sccache
+[build]
+rustc-wrapper = "sccache"

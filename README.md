@@ -203,11 +203,13 @@ The v3 rewrite was motivated by packaging requests (NAS users wanted native pack
 
 - Rust 1.84+ with `wasm32-unknown-unknown` target
 - [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started)
+- [sccache](https://github.com/mozilla/sccache) (shared compilation cache - speeds up rebuilds significantly)
 - `curl` (for Tailwind CLI download)
 
 ```bash
 rustup target add wasm32-unknown-unknown
 cargo install dioxus-cli --locked
+brew install sccache  # macOS, or: cargo install sccache
 ```
 
 ### Build
