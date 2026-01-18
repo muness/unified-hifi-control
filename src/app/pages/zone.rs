@@ -257,8 +257,19 @@ fn ZoneDisplay(
 
     let image_url = np.and_then(|n| n.image_url.clone()).unwrap_or_default();
 
-    let volume_display = np
-        .and_then(|n| {
+    // Volume type handling:
+    // - "db": show value with " dB" suffix
+    // - "number": show value with no suffix (0-100 scale)
+    // - "incremental": hide value, only show +/- buttons
+    // - None (fixed volume): hide volume controls entirely
+    let volume_type = np.and_then(|n| n.volume_type.clone());
+    let has_volume = np.map(|n| n.volume.is_some()).unwrap_or(false);
+    let is_incremental = volume_type.as_deref() == Some("incremental");
+
+    let volume_display = if is_incremental {
+        String::new()
+    } else {
+        np.and_then(|n| {
             n.volume.map(|v| {
                 let suffix = if n.volume_type.as_deref() == Some("db") {
                     " dB"
@@ -268,7 +279,8 @@ fn ZoneDisplay(
                 format!("{}{}", v.round() as i32, suffix)
             })
         })
-        .unwrap_or_else(|| "—".to_string());
+        .unwrap_or_else(|| "—".to_string())
+    };
 
     let can_prev = np.map(|n| n.is_previous_allowed).unwrap_or(false);
     let can_next = np.map(|n| n.is_next_allowed).unwrap_or(false);
@@ -317,16 +329,23 @@ fn ZoneDisplay(
                             onclick: move |_| on_control.call(("next", None)),
                             "▶▶"
                         }
-                        span { style: "margin-left:1rem;", "Volume: ", strong { "{volume_display}" } }
-                        button {
-                            style: "width:2.5rem;",
-                            onclick: move |_| on_control.call(("vol_down", Some(2))),
-                            "−"
-                        }
-                        button {
-                            style: "width:2.5rem;",
-                            onclick: move |_| on_control.call(("vol_up", Some(2))),
-                            "+"
+                        // Volume controls (hidden for fixed volume outputs)
+                        if has_volume || is_incremental {
+                            if !is_incremental {
+                                span { style: "margin-left:1rem;", "Volume: ", strong { "{volume_display}" } }
+                            } else {
+                                span { style: "margin-left:1rem;", "Volume:" }
+                            }
+                            button {
+                                style: "width:2.5rem;",
+                                onclick: move |_| on_control.call(("vol_down", Some(2))),
+                                "−"
+                            }
+                            button {
+                                style: "width:2.5rem;",
+                                onclick: move |_| on_control.call(("vol_up", Some(2))),
+                                "+"
+                            }
                         }
                     }
                 }

@@ -2,18 +2,32 @@
 //!
 //! Shows all available zones using Dioxus resources.
 
+use crate::app::api::{NowPlaying, Zone, ZonesResponse};
+use crate::app::components::{Layout, VolumeControlsCompact};
+use crate::app::sse::{use_sse, SseEvent};
 use dioxus::prelude::*;
 use std::collections::HashMap;
-
-use crate::app::api::{NowPlaying, Zone, ZonesResponse};
-use crate::app::components::Layout;
-use crate::app::sse::use_sse;
 
 /// Control request body
 #[derive(Clone, serde::Serialize)]
 struct ControlRequest {
     zone_id: String,
     action: String,
+}
+
+/// Fetch now playing for all zones
+async fn fetch_all_now_playing(zones: &[Zone]) -> HashMap<String, NowPlaying> {
+    let mut np_map = HashMap::new();
+    for zone in zones {
+        let url = format!(
+            "/now_playing?zone_id={}",
+            urlencoding::encode(&zone.zone_id)
+        );
+        if let Ok(np) = crate::app::api::fetch_json::<NowPlaying>(&url).await {
+            np_map.insert(zone.zone_id.clone(), np);
+        }
+    }
+    np_map
 }
 
 /// Zones listing page component.
@@ -28,35 +42,62 @@ pub fn Zones() -> Element {
             .ok()
     });
 
-    // Now playing state (populated after zones load)
+    // Now playing state (populated after zones load and refreshed on SSE events)
     let mut now_playing = use_signal(HashMap::<String, NowPlaying>::new);
+
+    // Track zones list for now_playing refresh
+    let zones_list_signal = use_memo(move || {
+        zones
+            .read()
+            .clone()
+            .flatten()
+            .map(|r| r.zones)
+            .unwrap_or_default()
+    });
 
     // Load now playing for each zone when zones change
     use_effect(move || {
-        if let Some(Some(ref resp)) = zones.read().as_ref() {
-            let zone_list = resp.zones.clone();
+        let zone_list = zones_list_signal();
+        if !zone_list.is_empty() {
             spawn(async move {
-                let mut np_map = HashMap::new();
-                for zone in &zone_list {
-                    let url = format!(
-                        "/now_playing?zone_id={}",
-                        urlencoding::encode(&zone.zone_id)
-                    );
-                    if let Ok(np) = crate::app::api::fetch_json::<NowPlaying>(&url).await {
-                        np_map.insert(zone.zone_id.clone(), np);
-                    }
-                }
+                let np_map = fetch_all_now_playing(&zone_list).await;
                 now_playing.set(np_map);
             });
         }
     });
 
     // Refresh on SSE events
-    let event_count = sse.event_count;
     use_effect(move || {
-        let _ = event_count();
-        if sse.should_refresh_zones() {
+        let _ = (sse.event_count)();
+        let event = (sse.last_event)();
+
+        // Refresh zones list on structural changes
+        if matches!(
+            event.as_ref(),
+            Some(SseEvent::ZoneUpdated { .. })
+                | Some(SseEvent::ZoneRemoved { .. })
+                | Some(SseEvent::RoonConnected)
+                | Some(SseEvent::RoonDisconnected)
+                | Some(SseEvent::LmsConnected)
+                | Some(SseEvent::LmsDisconnected)
+        ) {
             zones.restart();
+        }
+
+        // Refresh now_playing on playback/volume changes (without reloading zones)
+        if matches!(
+            event.as_ref(),
+            Some(SseEvent::NowPlayingChanged { .. })
+                | Some(SseEvent::VolumeChanged { .. })
+                | Some(SseEvent::LmsPlayerStateChanged { .. })
+        ) {
+            let zone_list = zones_list_signal();
+            if !zone_list.is_empty() {
+                spawn(async move {
+                    let np_map = fetch_all_now_playing(&zone_list).await;
+                    now_playing.set(np_map);
+                });
+            }
         }
     });
 
@@ -143,19 +184,9 @@ fn ZoneCard(
         .map(|d| d.r#type.as_deref() == Some("hqplayer"))
         .unwrap_or(false);
 
-    // Format volume display
-    let volume_display = np
-        .and_then(|n| {
-            n.volume.map(|v| {
-                let suffix = if n.volume_type.as_deref() == Some("db") {
-                    " dB"
-                } else {
-                    ""
-                };
-                format!("{}{}", v.round() as i32, suffix)
-            })
-        })
-        .unwrap_or_else(|| "—".to_string());
+    // Extract volume info for component
+    let volume = np.and_then(|n| n.volume);
+    let volume_type = np.and_then(|n| n.volume_type.clone());
 
     // Now playing display
     let (track, artist) = np
@@ -212,21 +243,11 @@ fn ZoneCard(
                     "▶▶"
                 }
 
-                // Volume controls
-                div { class: "ml-auto flex items-center gap-1",
-                    button {
-                        class: "btn btn-outline btn-sm",
-                        onclick: move |_| on_control.call((zone_id_vol_down.clone(), "vol_down".to_string())),
-                        "−"
-                    }
-                    span { class: "min-w-[3.5rem] text-center text-sm",
-                        "{volume_display}"
-                    }
-                    button {
-                        class: "btn btn-outline btn-sm",
-                        onclick: move |_| on_control.call((zone_id_vol_up.clone(), "vol_up".to_string())),
-                        "+"
-                    }
+                VolumeControlsCompact {
+                    volume: volume,
+                    volume_type: volume_type,
+                    on_vol_down: move |_| on_control.call((zone_id_vol_down.clone(), "vol_down".to_string())),
+                    on_vol_up: move |_| on_control.call((zone_id_vol_up.clone(), "vol_up".to_string())),
                 }
             }
         }
