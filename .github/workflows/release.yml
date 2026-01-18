@@ -41,12 +41,25 @@ jobs:
       - name: Build web assets
         run: dx build --release --platform web --features web
 
+      - name: Create web assets tarball
+        run: |
+          cd target/dx/unified-hifi-control/release/web
+          tar -czvf web-assets.tar.gz public/
+          mv web-assets.tar.gz ${{ github.workspace }}/
+
       - name: Upload web assets
         uses: actions/upload-artifact@v4
         with:
           name: web-assets
           path: target/dx/unified-hifi-control/release/web/public/
           retention-days: 1
+
+      - name: Upload web assets tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-assets-tarball
+          path: web-assets.tar.gz
+          retention-days: 5
 
   build-linux:
     name: Build Linux (musl static)
@@ -424,6 +437,11 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           # Update package.json version
           sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" build/synology/package.json
+          # Update INFO file version and architecture
+          sed -i "s/version=\"{{VERSION}}\"/version=\"$VERSION\"/" build/synology/INFO
+          sed -i "s/arch=\"{{ARCH}}\"/arch=\"${{ matrix.arch }}\"/" build/synology/INFO
+          echo "=== Updated INFO file ==="
+          cat build/synology/INFO
 
       - name: Build Synology SPK
         uses: tomgrv/synology-package-builder@v1
@@ -657,7 +675,7 @@ jobs:
 
   upload-release:
     name: Upload to Release
-    needs: [build-linux, build-macos, build-windows, build-linux-packages, build-lms-plugin, build-synology-packages, build-qnap-packages]
+    needs: [build-linux, build-macos, build-windows, build-linux-packages, build-lms-plugin, build-synology-packages, build-qnap-packages, build-web-assets]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     permissions:
@@ -680,6 +698,7 @@ jobs:
           find artifacts -name "*.zip" -type f -exec cp {} release/ \;
           find artifacts -name "*.spk" -type f -exec cp {} release/ \;
           find artifacts -name "*.qpkg" -type f -exec cp {} release/ \;
+          find artifacts -name "*.tar.gz" -type f -exec cp {} release/ \;
           ls -la release/
 
       - name: Upload to release
