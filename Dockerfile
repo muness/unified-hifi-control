@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 # Build stage
 FROM rust:1.92-slim AS builder
 
@@ -12,10 +13,12 @@ RUN apt-get update && apt-get install -y \
 # Install wasm32 target for client build
 RUN rustup target add wasm32-unknown-unknown
 
-# Install Dioxus CLI
-RUN cargo install dioxus-cli@0.7.3
+# Install Dioxus CLI (with cache mount for cargo registry)
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo install dioxus-cli@0.7.3
 
-# Copy manifests
+# Copy manifests first (for dependency caching)
 COPY Cargo.toml Cargo.lock Dioxus.toml ./
 
 # Create dummy source for dependency caching
@@ -24,15 +27,22 @@ RUN mkdir -p src/app && \
     echo "pub mod app;" > src/lib.rs && \
     echo "// stub" > src/app/mod.rs
 
-# Build dependencies only (cached layer)
-RUN cargo build --release 2>/dev/null || true
-RUN rm -rf src
+# Build dependencies only (with cache mounts)
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    cargo build --release 2>/dev/null || true
 
-# Copy actual source
+# Copy actual source and public assets
 COPY src/ ./src/
+COPY public/ ./public/
 
-# Build with Dioxus (fullstack: server + WASM client)
-RUN dx build --release --platform web --features web
+# Build with Dioxus (with cache mounts for faster rebuilds)
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    dx build --release --platform web --features web && \
+    cp -r target/dx/unified-hifi-control/release/web /app/dist
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -45,8 +55,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy binary and web assets from builder
-COPY --from=builder /app/target/dx/unified-hifi-control/release/web/unified-hifi-control /app/
-COPY --from=builder /app/target/dx/unified-hifi-control/release/web/public /app/public
+COPY --from=builder /app/dist/unified-hifi-control /app/
+COPY --from=builder /app/dist/public /app/public
 
 # Create data directory for config persistence
 RUN mkdir -p /data
