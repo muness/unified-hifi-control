@@ -101,19 +101,19 @@ jobs:
           shared-key: zigbuild-${{ matrix.target }}
 
       - name: Install zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.13.0
+        run: |
+          curl -L https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz | tar -xJ
+          sudo mv zig-linux-x86_64-0.13.0 /opt/zig
+          echo "/opt/zig" >> $GITHUB_PATH
 
       - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-zigbuild
+        run: cargo install cargo-zigbuild --locked
 
       - name: Build with zigbuild
         env:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: "sccache"
+          PATH: /opt/zig:$PATH
         run: cargo zigbuild --release --target ${{ matrix.target }}
 
       - name: Smoke test armv7 binary
@@ -168,15 +168,10 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Install zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.13.0
-
-      - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-zigbuild
+      - name: Install zig and cargo-zigbuild
+        run: |
+          brew install zig
+          cargo install cargo-zigbuild --locked
 
       - name: Build universal binary
         env:
