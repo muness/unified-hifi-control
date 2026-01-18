@@ -95,13 +95,20 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache Rust (cross builds)
-        uses: Swatinem/rust-cache@v2
+      # NOTE: Cross builds can't effectively use target/ caching because:
+      # - Cross runs cargo inside Docker at /project/, not the host path
+      # - Cargo fingerprints include absolute paths that don't match across runs
+      # - rust-cache/actions-cache restore to host paths, but container sees different paths
+      # Future options: cargo-zigbuild (no containers) or sccache inside cross containers
+      - name: Cache cargo registry
+        uses: actions/cache@v4
         with:
-          # Cross builds need all crates cached, not just dependencies
-          cache-all-crates: true
-          # Use target as key to avoid cache collisions between architectures
-          key: cross-${{ matrix.target }}
+          path: |
+            ${{ github.workspace }}/.cargo/registry/index
+            ${{ github.workspace }}/.cargo/registry/cache
+            ${{ github.workspace }}/.cargo/git/db
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-registry-
 
       - name: Cache cross
         id: cache-cross

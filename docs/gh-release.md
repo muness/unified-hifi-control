@@ -33,21 +33,30 @@ Proc-macros (serde_derive, dioxus, thiserror, etc.) can't be cached by sccache d
   run: cargo build --release
 ```
 
-### 2. rust-cache for Cross Builds
+### 2. Registry Caching for Cross Builds
 
 **Used by:** Linux musl builds (x86_64, aarch64, armv7)
 
-**Why:** Cross-compiled builds use the [cross](https://github.com/cross-rs/cross) tool which runs inside Docker containers. The host's sccache is not accessible from inside these containers.
+**Why limited caching:** Cross-compiled builds use the [cross](https://github.com/cross-rs/cross) tool which runs cargo inside Docker containers. The container mounts the project at `/project/` which differs from the host path. Cargo's fingerprint system embeds absolute paths, so cached artifacts are invalidated when paths don't match.
 
-**How:**
+**What we cache:**
 ```yaml
-- name: Cache Rust (cross builds)
-  uses: Swatinem/rust-cache@v2
+- name: Cache cargo registry
+  uses: actions/cache@v4
   with:
-    cache-directories: target/${{ matrix.target }}
+    path: |
+      ${{ github.workspace }}/.cargo/registry/index
+      ${{ github.workspace }}/.cargo/registry/cache
+      ${{ github.workspace }}/.cargo/git/db
+    key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 ```
 
-**Why this works:** Cross mounts the host's `target/` directory into the container, so rust-cache's directory-based caching is effective here.
+This saves ~30s of crate downloads per build, but compilation still happens from scratch.
+
+**Future options for faster cross builds:**
+1. **cargo-zigbuild** - Uses zig as a linker, no Docker containers, caching works normally
+2. **sccache in cross containers** - Requires custom Docker images with sccache pre-installed
+3. **Native arm64 runners** - GitHub has arm64 Linux runners, eliminating need for cross on aarch64
 
 ### 3. Tool Binary Caching
 
