@@ -364,9 +364,21 @@ pub async fn knob_now_playing_handler(
             }),
             is_playing,
             volume: np.as_ref().and_then(|n| n.volume.map(|v| v as f64)),
-            volume_type: Some("number".to_string()),
-            volume_min: np.as_ref().map(|n| n.volume_min as f64),
-            volume_max: np.as_ref().map(|n| n.volume_max as f64),
+            volume_type: Some(if np.as_ref().and_then(|n| n.volume).is_some() {
+                "number".to_string()
+            } else {
+                "fixed".to_string()
+            }),
+            volume_min: if np.as_ref().and_then(|n| n.volume).is_some() {
+                np.as_ref().map(|n| n.volume_min as f64)
+            } else {
+                Some(0.0)
+            },
+            volume_max: if np.as_ref().and_then(|n| n.volume).is_some() {
+                np.as_ref().map(|n| n.volume_max as f64)
+            } else {
+                Some(0.0)
+            },
             volume_step: Some(1.0),
             image_url: Some(image_url),
             image_key: np.as_ref().and_then(|n| n.image_key.clone()),
@@ -416,9 +428,21 @@ pub async fn knob_now_playing_handler(
             }),
             is_playing,
             volume: np.as_ref().and_then(|n| n.volume.map(|v| v as f64)),
-            volume_type: Some("number".to_string()),
-            volume_min: np.as_ref().map(|n| n.volume_min as f64),
-            volume_max: np.as_ref().map(|n| n.volume_max as f64),
+            volume_type: Some(if np.as_ref().and_then(|n| n.volume).is_some() {
+                "number".to_string()
+            } else {
+                "fixed".to_string()
+            }),
+            volume_min: if np.as_ref().and_then(|n| n.volume).is_some() {
+                np.as_ref().map(|n| n.volume_min as f64)
+            } else {
+                Some(0.0)
+            },
+            volume_max: if np.as_ref().and_then(|n| n.volume).is_some() {
+                np.as_ref().map(|n| n.volume_max as f64)
+            } else {
+                Some(0.0)
+            },
             volume_step: Some(1.0),
             image_url: Some(image_url),
             image_key: np.as_ref().and_then(|n| n.image_key.clone()),
@@ -480,9 +504,21 @@ pub async fn knob_now_playing_handler(
             line3,
             is_playing,
             volume: vol.and_then(|v| v.value.map(|x| x as f64)),
-            volume_type: vol.map(|_| "db".to_string()),
-            volume_min: vol.and_then(|v| v.min.map(|x| x as f64)),
-            volume_max: vol.and_then(|v| v.max.map(|x| x as f64)),
+            volume_type: Some(if vol.is_some() {
+                "db".to_string()
+            } else {
+                "fixed".to_string()
+            }),
+            volume_min: if vol.is_some() {
+                vol.and_then(|v| v.min.map(|x| x as f64))
+            } else {
+                Some(0.0)
+            },
+            volume_max: if vol.is_some() {
+                vol.and_then(|v| v.max.map(|x| x as f64))
+            } else {
+                Some(0.0)
+            },
             volume_step: Some(1.0),
             image_url: Some(image_url),
             image_key: np.as_ref().and_then(|n| n.image_key.clone()),

@@ -25,6 +25,9 @@ impl VolumeType {
     /// Parse volume type from API response
     pub fn from_api(volume: Option<f32>, volume_type: Option<&str>) -> Self {
         match (volume, volume_type) {
+            // Explicit "fixed" type from API
+            (_, Some("fixed")) => VolumeType::Fixed,
+            // Legacy: no volume means fixed
             (None, _) => VolumeType::Fixed,
             (Some(_), Some("db")) => VolumeType::Db,
             (Some(_), Some("incremental")) => VolumeType::Incremental,
