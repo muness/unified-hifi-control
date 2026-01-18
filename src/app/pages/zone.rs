@@ -19,6 +19,7 @@ struct ControlRequest {
 
 /// Pipeline setting request
 #[derive(Clone, serde::Serialize)]
+#[allow(dead_code)]
 struct PipelineRequest {
     setting: String,
     value: String,
@@ -110,16 +111,14 @@ pub fn Zone() -> Element {
                 });
             }
         }
-        if sse.should_refresh_hqp() {
-            if hqp_pipeline().is_some() {
-                spawn(async move {
-                    if let Ok(pipeline) =
-                        crate::app::api::fetch_json::<HqpPipeline>("/hqp/pipeline").await
-                    {
-                        hqp_pipeline.set(Some(pipeline));
-                    }
-                });
-            }
+        if sse.should_refresh_hqp() && hqp_pipeline().is_some() {
+            spawn(async move {
+                if let Ok(pipeline) =
+                    crate::app::api::fetch_json::<HqpPipeline>("/hqp/pipeline").await
+                {
+                    hqp_pipeline.set(Some(pipeline));
+                }
+            });
         }
     });
 

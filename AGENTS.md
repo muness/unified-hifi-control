@@ -132,3 +132,45 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the event bus pattern and d
 - Adapters are dumb (discover, translate, handle commands)
 - Aggregator owns state (merge, hydrate, track last-seen)
 - UI talks to aggregator only (never directly to backends)
+
+## UI Stack
+
+**Web UI:** Dioxus + Tailwind CSS + DioxusLabs components
+
+- **Dioxus** - Fullstack Rust framework (SSR + WASM hydration)
+- **Tailwind CSS v4** - Utility-first styling via `src/input.css` (standalone CLI, no Node.js)
+- **DioxusLabs/components** - Accessible primitives (Navbar, Button, Collapsible, etc.)
+
+**DO NOT use:**
+- Bootstrap, Pico CSS, or other CSS frameworks
+- Hand-rolled navigation with onclick handlers
+- Inline styles for common patterns (use Tailwind utilities)
+
+**Build CSS:** `make css` or `make css-watch` (auto-downloads standalone CLI)
+
+### Building & Running
+
+**CRITICAL: Dioxus fullstack requires `dx build`, not `cargo build`**
+
+The web UI uses SSR + WASM hydration. This means:
+1. Server renders HTML (SSR)
+2. Client loads WASM bundle
+3. WASM "hydrates" the DOM (attaches event handlers, starts futures)
+
+Without the WASM bundle, components render but don't work (no navigation, no button clicks, no data loading).
+
+**Correct workflow:**
+```bash
+# Build both server + WASM client
+dx build --release --platform web
+
+# Run from the dx output directory (contains public/wasm/ assets)
+./target/dx/unified-hifi-control/release/web/unified-hifi-control
+```
+
+**Why `cargo run` doesn't work:**
+- Only builds the server, not the WASM client
+- Server panics looking for `public/wasm/` which doesn't exist
+- Even if it doesn't panic, no hydration = no interactivity
+
+**For development:** Use `dx serve` which handles both builds and hot reload.

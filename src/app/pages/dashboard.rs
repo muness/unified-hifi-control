@@ -50,7 +50,7 @@ pub fn Dashboard() -> Element {
 
     let status_content = if is_loading {
         rsx! {
-            article { aria_busy: "true", "Loading status..." }
+            div { class: "card p-6", aria_busy: "true", "Loading status..." }
         }
     } else {
         let app_status = status.read().clone().flatten().unwrap_or_default();
@@ -59,65 +59,67 @@ pub fn Dashboard() -> Element {
         let lms_status = lms.read().clone().flatten().unwrap_or_default();
 
         rsx! {
-            article {
-                p { strong { "Version:" } " {app_status.version}" }
-                p { strong { "Uptime:" } " {app_status.uptime_secs}s" }
-                p { strong { "Event Bus Subscribers:" } " {app_status.bus_subscribers}" }
-                hr {}
-                table {
+            div { class: "card p-6",
+                div { class: "mb-4 space-y-1",
+                    p { span { class: "font-semibold", "Version:" } " {app_status.version}" }
+                    p { span { class: "font-semibold", "Uptime:" } " {app_status.uptime_secs}s" }
+                    p { span { class: "font-semibold", "Event Bus Subscribers:" } " {app_status.bus_subscribers}" }
+                }
+                div { class: "border-t border-gray-700 my-4" }
+                table { class: "w-full",
                     thead {
-                        tr {
-                            th { "Adapter" }
-                            th { "Status" }
-                            th { "Details" }
+                        tr { class: "border-b border-gray-700",
+                            th { class: "text-left py-2 px-3 font-semibold", "Adapter" }
+                            th { class: "text-left py-2 px-3 font-semibold", "Status" }
+                            th { class: "text-left py-2 px-3 font-semibold", "Details" }
                         }
                     }
                     tbody {
                         // Roon row
-                        tr {
-                            td { "Roon" }
-                            td {
-                                class: if roon_status.connected { "status-ok" } else { "status-err" },
-                                if roon_status.connected { "✓ Connected" } else { "✗ Disconnected" }
+                        tr { class: "border-b border-gray-800",
+                            td { class: "py-2 px-3", "Roon" }
+                            td { class: "py-2 px-3",
+                                span {
+                                    class: if roon_status.connected { "status-ok" } else { "status-err" },
+                                    if roon_status.connected { "✓ Connected" } else { "✗ Disconnected" }
+                                }
                             }
-                            td {
-                                small {
-                                    if let Some(name) = &roon_status.core_name {
-                                        "{name} "
-                                    }
-                                    if let Some(ver) = &roon_status.core_version {
-                                        "v{ver}"
-                                    }
+                            td { class: "py-2 px-3 text-sm text-gray-400",
+                                if let Some(name) = &roon_status.core_name {
+                                    "{name} "
+                                }
+                                if let Some(ver) = &roon_status.core_version {
+                                    "v{ver}"
                                 }
                             }
                         }
                         // HQPlayer row
-                        tr {
-                            td { "HQPlayer" }
-                            td {
-                                class: if hqp_status.connected { "status-ok" } else { "status-err" },
-                                if hqp_status.connected { "✓ Connected" } else { "✗ Disconnected" }
+                        tr { class: "border-b border-gray-800",
+                            td { class: "py-2 px-3", "HQPlayer" }
+                            td { class: "py-2 px-3",
+                                span {
+                                    class: if hqp_status.connected { "status-ok" } else { "status-err" },
+                                    if hqp_status.connected { "✓ Connected" } else { "✗ Disconnected" }
+                                }
                             }
-                            td {
-                                small {
-                                    if let Some(host) = &hqp_status.host {
-                                        "{host}"
-                                    }
+                            td { class: "py-2 px-3 text-sm text-gray-400",
+                                if let Some(host) = &hqp_status.host {
+                                    "{host}"
                                 }
                             }
                         }
                         // LMS row
                         tr {
-                            td { "LMS" }
-                            td {
-                                class: if lms_status.connected { "status-ok" } else { "status-err" },
-                                if lms_status.connected { "✓ Connected" } else { "✗ Disconnected" }
+                            td { class: "py-2 px-3", "LMS" }
+                            td { class: "py-2 px-3",
+                                span {
+                                    class: if lms_status.connected { "status-ok" } else { "status-err" },
+                                    if lms_status.connected { "✓ Connected" } else { "✗ Disconnected" }
+                                }
                             }
-                            td {
-                                small {
-                                    if let (Some(host), Some(port)) = (&lms_status.host, lms_status.port) {
-                                        "{host}:{port}"
-                                    }
+                            td { class: "py-2 px-3 text-sm text-gray-400",
+                                if let (Some(host), Some(port)) = (&lms_status.host, lms_status.port) {
+                                    "{host}:{port}"
                                 }
                             }
                         }
@@ -132,12 +134,12 @@ pub fn Dashboard() -> Element {
             title: "Dashboard".to_string(),
             nav_active: "dashboard".to_string(),
 
-            h1 { "Dashboard" }
+            h1 { class: "text-2xl font-bold mb-6", "Dashboard" }
 
             section { id: "status",
-                hgroup {
-                    h2 { "Service Status" }
-                    p { "Connection status for all adapters" }
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Service Status" }
+                    p { class: "text-gray-400 text-sm", "Connection status for all adapters" }
                 }
                 {status_content}
             }

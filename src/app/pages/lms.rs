@@ -141,17 +141,17 @@ pub fn Lms() -> Element {
             title: "LMS".to_string(),
             nav_active: "lms".to_string(),
 
-            h1 { "Logitech Media Server" }
+            h1 { class: "text-2xl font-bold mb-6", "Logitech Media Server" }
 
             // Server Configuration section
-            section { id: "lms-config",
-                hgroup {
-                    h2 { "Server Configuration" }
-                    p { "Configure connection to your Squeezebox server" }
+            section { id: "lms-config", class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Server Configuration" }
+                    p { class: "text-gray-400 text-sm", "Configure connection to your Squeezebox server" }
                 }
-                article {
+                div { class: "card p-6",
                     // Status line
-                    div {
+                    div { class: "mb-4",
                         if let Some(ref c) = cfg {
                             if c.configured && c.connected {
                                 span { class: "status-ok",
@@ -162,29 +162,31 @@ pub fn Lms() -> Element {
                                     "✗ Configured but not connected ({c.host.as_deref().unwrap_or(\"\")}:{c.port.unwrap_or(9000)})"
                                 }
                             } else {
-                                "Not configured"
+                                span { class: "text-gray-400", "Not configured" }
                             }
                         } else {
-                            "Checking..."
+                            span { class: "text-gray-400", "Checking..." }
                         }
                     }
 
                     // Config form (shown when not configured or reconfiguring)
                     if show_form() || cfg.as_ref().map(|c| !c.configured).unwrap_or(true) {
-                        div { style: "margin-top:1rem;",
-                            div { class: "grid",
-                                label {
-                                    "Host"
+                        div { class: "mt-4",
+                            div { class: "form-grid mb-4",
+                                div {
+                                    label { class: "block text-sm font-medium mb-1", "Host" }
                                     input {
+                                        class: "input",
                                         r#type: "text",
                                         placeholder: "192.168.1.x or hostname",
                                         value: "{host}",
                                         oninput: move |evt| host.set(evt.value())
                                     }
                                 }
-                                label {
-                                    "Port"
+                                div {
+                                    label { class: "block text-sm font-medium mb-1", "Port" }
                                     input {
+                                        class: "input",
                                         r#type: "number",
                                         min: "1",
                                         max: "65535",
@@ -197,19 +199,21 @@ pub fn Lms() -> Element {
                                     }
                                 }
                             }
-                            div { class: "grid",
-                                label {
-                                    "Username (optional)"
+                            div { class: "form-grid mb-4",
+                                div {
+                                    label { class: "block text-sm font-medium mb-1", "Username (optional)" }
                                     input {
+                                        class: "input",
                                         r#type: "text",
                                         placeholder: "Leave blank if not required",
                                         value: "{username}",
                                         oninput: move |evt| username.set(evt.value())
                                     }
                                 }
-                                label {
-                                    "Password (optional)"
+                                div {
+                                    label { class: "block text-sm font-medium mb-1", "Password (optional)" }
                                     input {
+                                        class: "input",
                                         r#type: "password",
                                         placeholder: "Leave blank if not required",
                                         value: "{password}",
@@ -217,15 +221,15 @@ pub fn Lms() -> Element {
                                     }
                                 }
                             }
-                            button { onclick: save_config, "Save & Connect" }
-                            if let Some(ref status) = save_status() {
-                                span { style: "margin-left:1rem;",
+                            div { class: "flex items-center gap-4",
+                                button { class: "btn btn-primary", onclick: save_config, "Save & Connect" }
+                                if let Some(ref status) = save_status() {
                                     if status.starts_with("Error") || status.contains("required") {
                                         span { class: "status-err", "{status}" }
                                     } else if status.contains("Connected") {
                                         span { class: "status-ok", "✓ {status}" }
                                     } else {
-                                        "{status}"
+                                        span { class: "text-gray-400", "{status}" }
                                     }
                                 }
                             }
@@ -235,7 +239,7 @@ pub fn Lms() -> Element {
                     // Reconfigure button (shown when configured)
                     if cfg.as_ref().map(|c| c.configured).unwrap_or(false) && !show_form() {
                         button {
-                            style: "margin-top:1rem;",
+                            class: "btn btn-outline mt-4",
                             onclick: move |_| show_form.set(true),
                             "Reconfigure"
                         }
@@ -244,25 +248,25 @@ pub fn Lms() -> Element {
             }
 
             // Players section
-            section { id: "lms-players",
-                hgroup {
-                    h2 { "Players" }
-                    p { "Connected Squeezebox players" }
+            section { id: "lms-players", class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Players" }
+                    p { class: "text-gray-400 text-sm", "Connected Squeezebox players" }
                 }
 
                 if !lms_enabled {
-                    article {
-                        p {
+                    div { class: "card p-6",
+                        p { class: "text-gray-400",
                             "LMS adapter is disabled. "
-                            a { href: "/settings", "Enable it in Settings" }
+                            a { class: "text-indigo-400 hover:text-indigo-300", href: "/settings", "Enable it in Settings" }
                             " to discover players."
                         }
                     }
                 } else if is_loading {
-                    article { aria_busy: "true", "Loading..." }
+                    div { class: "card p-6", aria_busy: "true", "Loading..." }
                 } else if players_list.is_empty() {
-                    article {
-                        p { "No players found. Make sure your Squeezebox server is configured and reachable." }
+                    div { class: "card p-6",
+                        p { class: "text-gray-400", "No players found. Make sure your Squeezebox server is configured and reachable." }
                     }
                 } else {
                     div { class: "zone-grid",
@@ -287,41 +291,50 @@ fn PlayerCard(player: LmsPlayer, on_control: EventHandler<(String, String)>) -> 
     let player_id_play = player_id.clone();
     let player_id_next = player_id.clone();
 
-    let play_icon = if player.mode == "play" { "⏸" } else { "▶" };
+    let play_icon = if player.mode == "play" {
+        "⏸︎"
+    } else {
+        "▶"
+    };
 
     rsx! {
-        article {
-            header {
-                strong { "{player.name}" }
-                small { " ({player.mode})" }
+        div { class: "card p-4",
+            // Header
+            div { class: "flex items-center gap-2 mb-3",
+                span { class: "font-semibold text-lg", "{player.name}" }
+                span { class: "badge badge-secondary", "{player.mode}" }
             }
-            p {
+
+            // Now playing
+            div { class: "min-h-[40px] overflow-hidden mb-4",
                 if let Some(ref title) = player.current_title {
-                    "{title}"
+                    p { class: "font-medium text-sm truncate", "{title}" }
                     if let Some(ref artist) = player.artist {
-                        br {}
-                        small { "{artist}" }
+                        p { class: "text-sm text-gray-400 truncate", "{artist}" }
                     }
                 } else {
-                    small { "Nothing playing" }
+                    p { class: "text-sm text-gray-500", "Nothing playing" }
                 }
             }
-            footer {
-                div { class: "controls",
-                    button {
-                        onclick: move |_| on_control.call((player_id_prev.clone(), "previous".to_string())),
-                        "◀◀"
-                    }
-                    button {
-                        onclick: move |_| on_control.call((player_id_play.clone(), "play_pause".to_string())),
-                        "{play_icon}"
-                    }
-                    button {
-                        onclick: move |_| on_control.call((player_id_next.clone(), "next".to_string())),
-                        "▶▶"
-                    }
+
+            // Transport controls
+            div { class: "flex items-center gap-2",
+                button {
+                    class: "btn btn-ghost",
+                    onclick: move |_| on_control.call((player_id_prev.clone(), "previous".to_string())),
+                    "◀◀"
                 }
-                p { "Volume: {player.volume}%" }
+                button {
+                    class: "btn btn-primary",
+                    onclick: move |_| on_control.call((player_id_play.clone(), "play_pause".to_string())),
+                    "{play_icon}"
+                }
+                button {
+                    class: "btn btn-ghost",
+                    onclick: move |_| on_control.call((player_id_next.clone(), "next".to_string())),
+                    "▶▶"
+                }
+                span { class: "ml-auto text-sm text-gray-400", "Volume: {player.volume}%" }
             }
         }
     }

@@ -70,6 +70,9 @@ async-trait = "0.1"
 # Base64 (shared)
 base64 = "0.22.1"
 
+# Dioxus UI primitives (shared - needed for SSR and client hydration)
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, features = ["router"] }
+
 # ============ SERVER-ONLY DEPENDENCIES ============
 # These are optional and only included when building for server
 

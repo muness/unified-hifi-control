@@ -24,6 +24,9 @@ jobs:
       - name: Install Dioxus CLI
         run: cargo install dioxus-cli --locked
 
+      - name: Build Tailwind CSS
+        run: make css
+
       - name: Build web assets
         run: dx build --release --platform web --features web
 

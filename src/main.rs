@@ -21,6 +21,7 @@ mod server {
         routing::{delete, get, post, put},
         Router,
     };
+    use dioxus::prelude::DioxusRouterExt;
     use std::net::SocketAddr;
     use std::sync::Arc;
     use std::time::Instant;
@@ -386,8 +387,8 @@ mod server {
             .layer(TraceLayer::new_for_http())
             .with_state(state)
             // Dioxus fullstack app (serves UI routes with WASM hydration)
-            // This is a fallback - API routes above take priority
-            .merge(dioxus::server::router(app::App));
+            // serve_dioxus_application handles SSR, hydration, static assets, and server functions
+            .serve_dioxus_application(dioxus::server::ServeConfig::new(), app::App);
 
         // Start server with graceful shutdown
         let addr = SocketAddr::from(([0, 0, 0, 0], config.port));

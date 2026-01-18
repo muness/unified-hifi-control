@@ -8,10 +8,13 @@
 //! - Logitech Media Server (LMS) control
 //! - MQTT integration for Home Assistant
 //! - Server-Sent Events for real-time updates
-//! - Web UI for daily control (Pico CSS)
+//! - Web UI (Dioxus + Tailwind CSS + DioxusLabs components)
 
 // Dioxus UI app (shared between server SSR and WASM client)
 pub mod app;
+
+// Dioxus components (official dx components)
+pub mod components;
 
 // Server-only modules (excluded from WASM build)
 #[cfg(feature = "server")]

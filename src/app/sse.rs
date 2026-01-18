@@ -133,7 +133,7 @@ impl SseContext {
 /// Initialize SSE context provider - call once at app root
 pub fn use_sse_provider() {
     let last_event = use_signal(|| None::<SseEvent>);
-    let mut connected = use_signal(|| false);
+    let connected = use_signal(|| false);
     let event_count = use_signal(|| 0u64);
 
     let ctx = SseContext {

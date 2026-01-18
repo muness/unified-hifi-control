@@ -60,7 +60,7 @@ pub fn Knobs() -> Element {
     });
 
     // Open config modal
-    let mut open_config = move |knob_id: String| {
+    let open_config = move |knob_id: String| {
         current_knob_id.set(Some(knob_id.clone()));
         modal_open.set(true);
         config_loading.set(true);
@@ -161,10 +161,11 @@ pub fn Knobs() -> Element {
             title: "Knobs".to_string(),
             nav_active: "knobs".to_string(),
 
-            h1 { "Knob Devices" }
+            h1 { class: "text-2xl font-bold mb-6", "Knob Devices" }
 
-            p {
+            p { class: "mb-6 text-gray-400",
                 a {
+                    class: "text-indigo-400 hover:text-indigo-300",
                     href: "https://community.roonlabs.com/t/50-esp32-s3-knob-roon-controller/311363",
                     target: "_blank",
                     rel: "noopener",
@@ -174,24 +175,24 @@ pub fn Knobs() -> Element {
             }
 
             // Knobs section
-            section { id: "knobs-section",
+            section { id: "knobs-section", class: "mb-8",
                 if is_loading {
-                    article { aria_busy: "true", "Loading knobs..." }
+                    div { class: "card p-6", aria_busy: "true", "Loading knobs..." }
                 } else if knobs_list.is_empty() {
-                    article { "No knobs registered. Connect a knob to see it here." }
+                    div { class: "card p-6 text-gray-400", "No knobs registered. Connect a knob to see it here." }
                 } else {
-                    article {
-                        table {
+                    div { class: "card p-6 overflow-x-auto",
+                        table { class: "w-full",
                             thead {
-                                tr {
-                                    th { "ID" }
-                                    th { "Name" }
-                                    th { "Version" }
-                                    th { "IP" }
-                                    th { "Zone" }
-                                    th { "Battery" }
-                                    th { "Last Seen" }
-                                    th {}
+                                tr { class: "border-b border-gray-700",
+                                    th { class: "text-left py-2 text-sm", "ID" }
+                                    th { class: "text-left py-2 text-sm", "Name" }
+                                    th { class: "text-left py-2 text-sm", "Version" }
+                                    th { class: "text-left py-2 text-sm", "IP" }
+                                    th { class: "text-left py-2 text-sm", "Zone" }
+                                    th { class: "text-left py-2 text-sm", "Battery" }
+                                    th { class: "text-left py-2 text-sm", "Last Seen" }
+                                    th { class: "text-left py-2 text-sm" }
                                 }
                             }
                             tbody {
@@ -199,7 +200,7 @@ pub fn Knobs() -> Element {
                                     KnobRow {
                                         knob: knob.clone(),
                                         zones: zones_list.clone(),
-                                        on_config: move |id| open_config(id),
+                                        on_config: open_config,
                                     }
                                 }
                             }
@@ -209,15 +210,15 @@ pub fn Knobs() -> Element {
             }
 
             // Firmware section
-            section { id: "firmware-section",
-                hgroup {
-                    h2 { "Firmware" }
-                    p { "Manage knob firmware updates" }
+            section { id: "firmware-section", class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Firmware" }
+                    p { class: "text-gray-400 text-sm", "Manage knob firmware updates" }
                 }
-                article {
-                    p {
+                div { class: "card p-6",
+                    p { class: "mb-4",
                         "Current: "
-                        strong {
+                        span { class: "font-semibold",
                             if let Some(ref v) = fw_version {
                                 "v{v}"
                             } else {
@@ -225,16 +226,17 @@ pub fn Knobs() -> Element {
                             }
                         }
                     }
-                    button {
-                        id: "fetch-btn",
-                        disabled: fw_fetching(),
-                        aria_busy: if fw_fetching() { "true" } else { "false" },
-                        onclick: fetch_firmware,
-                        "Fetch Latest from GitHub"
-                    }
-                    a { href: "/knobs/flash", style: "margin-left:1rem;", "Flash a new knob" }
-                    if let Some((is_err, ref msg)) = fw_message() {
-                        span { style: "margin-left:1rem;",
+                    div { class: "flex items-center gap-4",
+                        button {
+                            id: "fetch-btn",
+                            class: "btn btn-primary",
+                            disabled: fw_fetching(),
+                            aria_busy: if fw_fetching() { "true" } else { "false" },
+                            onclick: fetch_firmware,
+                            "Fetch Latest from GitHub"
+                        }
+                        a { class: "text-indigo-400 hover:text-indigo-300", href: "/knobs/flash", "Flash a new knob" }
+                        if let Some((is_err, ref msg)) = fw_message() {
                             if is_err {
                                 span { class: "status-err", "{msg}" }
                             } else {
@@ -357,17 +359,17 @@ fn KnobRow(knob: KnobDevice, zones: Vec<Zone>, on_config: EventHandler<String>) 
     let last_seen = format_ago(knob.last_seen.as_deref());
 
     rsx! {
-        tr {
-            td { code { "{knob.knob_id}" } }
-            td { small { "{display_name}" } }
-            td { "{version}" }
-            td { "{ip}" }
-            td { "{zone_name}" }
-            td { "{battery}" }
-            td { "{last_seen}" }
-            td {
+        tr { class: "border-b border-gray-700",
+            td { class: "py-2", code { class: "text-xs bg-gray-800 px-1 rounded", "{knob.knob_id}" } }
+            td { class: "py-2 text-sm text-gray-400", "{display_name}" }
+            td { class: "py-2", "{version}" }
+            td { class: "py-2", "{ip}" }
+            td { class: "py-2", "{zone_name}" }
+            td { class: "py-2", "{battery}" }
+            td { class: "py-2 text-sm text-gray-400", "{last_seen}" }
+            td { class: "py-2",
                 button {
-                    class: "outline secondary",
+                    class: "btn btn-outline btn-sm",
                     onclick: move |_| on_config.call(knob_id.clone()),
                     "Config"
                 }
@@ -392,26 +394,26 @@ fn ConfigModal(
 ) -> Element {
     rsx! {
         div {
-            class: "modal-backdrop",
-            style: "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;",
+            class: "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
             onclick: move |_| on_close.call(()),
 
-            article {
-                style: "max-width:500px;margin:0;",
+            div {
+                class: "card p-6 max-w-md w-full mx-4",
                 onclick: move |e| e.stop_propagation(),
 
-                header {
+                // Header
+                div { class: "flex items-center justify-between mb-6",
+                    h2 { class: "text-xl font-semibold", "Knob Configuration" }
                     button {
+                        class: "text-gray-400 hover:text-white text-xl",
                         aria_label: "Close",
-                        style: "float:right;",
                         onclick: move |_| on_close.call(()),
                         "×"
                     }
-                    h2 { "Knob Configuration" }
                 }
 
                 if loading {
-                    p { aria_busy: "true", "Loading configuration..." }
+                    p { class: "text-gray-400", aria_busy: "true", "Loading configuration..." }
                 } else {
                     form {
                         onsubmit: move |e| {
@@ -419,9 +421,10 @@ fn ConfigModal(
                             on_save.call(());
                         },
 
-                        label {
-                            "Name"
+                        div { class: "mb-4",
+                            label { class: "block text-sm font-medium mb-1", "Name" }
                             input {
+                                class: "input",
                                 r#type: "text",
                                 placeholder: "Living Room Knob",
                                 value: "{name}",
@@ -429,12 +432,13 @@ fn ConfigModal(
                             }
                         }
 
-                        fieldset {
-                            legend { "Display Rotation" }
-                            div { class: "grid",
-                                label {
-                                    "Charging"
+                        fieldset { class: "mb-6",
+                            legend { class: "text-sm font-medium mb-2", "Display Rotation" }
+                            div { class: "form-grid",
+                                div {
+                                    label { class: "block text-sm text-gray-400 mb-1", "Charging" }
                                     select {
+                                        class: "input",
                                         value: "{rotation_charging}",
                                         onchange: move |e| {
                                             if let Ok(v) = e.value().parse() {
@@ -445,9 +449,10 @@ fn ConfigModal(
                                         option { value: "180", selected: rotation_charging == 180, "180°" }
                                     }
                                 }
-                                label {
-                                    "Battery"
+                                div {
+                                    label { class: "block text-sm text-gray-400 mb-1", "Battery" }
                                     select {
+                                        class: "input",
                                         value: "{rotation_not_charging}",
                                         onchange: move |e| {
                                             if let Ok(v) = e.value().parse() {
@@ -461,23 +466,23 @@ fn ConfigModal(
                             }
                         }
 
-                        footer { style: "display:flex;gap:1rem;justify-content:flex-end;",
+                        div { class: "flex items-center gap-4 justify-end",
                             if let Some(ref status) = save_status {
-                                span { style: "margin-right:auto;",
+                                span { class: "mr-auto",
                                     if status.starts_with("Error") {
                                         span { class: "status-err", "{status}" }
                                     } else {
-                                        "{status}"
+                                        span { class: "text-gray-400", "{status}" }
                                     }
                                 }
                             }
                             button {
                                 r#type: "button",
-                                class: "secondary",
+                                class: "btn btn-outline",
                                 onclick: move |_| on_close.call(()),
                                 "Cancel"
                             }
-                            button { r#type: "submit", "Save" }
+                            button { class: "btn btn-primary", r#type: "submit", "Save" }
                         }
                     }
                 }

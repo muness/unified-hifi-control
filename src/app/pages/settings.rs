@@ -100,85 +100,93 @@ pub fn Settings() -> Element {
             title: "Settings".to_string(),
             nav_active: "settings".to_string(),
 
-            h1 { "Settings" }
+            h1 { class: "text-2xl font-bold mb-6", "Settings" }
 
             // Adapter Settings section
-            section {
-                h2 { "Adapter Settings" }
-                p { "Enable or disable zone sources" }
+            section { class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Adapter Settings" }
+                    p { class: "text-gray-400 text-sm", "Enable or disable zone sources" }
+                }
 
-                article {
-                    div { style: "display:flex;flex-wrap:wrap;gap:1.5rem;",
-                        label {
+                div { class: "card p-6",
+                    div { class: "flex flex-wrap gap-6",
+                        label { class: "flex items-center gap-2",
                             input {
                                 r#type: "checkbox",
+                                class: "checkbox",
                                 checked: roon_enabled(),
                                 onchange: move |_| {
                                     roon_enabled.toggle();
                                     save_settings();
                                 }
                             }
-                            " Roon"
+                            "Roon"
                         }
-                        label {
+                        label { class: "flex items-center gap-2",
                             input {
                                 r#type: "checkbox",
+                                class: "checkbox",
                                 checked: lms_enabled(),
                                 onchange: move |_| {
                                     lms_enabled.toggle();
                                     save_settings();
                                 }
                             }
-                            " LMS"
+                            "LMS"
                         }
-                        label {
+                        label { class: "flex items-center gap-2",
                             input {
                                 r#type: "checkbox",
+                                class: "checkbox",
                                 checked: openhome_enabled(),
                                 onchange: move |_| {
                                     openhome_enabled.toggle();
                                     save_settings();
                                 }
                             }
-                            " OpenHome"
+                            "OpenHome"
                         }
-                        label {
+                        label { class: "flex items-center gap-2",
                             input {
                                 r#type: "checkbox",
+                                class: "checkbox",
                                 checked: upnp_enabled(),
                                 onchange: move |_| {
                                     upnp_enabled.toggle();
                                     save_settings();
                                 }
                             }
-                            " UPnP/DLNA"
+                            "UPnP/DLNA"
                         }
                     }
-                    p { style: "margin-top:0.5rem;",
-                        small { "Changes take effect immediately. Disabled adapters won't contribute zones." }
+                    p { class: "mt-3 text-sm text-gray-400",
+                        "Changes take effect immediately. Disabled adapters won't contribute zones."
                     }
                 }
             }
 
             // Discovery Status section
             section {
-                h2 { "Auto-Discovery" }
-                p { "Devices found via SSDP (no configuration needed)" }
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Auto-Discovery" }
+                    p { class: "text-gray-400 text-sm", "Devices found via SSDP (no configuration needed)" }
+                }
 
-                article {
-                    table { id: "discovery-table",
+                div { class: "card p-6",
+                    table { class: "w-full", id: "discovery-table",
                         thead {
-                            tr {
-                                th { "Protocol" }
-                                th { "Status" }
-                                th { "Devices" }
+                            tr { class: "border-b border-gray-700",
+                                th { class: "text-left py-2 px-3 font-semibold", "Protocol" }
+                                th { class: "text-left py-2 px-3 font-semibold", "Status" }
+                                th { class: "text-left py-2 px-3 font-semibold", "Devices" }
                             }
                         }
                         tbody {
                             // Roon row
-                            tr {
-                                td { "Roon" }
-                                td {
+                            tr { class: "border-b border-gray-800",
+                                td { class: "py-2 px-3", "Roon" }
+                                td { class: "py-2 px-3",
                                     if !roon_enabled() {
                                         span { class: "status-disabled", "Disabled" }
                                     } else if let Some(ref status) = roon_st {
@@ -191,7 +199,7 @@ pub fn Settings() -> Element {
                                         "Loading..."
                                     }
                                 }
-                                td {
+                                td { class: "py-2 px-3 text-gray-400",
                                     if !roon_enabled() {
                                         "-"
                                     } else if let Some(ref status) = roon_st {
@@ -210,9 +218,9 @@ pub fn Settings() -> Element {
                                 }
                             }
                             // OpenHome row
-                            tr {
-                                td { "OpenHome" }
-                                td {
+                            tr { class: "border-b border-gray-800",
+                                td { class: "py-2 px-3", "OpenHome" }
+                                td { class: "py-2 px-3",
                                     if !openhome_enabled() {
                                         span { class: "status-disabled", "Disabled" }
                                     } else if let Some(ref status) = openhome_st {
@@ -225,7 +233,7 @@ pub fn Settings() -> Element {
                                         "Loading..."
                                     }
                                 }
-                                td {
+                                td { class: "py-2 px-3 text-gray-400",
                                     if !openhome_enabled() {
                                         "-"
                                     } else if let Some(ref status) = openhome_st {
@@ -237,8 +245,8 @@ pub fn Settings() -> Element {
                             }
                             // UPnP row
                             tr {
-                                td { "UPnP/DLNA" }
-                                td {
+                                td { class: "py-2 px-3", "UPnP/DLNA" }
+                                td { class: "py-2 px-3",
                                     if !upnp_enabled() {
                                         span { class: "status-disabled", "Disabled" }
                                     } else if let Some(ref status) = upnp_st {
@@ -251,7 +259,7 @@ pub fn Settings() -> Element {
                                         "Loading..."
                                     }
                                 }
-                                td {
+                                td { class: "py-2 px-3 text-gray-400",
                                     if !upnp_enabled() {
                                         "-"
                                     } else if let Some(ref status) = upnp_st {

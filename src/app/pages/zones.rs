@@ -79,11 +79,11 @@ pub fn Zones() -> Element {
 
     let content = if is_loading {
         rsx! {
-            article { aria_busy: "true", "Loading zones..." }
+            div { class: "card p-6", aria_busy: "true", "Loading zones..." }
         }
     } else if zones_list.is_empty() {
         rsx! {
-            article { "No zones available. Check that adapters are connected." }
+            div { class: "card p-6", "No zones available. Check that adapters are connected." }
         }
     } else {
         rsx! {
@@ -105,7 +105,7 @@ pub fn Zones() -> Element {
             title: "Zones".to_string(),
             nav_active: "zones".to_string(),
 
-            h1 { "Zones" }
+            h1 { class: "text-2xl font-bold mb-6", "Zones" }
 
             section { id: "zones",
                 {content}
@@ -167,61 +167,60 @@ fn ZoneCard(
         .unwrap_or_default();
 
     rsx! {
-        article {
-            header {
-                strong { "{zone.zone_name}" }
+        div { class: "card p-4",
+            // Header with zone name and badges
+            div { class: "flex items-center gap-2 mb-3",
+                span { class: "font-semibold text-lg", "{zone.zone_name}" }
                 if has_hqp {
-                    mark {
-                        style: "font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;",
-                        "HQP"
-                    }
+                    span { class: "badge badge-primary", "HQP" }
                 }
                 if let Some(ref source) = zone.source {
-                    mark {
-                        style: "font-size:0.7em;padding:0.1em 0.3em;margin-left:0.5em;background:var(--pico-muted-background);",
-                        "{source}"
-                    }
+                    span { class: "badge badge-secondary", "{source}" }
                 }
             }
 
-            div { style: "min-height:40px;overflow:hidden;",
+            // Now playing info
+            div { class: "min-h-[40px] overflow-hidden mb-4",
                 if !track.is_empty() {
-                    strong { style: "font-size:0.9em;", "{track}" }
-                    br {}
-                    small { "{artist}" }
+                    p { class: "font-medium text-sm truncate", "{track}" }
+                    p { class: "text-sm text-gray-400 truncate", "{artist}" }
                 } else {
-                    small { "Nothing playing" }
+                    p { class: "text-sm text-gray-500", "Nothing playing" }
                 }
             }
 
-            footer {
-                div { class: "controls", style: "align-items:center;",
+            // Transport controls
+            div { class: "flex items-center gap-2",
+                button {
+                    class: "btn btn-ghost",
+                    onclick: move |_| on_control.call((zone_id_prev.clone(), "previous".to_string())),
+                    "◀◀"
+                }
+                button {
+                    class: "btn btn-primary",
+                    onclick: move |_| on_control.call((zone_id_play.clone(), "play_pause".to_string())),
+                    "{play_icon}"
+                }
+                button {
+                    class: "btn btn-ghost",
+                    onclick: move |_| on_control.call((zone_id_next.clone(), "next".to_string())),
+                    "▶▶"
+                }
+
+                // Volume controls
+                div { class: "ml-auto flex items-center gap-1",
                     button {
-                        onclick: move |_| on_control.call((zone_id_prev.clone(), "previous".to_string())),
-                        "◀◀"
+                        class: "btn btn-outline btn-sm",
+                        onclick: move |_| on_control.call((zone_id_vol_down.clone(), "vol_down".to_string())),
+                        "−"
+                    }
+                    span { class: "min-w-[3.5rem] text-center text-sm",
+                        "{volume_display}"
                     }
                     button {
-                        onclick: move |_| on_control.call((zone_id_play.clone(), "play_pause".to_string())),
-                        "{play_icon}"
-                    }
-                    button {
-                        onclick: move |_| on_control.call((zone_id_next.clone(), "next".to_string())),
-                        "▶▶"
-                    }
-                    span { style: "margin-left:auto;display:flex;align-items:center;gap:0.25rem;",
-                        button {
-                            style: "padding:0.3rem 0.6rem;",
-                            onclick: move |_| on_control.call((zone_id_vol_down.clone(), "vol_down".to_string())),
-                            "−"
-                        }
-                        span { style: "min-width:3.5rem;text-align:center;font-size:0.9em;",
-                            "{volume_display}"
-                        }
-                        button {
-                            style: "padding:0.3rem 0.6rem;",
-                            onclick: move |_| on_control.call((zone_id_vol_up.clone(), "vol_up".to_string())),
-                            "+"
-                        }
+                        class: "btn btn-outline btn-sm",
+                        onclick: move |_| on_control.call((zone_id_vol_up.clone(), "vol_up".to_string())),
+                        "+"
                     }
                 }
             }

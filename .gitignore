@@ -9,6 +9,9 @@ data/
 firmware/*.bin
 firmware/version.json
 
+# Tailwind standalone CLI binary (downloaded via `make setup-tailwind`)
+/tailwindcss
+
 # Superego
 .superego/
 .wm/

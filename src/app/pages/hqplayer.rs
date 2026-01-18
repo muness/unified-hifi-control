@@ -216,28 +216,30 @@ pub fn HqPlayer() -> Element {
             title: "HQPlayer".to_string(),
             nav_active: "hqplayer".to_string(),
 
-            h1 { "HQPlayer" }
+            h1 { class: "text-2xl font-bold mb-6", "HQPlayer" }
 
             // Configuration section
-            section { id: "hqp-config",
-                hgroup {
-                    h2 { "Configuration" }
-                    p { "HQPlayer connection settings" }
+            section { id: "hqp-config", class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Configuration" }
+                    p { class: "text-gray-400 text-sm", "HQPlayer connection settings" }
                 }
-                article {
-                    label {
-                        "Host (IP or hostname)"
+                div { class: "card p-6",
+                    div { class: "mb-4",
+                        label { class: "block text-sm font-medium mb-1", "Host (IP or hostname)" }
                         input {
+                            class: "input",
                             r#type: "text",
                             placeholder: "192.168.1.100",
                             value: "{host}",
                             oninput: move |evt| host.set(evt.value())
                         }
                     }
-                    div { class: "grid",
-                        label {
-                            "Native Port (TCP)"
+                    div { class: "form-grid mb-4",
+                        div {
+                            label { class: "block text-sm font-medium mb-1", "Native Port (TCP)" }
                             input {
+                                class: "input",
                                 r#type: "number",
                                 min: "1",
                                 max: "65535",
@@ -249,9 +251,10 @@ pub fn HqPlayer() -> Element {
                                 }
                             }
                         }
-                        label {
-                            "Web Port (HTTP)"
+                        div {
+                            label { class: "block text-sm font-medium mb-1", "Web Port (HTTP)" }
                             input {
+                                class: "input",
                                 r#type: "number",
                                 min: "1",
                                 max: "65535",
@@ -262,22 +265,24 @@ pub fn HqPlayer() -> Element {
                                     }
                                 }
                             }
-                            small { "For profile loading (HQPlayer Embedded)" }
+                            p { class: "text-gray-500 text-xs mt-1", "For profile loading (HQPlayer Embedded)" }
                         }
                     }
-                    div { class: "grid",
-                        label {
-                            "Web Username"
+                    div { class: "form-grid mb-4",
+                        div {
+                            label { class: "block text-sm font-medium mb-1", "Web Username" }
                             input {
+                                class: "input",
                                 r#type: "text",
                                 placeholder: "admin",
                                 value: "{username}",
                                 oninput: move |evt| username.set(evt.value())
                             }
                         }
-                        label {
-                            "Web Password"
+                        div {
+                            label { class: "block text-sm font-medium mb-1", "Web Password" }
                             input {
+                                class: "input",
                                 r#type: "password",
                                 placeholder: "password",
                                 value: "{password}",
@@ -285,17 +290,16 @@ pub fn HqPlayer() -> Element {
                             }
                         }
                     }
-                    small { "Web credentials enable profile switching via HQPlayer's web UI" }
-                    br {}
-                    button { onclick: save_config, "Save Configuration" }
-                    if let Some(ref status_msg) = config_status() {
-                        span { style: "margin-left:1rem;",
+                    p { class: "text-gray-500 text-xs mb-4", "Web credentials enable profile switching via HQPlayer's web UI" }
+                    div { class: "flex items-center gap-4",
+                        button { class: "btn btn-primary", onclick: save_config, "Save Configuration" }
+                        if let Some(ref status_msg) = config_status() {
                             if status_msg.contains("Connected") {
                                 span { class: "status-ok", "✓ {status_msg}" }
                             } else if status_msg.starts_with("Error") {
                                 span { class: "status-err", "{status_msg}" }
                             } else {
-                                "{status_msg}"
+                                span { class: "text-gray-400", "{status_msg}" }
                             }
                         }
                     }
@@ -303,12 +307,12 @@ pub fn HqPlayer() -> Element {
             }
 
             // Connection Status section
-            section { id: "hqp-status",
-                hgroup {
-                    h2 { "Connection Status" }
-                    p { "HQPlayer DSP engine connection" }
+            section { id: "hqp-status", class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Connection Status" }
+                    p { class: "text-gray-400 text-sm", "HQPlayer DSP engine connection" }
                 }
-                article {
+                div { class: "card p-6",
                     if let Some(ref s) = current_status {
                         if s.connected {
                             p { class: "status-ok",
@@ -326,12 +330,12 @@ pub fn HqPlayer() -> Element {
             }
 
             // Pipeline Settings section
-            section { id: "hqp-pipeline",
-                hgroup {
-                    h2 { "Pipeline Settings" }
-                    p { "Current DSP configuration" }
+            section { id: "hqp-pipeline", class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Pipeline Settings" }
+                    p { class: "text-gray-400 text-sm", "Current DSP configuration" }
                 }
-                article {
+                div { class: "card p-6",
                     if let Some(ref pipe) = current_pipeline {
                         PipelineDisplay { pipeline: pipe.clone() }
                     } else if is_loading {
@@ -343,28 +347,28 @@ pub fn HqPlayer() -> Element {
             }
 
             // Profiles section
-            section { id: "hqp-profiles",
-                hgroup {
-                    h2 { "Profiles" }
-                    p { "Saved configurations (requires web credentials)" }
+            section { id: "hqp-profiles", class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Profiles" }
+                    p { class: "text-gray-400 text-sm", "Saved configurations (requires web credentials)" }
                 }
-                article {
+                div { class: "card p-6",
                     if profiles_list.is_empty() {
-                        p { "No profiles available" }
+                        p { class: "text-gray-400", "No profiles available" }
                     } else {
-                        table {
+                        table { class: "w-full",
                             thead {
-                                tr {
-                                    th { "Profile" }
-                                    th { "Action" }
+                                tr { class: "border-b border-gray-700",
+                                    th { class: "text-left py-2", "Profile" }
+                                    th { class: "text-left py-2", "Action" }
                                 }
                             }
                             tbody {
                                 for profile in profiles_list {
-                                    tr {
-                                        td { "{profile.title.as_deref().or(profile.name.as_deref()).unwrap_or(\"Unknown\")}" }
-                                        td {
-                                            button { "Load" }
+                                    tr { class: "border-b border-gray-700",
+                                        td { class: "py-2", "{profile.title.as_deref().or(profile.name.as_deref()).unwrap_or(\"Unknown\")}" }
+                                        td { class: "py-2",
+                                            button { class: "btn btn-outline btn-sm", "Load" }
                                         }
                                     }
                                 }
@@ -375,12 +379,12 @@ pub fn HqPlayer() -> Element {
             }
 
             // Zone Linking section
-            section { id: "hqp-zone-links",
-                hgroup {
-                    h2 { "Zone Linking" }
-                    p { "Link audio zones to HQPlayer for DSP processing" }
+            section { id: "hqp-zone-links", class: "mb-8",
+                div { class: "mb-4",
+                    h2 { class: "text-xl font-semibold", "Zone Linking" }
+                    p { class: "text-gray-400 text-sm", "Link audio zones to HQPlayer for DSP processing" }
                 }
-                article {
+                div { class: "card p-6",
                     ZoneLinkTable {
                         zones: zones_list,
                         links: links_list,
@@ -409,39 +413,41 @@ fn PipelineDisplay(pipeline: HqpPipeline) -> Element {
     };
 
     rsx! {
-        table {
-            tr {
-                td { "Mode" }
-                td { "{status.and_then(|s| s.active_mode.as_deref()).unwrap_or(\"N/A\")}" }
-            }
-            tr {
-                td { "Filter" }
-                td { "{status.and_then(|s| s.active_filter.as_deref()).unwrap_or(\"N/A\")}" }
-            }
-            tr {
-                td { "Shaper" }
-                td { "{status.and_then(|s| s.active_shaper.as_deref()).unwrap_or(\"N/A\")}" }
-            }
-            tr {
-                td { "Sample Rate" }
-                td {
-                    if let Some(rate) = status.and_then(|s| s.active_rate) {
-                        "{format_rate(rate)}"
-                    } else {
-                        "N/A"
+        table { class: "w-full",
+            tbody {
+                tr { class: "border-b border-gray-700",
+                    td { class: "py-2 text-gray-400", "Mode" }
+                    td { class: "py-2", "{status.and_then(|s| s.active_mode.as_deref()).unwrap_or(\"N/A\")}" }
+                }
+                tr { class: "border-b border-gray-700",
+                    td { class: "py-2 text-gray-400", "Filter" }
+                    td { class: "py-2", "{status.and_then(|s| s.active_filter.as_deref()).unwrap_or(\"N/A\")}" }
+                }
+                tr { class: "border-b border-gray-700",
+                    td { class: "py-2 text-gray-400", "Shaper" }
+                    td { class: "py-2", "{status.and_then(|s| s.active_shaper.as_deref()).unwrap_or(\"N/A\")}" }
+                }
+                tr { class: "border-b border-gray-700",
+                    td { class: "py-2 text-gray-400", "Sample Rate" }
+                    td { class: "py-2",
+                        if let Some(rate) = status.and_then(|s| s.active_rate) {
+                            "{format_rate(rate)}"
+                        } else {
+                            "N/A"
+                        }
                     }
                 }
-            }
-            tr {
-                td { "Volume" }
-                td {
-                    if let Some(v) = volume.and_then(|vol| vol.value) {
-                        "{v} dB"
-                        if volume.map(|vol| vol.is_fixed).unwrap_or(false) {
-                            " (fixed)"
+                tr {
+                    td { class: "py-2 text-gray-400", "Volume" }
+                    td { class: "py-2",
+                        if let Some(v) = volume.and_then(|vol| vol.value) {
+                            "{v} dB"
+                            if volume.map(|vol| vol.is_fixed).unwrap_or(false) {
+                                " (fixed)"
+                            }
+                        } else {
+                            "N/A"
                         }
-                    } else {
-                        "N/A"
                     }
                 }
             }
@@ -460,7 +466,7 @@ fn ZoneLinkTable(
 ) -> Element {
     if zones.is_empty() {
         return rsx! {
-            p { "No audio zones available. Check that adapters are connected." }
+            p { class: "text-gray-400", "No audio zones available. Check that adapters are connected." }
         };
     }
 
@@ -483,13 +489,13 @@ fn ZoneLinkTable(
     };
 
     rsx! {
-        table {
+        table { class: "w-full",
             thead {
-                tr {
-                    th { "Zone" }
-                    th { "Source" }
-                    th { "HQPlayer Instance" }
-                    th { "Action" }
+                tr { class: "border-b border-gray-700",
+                    th { class: "text-left py-2", "Zone" }
+                    th { class: "text-left py-2", "Source" }
+                    th { class: "text-left py-2", "HQPlayer Instance" }
+                    th { class: "text-left py-2", "Action" }
                 }
             }
             tbody {
@@ -502,14 +508,14 @@ fn ZoneLinkTable(
                         let backend = get_backend(&zone_id);
 
                         rsx! {
-                            tr {
-                                td { "{zone.zone_name}" }
-                                td { small { "{backend}" } }
-                                td {
+                            tr { class: "border-b border-gray-700",
+                                td { class: "py-2", "{zone.zone_name}" }
+                                td { class: "py-2", span { class: "text-sm text-gray-400", "{backend}" } }
+                                td { class: "py-2",
                                     if let Some(ref inst) = linked {
-                                        strong { "{inst}" }
+                                        span { class: "font-semibold", "{inst}" }
                                     } else {
-                                        select {
+                                        select { class: "input",
                                             if instances.is_empty() {
                                                 option { value: "default", "default" }
                                             } else {
@@ -523,15 +529,16 @@ fn ZoneLinkTable(
                                         }
                                     }
                                 }
-                                td {
+                                td { class: "py-2",
                                     if linked.is_some() {
                                         button {
-                                            class: "outline secondary",
+                                            class: "btn btn-outline btn-sm",
                                             onclick: move |_| on_unlink.call(zone_id_unlink.clone()),
                                             "Unlink"
                                         }
                                     } else {
                                         button {
+                                            class: "btn btn-primary btn-sm",
                                             onclick: move |_| on_link.call((zone_id_link.clone(), "default".to_string())),
                                             "Link"
                                         }

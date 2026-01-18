@@ -1,12 +1,16 @@
 [application]
 name = "unified-hifi-control"
+asset_dir = "public"
 
 [web.app]
 title = "Unified Hi-Fi Control"
 
 [web.watcher]
 reload_html = true
-watch_path = ["src"]
+watch_path = ["src", "public"]
 
 [web.resource.dev]
 base_path = "/"
+
+[web.resource]
+style = ["/tailwind.css"]

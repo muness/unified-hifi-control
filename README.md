@@ -203,6 +203,7 @@ The v3 rewrite was motivated by packaging requests (NAS users wanted native pack
 
 - Rust 1.84+ with `wasm32-unknown-unknown` target
 - [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started)
+- `curl` (for Tailwind CLI download)
 
 ```bash
 rustup target add wasm32-unknown-unknown
@@ -212,20 +213,34 @@ cargo install dioxus-cli --locked
 ### Build
 
 ```bash
-# Development build (server only)
-cargo build
+# Build Tailwind CSS (auto-downloads standalone CLI, no Node.js)
+make css
 
-# Release build with web assets (WASM + server)
-dx build --release --platform web --features web
+# Full build with web UI (WASM + server) - REQUIRED for web UI
+dx build --release --platform web
 ```
+
+**Note:** `cargo build` only builds the server without the WASM client. The web UI requires `dx build` which produces both the server binary and the WASM bundle needed for hydration (interactive components).
 
 ### Run
 
 ```bash
-# After dx build
+# Run from dx output directory (contains required wasm assets)
 ./target/dx/unified-hifi-control/release/web/unified-hifi-control
 
 # Access at http://127.0.0.1:8088
+```
+
+**Important:** The server must be run from the `dx build` output directory where the `public/wasm/` folder exists. Running the binary from elsewhere will cause a panic or non-functional UI.
+
+### CSS Development
+
+```bash
+# Watch mode - rebuilds CSS on changes to src/input.css or .rs files
+make css-watch
+
+# In another terminal, run dx serve for hot reload
+dx serve
 ```
 
 ### Test
