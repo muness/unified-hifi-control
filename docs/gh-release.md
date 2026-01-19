@@ -254,8 +254,8 @@ spk/
 | Target | Caching | Build Tool | Notes |
 |--------|---------|------------|-------|
 | Web Assets (WASM) | sccache + rust-cache | dx (dioxus-cli) | shared-key: wasm-build |
-| macOS universal | rust-cache | cargo + lipo | Both archs in one job |
-| Windows x86_64 | rust-cache | cargo | Native build |
+| macOS universal | sccache + rust-cache | cargo + lipo | Both archs in one job |
+| Windows x86_64 | sccache + rust-cache | cargo | Native build |
 | Linux x86_64-musl | rust-cache only | cargo-zigbuild | No sccache (zig wrapper) |
 | Linux aarch64-musl | rust-cache only | cargo-zigbuild | No sccache (zig wrapper) |
 | Linux armv7-musl | rust-cache only | cargo-zigbuild | +QEMU smoke test |
@@ -282,7 +282,7 @@ This adds ~14s but catches ABI issues, missing linkage, and startup crashes befo
 
 1. **Align cache settings across workflows:** When using `shared-key` to share caches between PR and release workflows, ALL settings (`cache-all-crates`, `cache-on-failure`, `cache-directories`) must match. Mismatches prevent cache sharing.
 
-2. **sccache limitations:** sccache can't cache proc-macros (crate-type limitation). Since proc-macros dominate compile time in this codebase, sccache adds little value. We use it only for web assets build; macOS/Windows use rust-cache alone.
+2. **sccache + rust-cache:** Use both for native builds. sccache caches `.o` files, rust-cache caches proc-macro dylibs. zigbuild jobs can only use rust-cache (sccache incompatible with zig wrapper).
 
 3. **Avoid containerized cross-compilation:** `cross` runs cargo in Docker containers, breaking Cargo's fingerprint caching. `cargo-zigbuild` cross-compiles without containers.
 
