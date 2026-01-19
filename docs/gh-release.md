@@ -202,6 +202,53 @@ Web assets (WASM + JS) are identical across all platforms. Build once, share via
     path: public/
 ```
 
+### 8. NAS Package Building (Synology SPK, QNAP QPKG)
+
+NAS packages reuse pre-built Linux binaries and web assets - no compilation needed.
+
+**Synology SPK:** Built directly with `tar`, not the full Synology toolkit.
+
+```yaml
+- name: Build Synology SPK
+  run: |
+    # Create package.tgz with binary + web assets
+    tar -czf package.tgz -C package .
+
+    # Build SPK archive (tar format per Synology spec)
+    tar -cf "UnifiedHifiControl-${ARCH}-${VERSION}.spk" \
+      INFO PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG \
+      package.tgz scripts conf WIZARD_UIFILES
+```
+
+**Why not use Synology's pkgscripts-ng toolkit?**
+- Toolkit downloads ~1GB chroot environment
+- Creates both debug and release SPKs (no way to skip debug)
+- Takes 5+ minutes vs seconds for direct tar
+- We already have cross-compiled binaries - no need for their cross-compiler
+
+**SPK structure** (per [Synology Developer Guide](https://help.synology.com/developer-guide/synology_package/introduction.html)):
+```
+spk/
+├── INFO                    # Package metadata
+├── package.tgz             # Binary + web assets
+├── scripts/                # start-stop-status, postinst, preuninst
+├── conf/                   # privilege, resource
+├── PACKAGE_ICON.PNG        # 72x72 icon
+├── PACKAGE_ICON_256.PNG    # 256x256 icon
+└── WIZARD_UIFILES/         # Install/uninstall UI (optional)
+```
+
+**QNAP QPKG:** Uses the official qbuild tool via Docker:
+
+```yaml
+- name: Build QPKG with Docker
+  run: |
+    docker run --rm --platform linux/amd64 \
+      -v "$(pwd)/qnap-build:/src" \
+      owncloudci/qnap-qpkg-builder \
+      sh -c '/usr/share/qdk2/QDK/bin/qbuild --build-dir /src/build'
+```
+
 ## Build Matrix
 
 | Target | Caching | Build Tool | Notes |
@@ -213,6 +260,9 @@ Web assets (WASM + JS) are identical across all platforms. Build once, share via
 | Linux aarch64-musl | rust-cache only | cargo-zigbuild | No sccache (zig wrapper) |
 | Linux armv7-musl | rust-cache only | cargo-zigbuild | +QEMU smoke test |
 | Docker multi-arch | N/A | pre-built binaries | Uses Dockerfile.release |
+| Synology SPK | N/A | tar | Direct archive, no toolkit |
+| QNAP QPKG | N/A | qbuild (Docker) | Uses pre-built binaries |
+| Linux deb/rpm | N/A | fpm | Uses pre-built binaries |
 
 ## Smoke Testing Cross-Compiled Binaries
 
@@ -245,3 +295,5 @@ This adds ~14s but catches ABI issues, missing linkage, and startup crashes befo
 7. **Pin tool versions in cache keys:** `dx-cli-0.7.3` ensures cache invalidation when upgrading tools.
 
 8. **Direct zig download:** Downloading zig directly is faster than using package managers or install actions that might compile from source.
+
+9. **Build NAS packages directly:** Synology's pkgscripts-ng toolkit downloads a 1GB+ chroot and creates unwanted debug packages. Since we already have cross-compiled binaries, build SPKs directly with `tar` - it's faster and simpler. QNAP's qbuild is lightweight enough to use via Docker.
