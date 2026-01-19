@@ -73,6 +73,7 @@ jobs:
       build_qnap_arm: ${{ steps.decide.outputs.build_qnap_arm }}
       build_docker: ${{ steps.decide.outputs.build_docker }}
       build_linux_packages: ${{ steps.decide.outputs.build_linux_packages }}
+      lms_matrix: ${{ steps.decide.outputs.lms_matrix }}
     steps:
       - name: Decide what to build
         id: decide
@@ -182,6 +183,40 @@ jobs:
           if [[ "$HAS_LABEL_LINUX_PACKAGES" == "true" ]]; then BUILD_LINUX_PACKAGES="true"; fi
           if [[ "$INPUT_LINUX_PACKAGES" == "true" ]]; then BUILD_LINUX_PACKAGES="true"; fi
           echo "build_linux_packages=$BUILD_LINUX_PACKAGES" >> $GITHUB_OUTPUT
+
+          # LMS full ZIP matrix - only include platforms whose binaries are built
+          LMS_MATRIX='{"include":['
+          LMS_FIRST="true"
+
+          # linux-x64 always included when LMS is built (requires linux-x64 which is always built)
+          if [[ "$BUILD_LMS" == "true" ]]; then
+            LMS_MATRIX="$LMS_MATRIX"'{"platform":"linux-x64","binary_artifact":"binary-x86_64-unknown-linux-musl","binary_name":"unified-hifi-linux-x64","bundled_name":"unified-hifi-control"}'
+            LMS_FIRST="false"
+          fi
+
+          # linux-arm64 and linux-armv7 require ARM build
+          if [[ "$BUILD_LMS" == "true" && "$BUILD_LINUX_ARM" == "true" ]]; then
+            [[ "$LMS_FIRST" == "false" ]] && LMS_MATRIX="$LMS_MATRIX,"
+            LMS_MATRIX="$LMS_MATRIX"'{"platform":"linux-arm64","binary_artifact":"binary-aarch64-unknown-linux-musl","binary_name":"unified-hifi-linux-arm64","bundled_name":"unified-hifi-control"}'
+            LMS_MATRIX="$LMS_MATRIX,"'{"platform":"linux-armv7","binary_artifact":"binary-armv7-unknown-linux-musleabihf","binary_name":"unified-hifi-linux-armv7","bundled_name":"unified-hifi-control"}'
+            LMS_FIRST="false"
+          fi
+
+          # macos requires macOS build
+          if [[ "$BUILD_LMS" == "true" && "$BUILD_MACOS" == "true" ]]; then
+            [[ "$LMS_FIRST" == "false" ]] && LMS_MATRIX="$LMS_MATRIX,"
+            LMS_MATRIX="$LMS_MATRIX"'{"platform":"macos","binary_artifact":"binary-macos-universal","binary_name":"unified-hifi-macos-universal","bundled_name":"unified-hifi-control"}'
+            LMS_FIRST="false"
+          fi
+
+          # windows requires Windows build
+          if [[ "$BUILD_LMS" == "true" && "$BUILD_WINDOWS" == "true" ]]; then
+            [[ "$LMS_FIRST" == "false" ]] && LMS_MATRIX="$LMS_MATRIX,"
+            LMS_MATRIX="$LMS_MATRIX"'{"platform":"windows","binary_artifact":"binary-windows","binary_name":"unified-hifi-win64.exe","bundled_name":"unified-hifi-control.exe"}'
+          fi
+
+          LMS_MATRIX="$LMS_MATRIX]}"
+          echo "lms_matrix=$LMS_MATRIX" >> $GITHUB_OUTPUT
 
           # Step summary - show label → build mapping
           echo "### Build Plan" >> $GITHUB_STEP_SUMMARY
@@ -701,66 +736,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - platform: linux-x64
-            binary_artifact: binary-x86_64-unknown-linux-musl
-            binary_name: unified-hifi-linux-x64
-            bundled_name: unified-hifi-control
-            needs_arm: false
-            needs_macos: false
-            needs_windows: false
-          - platform: linux-arm64
-            binary_artifact: binary-aarch64-unknown-linux-musl
-            binary_name: unified-hifi-linux-arm64
-            bundled_name: unified-hifi-control
-            needs_arm: true
-            needs_macos: false
-            needs_windows: false
-          - platform: linux-armv7
-            binary_artifact: binary-armv7-unknown-linux-musleabihf
-            binary_name: unified-hifi-linux-armv7
-            bundled_name: unified-hifi-control
-            needs_arm: true
-            needs_macos: false
-            needs_windows: false
-          - platform: macos
-            binary_artifact: binary-macos-universal
-            binary_name: unified-hifi-macos-universal
-            bundled_name: unified-hifi-control
-            needs_arm: false
-            needs_macos: true
-            needs_windows: false
-          - platform: windows
-            binary_artifact: binary-windows
-            binary_name: unified-hifi-win64.exe
-            bundled_name: unified-hifi-control.exe
-            needs_arm: false
-            needs_macos: false
-            needs_windows: true
+      matrix: ${{ fromJSON(needs.plan.outputs.lms_matrix) }}
     steps:
-      - name: Check if binary available
-        id: check
-        run: |
-          # Check if required binary build succeeded
-          if [[ "${{ matrix.needs_arm }}" == "true" && "${{ needs.build-linux-arm.result }}" != "success" ]]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "::notice::Skipping ${{ matrix.platform }} - ARM build not available"
-          elif [[ "${{ matrix.needs_macos }}" == "true" && "${{ needs.build-macos-universal.result }}" != "success" ]]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "::notice::Skipping ${{ matrix.platform }} - macOS build not available"
-          elif [[ "${{ matrix.needs_windows }}" == "true" && "${{ needs.build-windows.result }}" != "success" ]]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "::notice::Skipping ${{ matrix.platform }} - Windows build not available"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
       - uses: actions/checkout@v4
-        if: steps.check.outputs.skip != 'true'
 
       - name: Get version
-        if: steps.check.outputs.skip != 'true'
         id: version
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -771,26 +751,22 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Download binary
-        if: steps.check.outputs.skip != 'true'
         uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.binary_artifact }}
           path: binary/
 
       - name: Download web assets
-        if: steps.check.outputs.skip != 'true'
         uses: actions/download-artifact@v4
         with:
           name: web-assets
           path: web-assets/
 
       - name: Update install.xml version
-        if: steps.check.outputs.skip != 'true'
         run: |
           sed -i "s|<version>[^<]*</version>|<version>${{ steps.version.outputs.version }}</version>|" lms-plugin/install.xml
 
       - name: Bundle LMS plugin with binary
-        if: steps.check.outputs.skip != 'true'
         run: |
           mkdir -p dist
           cd lms-plugin
@@ -808,7 +784,6 @@ jobs:
             -x "*.git*"
 
       - name: Repack with correct directory structure
-        if: steps.check.outputs.skip != 'true'
         run: |
           cd dist
           mkdir -p repack
@@ -820,7 +795,6 @@ jobs:
           rm -rf repack
 
       - name: Upload LMS plugin
-        if: steps.check.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: lms-plugin-${{ matrix.platform }}
