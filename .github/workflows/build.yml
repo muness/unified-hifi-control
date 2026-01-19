@@ -50,18 +50,150 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Helper to check if a build is requested via label or input
-# Labels: build:lms, build:synology, build:qnap-arm, build:linux-arm, build:macos, build:windows, build:all
-env:
-  IS_RELEASE: ${{ github.event_name == 'release' }}
-
 jobs:
+  # =============================================================================
+  # PLAN: Centralized decision logic for what to build
+  # =============================================================================
+  # This job runs first (~5s) and computes which builds are needed.
+  # All other jobs check plan outputs instead of duplicating condition logic.
+  # Benefits: single source of truth, implicit dependency triggering, easier debugging.
+
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.decide.outputs.is_release }}
+      build_linux_arm: ${{ steps.decide.outputs.build_linux_arm }}
+      build_macos: ${{ steps.decide.outputs.build_macos }}
+      build_windows: ${{ steps.decide.outputs.build_windows }}
+      build_lms: ${{ steps.decide.outputs.build_lms }}
+      build_synology: ${{ steps.decide.outputs.build_synology }}
+      build_qnap: ${{ steps.decide.outputs.build_qnap }}
+      build_qnap_arm: ${{ steps.decide.outputs.build_qnap_arm }}
+      build_docker: ${{ steps.decide.outputs.build_docker }}
+      build_linux_packages: ${{ steps.decide.outputs.build_linux_packages }}
+    steps:
+      - name: Decide what to build
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          # Labels (only present on PRs)
+          HAS_LABEL_ALL: ${{ contains(github.event.pull_request.labels.*.name, 'build:all') }}
+          HAS_LABEL_LINUX_ARM: ${{ contains(github.event.pull_request.labels.*.name, 'build:linux-arm') }}
+          HAS_LABEL_MACOS: ${{ contains(github.event.pull_request.labels.*.name, 'build:macos') }}
+          HAS_LABEL_WINDOWS: ${{ contains(github.event.pull_request.labels.*.name, 'build:windows') }}
+          HAS_LABEL_LMS: ${{ contains(github.event.pull_request.labels.*.name, 'build:lms') }}
+          HAS_LABEL_SYNOLOGY: ${{ contains(github.event.pull_request.labels.*.name, 'build:synology') }}
+          HAS_LABEL_QNAP_ARM: ${{ contains(github.event.pull_request.labels.*.name, 'build:qnap-arm') }}
+          HAS_LABEL_LINUX_PACKAGES: ${{ contains(github.event.pull_request.labels.*.name, 'build:linux-packages') }}
+          # Inputs (only present on workflow_dispatch)
+          INPUT_LINUX_ARM: ${{ inputs.build_linux_arm }}
+          INPUT_MACOS: ${{ inputs.build_macos }}
+          INPUT_WINDOWS: ${{ inputs.build_windows }}
+          INPUT_LMS: ${{ inputs.build_lms }}
+          INPUT_SYNOLOGY: ${{ inputs.build_synology }}
+          INPUT_QNAP: ${{ inputs.build_qnap }}
+          INPUT_QNAP_ARM: ${{ inputs.build_qnap_arm }}
+          INPUT_DOCKER: ${{ inputs.build_docker }}
+          INPUT_LINUX_PACKAGES: ${{ inputs.build_linux_packages }}
+        run: |
+          # Helper function
+          should_build() {
+            [[ "$EVENT_NAME" == "release" ]] && return 0
+            [[ "$HAS_LABEL_ALL" == "true" ]] && return 0
+            return 1
+          }
+
+          # Is this a release?
+          IS_RELEASE=$([[ "$EVENT_NAME" == "release" ]] && echo "true" || echo "false")
+          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
+
+          # Linux ARM: needed for ARM binaries, Synology ARM, QNAP ARM, linux packages
+          BUILD_LINUX_ARM="false"
+          if should_build; then BUILD_LINUX_ARM="true"; fi
+          if [[ "$HAS_LABEL_LINUX_ARM" == "true" ]]; then BUILD_LINUX_ARM="true"; fi
+          if [[ "$HAS_LABEL_SYNOLOGY" == "true" ]]; then BUILD_LINUX_ARM="true"; fi
+          if [[ "$HAS_LABEL_QNAP_ARM" == "true" ]]; then BUILD_LINUX_ARM="true"; fi
+          if [[ "$HAS_LABEL_LINUX_PACKAGES" == "true" ]]; then BUILD_LINUX_ARM="true"; fi
+          if [[ "$INPUT_LINUX_ARM" == "true" ]]; then BUILD_LINUX_ARM="true"; fi
+          if [[ "$INPUT_SYNOLOGY" == "true" ]]; then BUILD_LINUX_ARM="true"; fi
+          if [[ "$INPUT_QNAP_ARM" == "true" ]]; then BUILD_LINUX_ARM="true"; fi
+          if [[ "$INPUT_LINUX_PACKAGES" == "true" ]]; then BUILD_LINUX_ARM="true"; fi
+          echo "build_linux_arm=$BUILD_LINUX_ARM" >> $GITHUB_OUTPUT
+
+          # macOS
+          BUILD_MACOS="false"
+          if should_build; then BUILD_MACOS="true"; fi
+          if [[ "$HAS_LABEL_MACOS" == "true" ]]; then BUILD_MACOS="true"; fi
+          if [[ "$INPUT_MACOS" == "true" ]]; then BUILD_MACOS="true"; fi
+          echo "build_macos=$BUILD_MACOS" >> $GITHUB_OUTPUT
+
+          # Windows
+          BUILD_WINDOWS="false"
+          if should_build; then BUILD_WINDOWS="true"; fi
+          if [[ "$HAS_LABEL_WINDOWS" == "true" ]]; then BUILD_WINDOWS="true"; fi
+          if [[ "$INPUT_WINDOWS" == "true" ]]; then BUILD_WINDOWS="true"; fi
+          echo "build_windows=$BUILD_WINDOWS" >> $GITHUB_OUTPUT
+
+          # LMS Plugin
+          BUILD_LMS="false"
+          if should_build; then BUILD_LMS="true"; fi
+          if [[ "$HAS_LABEL_LMS" == "true" ]]; then BUILD_LMS="true"; fi
+          if [[ "$INPUT_LMS" == "true" ]]; then BUILD_LMS="true"; fi
+          echo "build_lms=$BUILD_LMS" >> $GITHUB_OUTPUT
+
+          # Synology
+          BUILD_SYNOLOGY="false"
+          if should_build; then BUILD_SYNOLOGY="true"; fi
+          if [[ "$HAS_LABEL_SYNOLOGY" == "true" ]]; then BUILD_SYNOLOGY="true"; fi
+          if [[ "$INPUT_SYNOLOGY" == "true" ]]; then BUILD_SYNOLOGY="true"; fi
+          echo "build_synology=$BUILD_SYNOLOGY" >> $GITHUB_OUTPUT
+
+          # QNAP x64 (default on for PRs)
+          BUILD_QNAP="true"
+          if [[ "$INPUT_QNAP" == "false" ]]; then BUILD_QNAP="false"; fi
+          echo "build_qnap=$BUILD_QNAP" >> $GITHUB_OUTPUT
+
+          # QNAP ARM
+          BUILD_QNAP_ARM="false"
+          if should_build; then BUILD_QNAP_ARM="true"; fi
+          if [[ "$HAS_LABEL_QNAP_ARM" == "true" ]]; then BUILD_QNAP_ARM="true"; fi
+          if [[ "$INPUT_QNAP_ARM" == "true" ]]; then BUILD_QNAP_ARM="true"; fi
+          echo "build_qnap_arm=$BUILD_QNAP_ARM" >> $GITHUB_OUTPUT
+
+          # Docker x64 (default on for PRs)
+          BUILD_DOCKER="true"
+          if [[ "$INPUT_DOCKER" == "false" ]]; then BUILD_DOCKER="false"; fi
+          echo "build_docker=$BUILD_DOCKER" >> $GITHUB_OUTPUT
+
+          # Linux packages (deb/rpm)
+          BUILD_LINUX_PACKAGES="false"
+          if should_build; then BUILD_LINUX_PACKAGES="true"; fi
+          if [[ "$HAS_LABEL_LINUX_PACKAGES" == "true" ]]; then BUILD_LINUX_PACKAGES="true"; fi
+          if [[ "$INPUT_LINUX_PACKAGES" == "true" ]]; then BUILD_LINUX_PACKAGES="true"; fi
+          echo "build_linux_packages=$BUILD_LINUX_PACKAGES" >> $GITHUB_OUTPUT
+
+          # Summary
+          echo "### Build Plan" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | Build |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux ARM | $BUILD_LINUX_ARM |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS | $BUILD_MACOS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows | $BUILD_WINDOWS |" >> $GITHUB_STEP_SUMMARY
+          echo "| LMS Plugin | $BUILD_LMS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Synology | $BUILD_SYNOLOGY |" >> $GITHUB_STEP_SUMMARY
+          echo "| QNAP x64 | $BUILD_QNAP |" >> $GITHUB_STEP_SUMMARY
+          echo "| QNAP ARM | $BUILD_QNAP_ARM |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker x64 | $BUILD_DOCKER |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux Packages | $BUILD_LINUX_PACKAGES |" >> $GITHUB_STEP_SUMMARY
+
   # =============================================================================
   # ALWAYS RUN: Lint, Test, Web Assets, Linux x64
   # =============================================================================
 
   lint:
     name: Lint
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -86,6 +218,7 @@ jobs:
 
   test:
     name: Test
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -109,6 +242,7 @@ jobs:
 
   build-web-assets:
     name: Build Web Assets
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -150,7 +284,7 @@ jobs:
         run: dx build --release --platform web --features web
 
       - name: Create web assets tarball
-        if: github.event_name == 'release'
+        if: needs.plan.outputs.is_release == 'true'
         run: |
           cd target/dx/unified-hifi-control/release/web
           tar -czvf web-assets.tar.gz public/
@@ -164,7 +298,7 @@ jobs:
           retention-days: 5
 
       - name: Upload web assets tarball
-        if: github.event_name == 'release'
+        if: needs.plan.outputs.is_release == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: web-assets-tarball
@@ -173,6 +307,7 @@ jobs:
 
   build-linux-x64:
     name: Build Linux x64
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -220,21 +355,14 @@ jobs:
           retention-days: 5
 
   # =============================================================================
-  # OPTIONAL: Linux ARM builds (label: build:linux-arm, build:all)
+  # OPTIONAL: Controlled by plan outputs
   # =============================================================================
 
   build-linux-arm:
     name: Build Linux ARM (${{ matrix.arch }})
+    needs: plan
+    if: needs.plan.outputs.build_linux_arm == 'true'
     runs-on: ubuntu-latest
-    # Triggered by direct label OR by downstream jobs that need ARM binaries
-    if: |
-      github.event_name == 'release' ||
-      contains(github.event.pull_request.labels.*.name, 'build:linux-arm') ||
-      contains(github.event.pull_request.labels.*.name, 'build:qnap-arm') ||
-      contains(github.event.pull_request.labels.*.name, 'build:synology') ||
-      contains(github.event.pull_request.labels.*.name, 'build:linux-packages') ||
-      contains(github.event.pull_request.labels.*.name, 'build:all') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.build_linux_arm || inputs.build_qnap_arm || inputs.build_synology || inputs.build_linux_packages))
     strategy:
       matrix:
         include:
@@ -295,18 +423,11 @@ jobs:
           path: dist/bin/
           retention-days: 5
 
-  # =============================================================================
-  # OPTIONAL: macOS (label: build:macos, build:all)
-  # =============================================================================
-
   build-macos:
     name: Build macOS (universal)
+    needs: plan
+    if: needs.plan.outputs.build_macos == 'true'
     runs-on: macos-latest
-    if: |
-      github.event_name == 'release' ||
-      contains(github.event.pull_request.labels.*.name, 'build:macos') ||
-      contains(github.event.pull_request.labels.*.name, 'build:all') ||
-      (github.event_name == 'workflow_dispatch' && inputs.build_macos)
     steps:
       - uses: actions/checkout@v4
 
@@ -349,18 +470,11 @@ jobs:
           path: dist/bin/
           retention-days: 5
 
-  # =============================================================================
-  # OPTIONAL: Windows (label: build:windows, build:all)
-  # =============================================================================
-
   build-windows:
     name: Build Windows
+    needs: plan
+    if: needs.plan.outputs.build_windows == 'true'
     runs-on: windows-latest
-    if: |
-      github.event_name == 'release' ||
-      contains(github.event.pull_request.labels.*.name, 'build:windows') ||
-      contains(github.event.pull_request.labels.*.name, 'build:all') ||
-      (github.event_name == 'workflow_dispatch' && inputs.build_windows)
     steps:
       - uses: actions/checkout@v4
 
@@ -392,18 +506,11 @@ jobs:
           path: dist/bin/
           retention-days: 5
 
-  # =============================================================================
-  # OPTIONAL: LMS Plugin (label: build:lms, build:all)
-  # =============================================================================
-
   build-lms-plugin:
     name: Build LMS Plugin
+    needs: plan
+    if: needs.plan.outputs.build_lms == 'true'
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'release' ||
-      contains(github.event.pull_request.labels.*.name, 'build:lms') ||
-      contains(github.event.pull_request.labels.*.name, 'build:all') ||
-      (github.event_name == 'workflow_dispatch' && inputs.build_lms)
     steps:
       - uses: actions/checkout@v4
 
@@ -452,23 +559,17 @@ jobs:
           retention-days: 5
 
   # =============================================================================
-  # OPTIONAL: Synology SPK (label: build:synology, build:all)
+  # PACKAGING: Depends on binaries + web assets
   # =============================================================================
 
   build-synology:
     name: Build Synology SPK (${{ matrix.arch }})
-    needs: [build-linux-x64, build-linux-arm, build-web-assets]
-    # Needs build-linux-arm only when ARM targets are requested
+    needs: [plan, build-linux-x64, build-linux-arm, build-web-assets]
     if: |
       always() &&
+      needs.plan.outputs.build_synology == 'true' &&
       needs.build-linux-x64.result == 'success' &&
-      needs.build-web-assets.result == 'success' &&
-      (
-        github.event_name == 'release' ||
-        contains(github.event.pull_request.labels.*.name, 'build:synology') ||
-        contains(github.event.pull_request.labels.*.name, 'build:all') ||
-        (github.event_name == 'workflow_dispatch' && inputs.build_synology)
-      )
+      needs.build-web-assets.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -483,7 +584,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check if ARM binary available
+      - name: Check if binary available
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: |
           if [[ "${{ needs.build-linux-arm.result }}" != "success" ]]; then
@@ -537,18 +638,10 @@ jobs:
           path: dist/installers/*.spk
           retention-days: 5
 
-  # =============================================================================
-  # OPTIONAL: QNAP x64 (default on, label: build:qnap, build:all)
-  # =============================================================================
-
   build-qnap-x64:
     name: Build QNAP (x64)
-    needs: [build-linux-x64, build-web-assets]
-    if: |
-      github.event_name == 'release' ||
-      github.event_name == 'pull_request' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.build_qnap)
+    needs: [plan, build-linux-x64, build-web-assets]
+    if: needs.plan.outputs.build_qnap == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -610,23 +703,14 @@ jobs:
           path: dist/installers/*.qpkg
           retention-days: 5
 
-  # =============================================================================
-  # OPTIONAL: QNAP ARM (label: build:qnap-arm, build:all)
-  # =============================================================================
-
   build-qnap-arm:
     name: Build QNAP (arm64)
-    needs: [build-linux-arm, build-web-assets]
+    needs: [plan, build-linux-arm, build-web-assets]
     if: |
       always() &&
+      needs.plan.outputs.build_qnap_arm == 'true' &&
       needs.build-linux-arm.result == 'success' &&
-      needs.build-web-assets.result == 'success' &&
-      (
-        github.event_name == 'release' ||
-        contains(github.event.pull_request.labels.*.name, 'build:qnap-arm') ||
-        contains(github.event.pull_request.labels.*.name, 'build:all') ||
-        (github.event_name == 'workflow_dispatch' && inputs.build_qnap_arm)
-      )
+      needs.build-web-assets.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -688,18 +772,11 @@ jobs:
           path: dist/installers/*.qpkg
           retention-days: 5
 
-  # =============================================================================
-  # OPTIONAL: Docker x64 (default on for PRs)
-  # =============================================================================
-
   build-docker-x64:
     name: Build Docker (x64)
+    needs: [plan, build-linux-x64, build-web-assets]
+    if: needs.plan.outputs.build_docker == 'true'
     runs-on: ubuntu-latest
-    needs: [build-linux-x64, build-web-assets]
-    if: |
-      github.event_name == 'pull_request' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.build_docker)
     permissions:
       packages: write
     steps:
@@ -756,9 +833,9 @@ jobs:
 
   build-docker-release:
     name: Build Docker (${{ matrix.arch }})
+    needs: [plan, build-linux-x64, build-linux-arm, build-web-assets]
+    if: needs.plan.outputs.is_release == 'true'
     runs-on: ubuntu-latest
-    needs: [build-linux-x64, build-linux-arm, build-web-assets]
-    if: github.event_name == 'release'
     strategy:
       matrix:
         include:
@@ -827,9 +904,9 @@ jobs:
 
   docker-manifest:
     name: Create Docker Manifest
+    needs: [plan, build-docker-release]
+    if: needs.plan.outputs.is_release == 'true'
     runs-on: ubuntu-latest
-    needs: [build-docker-release]
-    if: github.event_name == 'release'
     steps:
       - name: Download digests
         uses: actions/download-artifact@v4
@@ -875,19 +952,15 @@ jobs:
               $(printf 'muness/unified-hifi-control@sha256:%s ' *)
           fi
 
-  # =============================================================================
-  # RELEASE ONLY: Linux packages (deb/rpm)
-  # =============================================================================
-
   build-linux-packages:
     name: Build Linux Packages (deb/rpm)
-    needs: [build-linux-x64, build-linux-arm, build-web-assets]
-    runs-on: ubuntu-latest
+    needs: [plan, build-linux-x64, build-linux-arm, build-web-assets]
     if: |
-      github.event_name == 'release' ||
-      contains(github.event.pull_request.labels.*.name, 'build:linux-packages') ||
-      contains(github.event.pull_request.labels.*.name, 'build:all') ||
-      (github.event_name == 'workflow_dispatch' && inputs.build_linux_packages)
+      always() &&
+      needs.plan.outputs.build_linux_packages == 'true' &&
+      needs.build-linux-x64.result == 'success' &&
+      needs.build-web-assets.result == 'success'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -996,9 +1069,9 @@ jobs:
 
   upload-release:
     name: Upload to Release
-    needs: [build-linux-x64, build-linux-arm, build-macos, build-windows, build-linux-packages, build-lms-plugin, build-synology, build-qnap-x64, build-qnap-arm, build-web-assets]
+    needs: [plan, build-linux-x64, build-linux-arm, build-macos, build-windows, build-linux-packages, build-lms-plugin, build-synology, build-qnap-x64, build-qnap-arm, build-web-assets]
+    if: needs.plan.outputs.is_release == 'true'
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
     permissions:
       contents: write
     steps:
@@ -1060,15 +1133,11 @@ jobs:
           append_body: true
           body_path: release-assets.md
 
-  # =============================================================================
-  # RELEASE ONLY: Update LMS repo.xml
-  # =============================================================================
-
   update-repo-xml:
     name: Update LMS repo.xml
-    needs: upload-release
+    needs: [plan, upload-release]
+    if: needs.plan.outputs.is_release == 'true'
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
     permissions:
       contents: write
     steps:
@@ -1138,7 +1207,7 @@ jobs:
 
   summary:
     name: Build Summary
-    needs: [lint, test, build-linux-x64, build-web-assets]
+    needs: [plan, lint, test, build-linux-x64, build-web-assets]
     if: always()
     runs-on: ubuntu-latest
     steps:

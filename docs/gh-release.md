@@ -44,6 +44,44 @@ Add labels to your PR to enable optional builds:
 
 When triggered by a GitHub release, all builds run automatically.
 
+## The Plan Job: Centralized Decision Logic
+
+Instead of scattering build conditions across every job, we use a **plan job** that runs first (~5 seconds) and computes what needs to be built. All downstream jobs simply check the plan outputs.
+
+```yaml
+jobs:
+  plan:
+    outputs:
+      build_linux_arm: ${{ steps.decide.outputs.build_linux_arm }}
+      build_synology: ${{ steps.decide.outputs.build_synology }}
+      # ... all flags
+    steps:
+      - id: decide
+        run: |
+          # Centralized logic - ARM needed if:
+          # - release OR build:all label OR
+          # - build:linux-arm label OR
+          # - any downstream that needs it (synology, qnap-arm, linux-packages)
+          BUILD_ARM="false"
+          if [[ "$EVENT_NAME" == "release" ]]; then BUILD_ARM="true"; fi
+          if [[ "$HAS_LABEL_SYNOLOGY" == "true" ]]; then BUILD_ARM="true"; fi
+          # ... etc
+          echo "build_linux_arm=$BUILD_ARM" >> $GITHUB_OUTPUT
+
+  build-linux-arm:
+    needs: plan
+    if: needs.plan.outputs.build_linux_arm == 'true'
+    # No scattered conditions - just checks the flag
+```
+
+**Benefits:**
+- **Single source of truth**: "What triggers ARM build?" is defined in ONE place
+- **Implicit dependency triggering**: `build:synology` label automatically enables ARM build
+- **Easier debugging**: The plan job summary shows exactly what will build
+- **Cleaner job definitions**: Jobs just check `needs.plan.outputs.X == 'true'`
+
+The GitHub Actions UI renders the full dependency DAG, showing `plan` at the root with all builds fanning out from it.
+
 ## Parallelization Strategy
 
 Jobs are structured to maximize parallelism while respecting dependencies:
