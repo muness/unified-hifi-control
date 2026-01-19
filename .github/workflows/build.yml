@@ -179,7 +179,26 @@ jobs:
           if [[ "$INPUT_LINUX_PACKAGES" == "true" ]]; then BUILD_LINUX_PACKAGES="true"; fi
           echo "build_linux_packages=$BUILD_LINUX_PACKAGES" >> $GITHUB_OUTPUT
 
-          # Summary
+          # Build enabled list for annotation
+          ENABLED=""
+          [[ "$BUILD_LINUX_ARM" == "true" ]] && ENABLED="$ENABLED linux-arm"
+          [[ "$BUILD_MACOS" == "true" ]] && ENABLED="$ENABLED macos"
+          [[ "$BUILD_WINDOWS" == "true" ]] && ENABLED="$ENABLED windows"
+          [[ "$BUILD_LMS" == "true" ]] && ENABLED="$ENABLED lms"
+          [[ "$BUILD_SYNOLOGY" == "true" ]] && ENABLED="$ENABLED synology"
+          [[ "$BUILD_QNAP" == "true" ]] && ENABLED="$ENABLED qnap"
+          [[ "$BUILD_QNAP_ARM" == "true" ]] && ENABLED="$ENABLED qnap-arm"
+          [[ "$BUILD_DOCKER" == "true" ]] && ENABLED="$ENABLED docker"
+          [[ "$BUILD_LINUX_PACKAGES" == "true" ]] && ENABLED="$ENABLED linux-packages"
+
+          # Workflow annotation (appears in Actions UI)
+          if [[ -n "$ENABLED" ]]; then
+            echo "::notice title=Build Plan::Optional builds enabled:$ENABLED"
+          else
+            echo "::notice title=Build Plan::Default builds only (lint, test, web-assets, linux-x64)"
+          fi
+
+          # Step summary (detailed table)
           echo "### Build Plan" >> $GITHUB_STEP_SUMMARY
           echo "| Target | Build |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
@@ -199,7 +218,6 @@ jobs:
 
   lint:
     name: Lint
-    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -224,7 +242,6 @@ jobs:
 
   test:
     name: Test
-    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
