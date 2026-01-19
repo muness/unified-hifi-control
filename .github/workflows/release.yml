@@ -442,22 +442,28 @@ jobs:
           cat build/synology/INFO
 
       - name: Build Synology SPK
-        uses: tomgrv/synology-package-builder@v1
-        with:
-          dsm: '7.0'
-          arch: ${{ matrix.arch }}
-          projects: ./build/synology
-          output: ./dist/installers
-
-      - name: Find and copy SPK
         run: |
-          echo "=== Searching for SPK files ==="
-          find $GITHUB_WORKSPACE -name "*.spk" -type f 2>/dev/null || echo "No .spk found in workspace"
-          echo "=== Copying release SPKs (excluding debug) ==="
-          mkdir -p dist/installers
-          find $GITHUB_WORKSPACE -name "*.spk" -type f ! -name "*_debug.spk" -exec cp {} dist/installers/ \; 2>/dev/null || true
-          find /tmp -name "*.spk" -type f ! -name "*_debug.spk" -exec cp {} dist/installers/ \; 2>/dev/null || true
-          ls -la dist/installers/ 2>/dev/null || echo "dist/installers is empty"
+          cd build/synology
+          VERSION="${{ steps.version.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+
+          # Create package.tgz from package/ directory
+          tar -czf package.tgz -C package .
+
+          # Build SPK archive (tar format, not compressed)
+          mkdir -p ../../dist/installers
+          SPK_NAME="UnifiedHifiControl-${ARCH}-${VERSION}.spk"
+          tar -cf "../../dist/installers/${SPK_NAME}" \
+            INFO \
+            PACKAGE_ICON.PNG \
+            PACKAGE_ICON_256.PNG \
+            package.tgz \
+            scripts \
+            conf \
+            WIZARD_UIFILES
+
+          ls -la ../../dist/installers/
+          echo "Built: ${SPK_NAME}"
 
       - name: Upload Synology package
         uses: actions/upload-artifact@v4
@@ -694,8 +700,7 @@ jobs:
           find artifacts -name "*.deb" -type f -exec cp {} release/ \;
           find artifacts -name "*.rpm" -type f -exec cp {} release/ \;
           find artifacts -name "*.zip" -type f -exec cp {} release/ \;
-          # Skip debug SPKs
-          find artifacts -name "*.spk" -type f ! -name "*_debug.spk" -exec cp {} release/ \;
+          find artifacts -name "*.spk" -type f -exec cp {} release/ \;
           find artifacts -name "*.qpkg" -type f -exec cp {} release/ \;
           find artifacts -name "*.tar.gz" -type f -exec cp {} release/ \;
           ls -la release/

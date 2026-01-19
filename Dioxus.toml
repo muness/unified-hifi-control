@@ -15,14 +15,10 @@ base_path = "/"
 [web.resource]
 style = ["/dx-components-theme.css", "/tailwind.css"]
 
-# Favicons
+# Favicon
 [[web.resource.head]]
 element = "link"
-attrs = { rel = "icon", type = "image/png", sizes = "32x32", href = "/favicon-32x32.png" }
-
-[[web.resource.head]]
-element = "link"
-attrs = { rel = "icon", type = "image/png", sizes = "16x16", href = "/favicon-16x16.png" }
+attrs = { rel = "icon", href = "/favicon.ico" }
 
 [[web.resource.head]]
 element = "link"
