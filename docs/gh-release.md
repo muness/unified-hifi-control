@@ -22,7 +22,9 @@ Add labels to your PR to enable optional builds:
 |-------|--------|
 | `build:lms` | LMS plugin ZIP |
 | `build:synology` | Synology SPK (x64 + arm64) |
+| `build:qnap` | QNAP x64 package |
 | `build:qnap-arm` | QNAP arm64 package |
+| `build:docker` | Docker x64 image |
 | `build:linux-arm` | Linux arm64 + armv7 binaries |
 | `build:macos` | macOS universal binary |
 | `build:windows` | Windows exe |
@@ -33,8 +35,6 @@ Add labels to your PR to enable optional builds:
 - Lint + Tests
 - Web assets (WASM)
 - Linux x64 binary
-- QNAP x64 package
-- Docker x64 image
 
 ### For Manual Runs: Use Inputs
 
@@ -309,10 +309,10 @@ spk/
 | Linux armv7-musl | rust-cache | cargo-zigbuild | Release | `build:linux-arm` |
 | macOS universal | sccache + rust-cache | cargo + lipo | Release | `build:macos` |
 | Windows x86_64 | sccache + rust-cache | cargo | Release | `build:windows` |
-| Docker x64 | N/A | pre-built binary | PR/push | - |
+| Docker x64 | N/A | pre-built binary | Release | `build:docker` |
 | Docker multi-arch | N/A | pre-built binaries | Release | - |
 | Synology SPK | N/A | tar | Release | `build:synology` |
-| QNAP x64 | N/A | qbuild (Docker) | Always | - |
+| QNAP x64 | N/A | qbuild (Docker) | Release | `build:qnap` |
 | QNAP arm64 | N/A | qbuild (Docker) | Release | `build:qnap-arm` |
 | Linux deb/rpm | N/A | fpm | Release | `build:linux-packages` |
 | LMS Plugin | N/A | zip | Release | `build:lms` |

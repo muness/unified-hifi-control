@@ -20,7 +20,7 @@ on:
       build_qnap:
         description: 'Build QNAP (x64)'
         type: boolean
-        default: true
+        default: false
       build_qnap_arm:
         description: 'Build QNAP (arm64)'
         type: boolean
@@ -40,7 +40,7 @@ on:
       build_docker:
         description: 'Build Docker (x64)'
         type: boolean
-        default: true
+        default: false
       build_linux_packages:
         description: 'Build deb/rpm packages'
         type: boolean
@@ -84,7 +84,9 @@ jobs:
           HAS_LABEL_WINDOWS: ${{ contains(github.event.pull_request.labels.*.name, 'build:windows') }}
           HAS_LABEL_LMS: ${{ contains(github.event.pull_request.labels.*.name, 'build:lms') }}
           HAS_LABEL_SYNOLOGY: ${{ contains(github.event.pull_request.labels.*.name, 'build:synology') }}
+          HAS_LABEL_QNAP: ${{ contains(github.event.pull_request.labels.*.name, 'build:qnap') }}
           HAS_LABEL_QNAP_ARM: ${{ contains(github.event.pull_request.labels.*.name, 'build:qnap-arm') }}
+          HAS_LABEL_DOCKER: ${{ contains(github.event.pull_request.labels.*.name, 'build:docker') }}
           HAS_LABEL_LINUX_PACKAGES: ${{ contains(github.event.pull_request.labels.*.name, 'build:linux-packages') }}
           # Inputs (only present on workflow_dispatch)
           INPUT_LINUX_ARM: ${{ inputs.build_linux_arm }}
@@ -149,9 +151,11 @@ jobs:
           if [[ "$INPUT_SYNOLOGY" == "true" ]]; then BUILD_SYNOLOGY="true"; fi
           echo "build_synology=$BUILD_SYNOLOGY" >> $GITHUB_OUTPUT
 
-          # QNAP x64 (default on for PRs)
-          BUILD_QNAP="true"
-          if [[ "$INPUT_QNAP" == "false" ]]; then BUILD_QNAP="false"; fi
+          # QNAP x64
+          BUILD_QNAP="false"
+          if should_build; then BUILD_QNAP="true"; fi
+          if [[ "$HAS_LABEL_QNAP" == "true" ]]; then BUILD_QNAP="true"; fi
+          if [[ "$INPUT_QNAP" == "true" ]]; then BUILD_QNAP="true"; fi
           echo "build_qnap=$BUILD_QNAP" >> $GITHUB_OUTPUT
 
           # QNAP ARM
@@ -161,9 +165,11 @@ jobs:
           if [[ "$INPUT_QNAP_ARM" == "true" ]]; then BUILD_QNAP_ARM="true"; fi
           echo "build_qnap_arm=$BUILD_QNAP_ARM" >> $GITHUB_OUTPUT
 
-          # Docker x64 (default on for PRs)
-          BUILD_DOCKER="true"
-          if [[ "$INPUT_DOCKER" == "false" ]]; then BUILD_DOCKER="false"; fi
+          # Docker x64
+          BUILD_DOCKER="false"
+          if should_build; then BUILD_DOCKER="true"; fi
+          if [[ "$HAS_LABEL_DOCKER" == "true" ]]; then BUILD_DOCKER="true"; fi
+          if [[ "$INPUT_DOCKER" == "true" ]]; then BUILD_DOCKER="true"; fi
           echo "build_docker=$BUILD_DOCKER" >> $GITHUB_OUTPUT
 
           # Linux packages (deb/rpm)
