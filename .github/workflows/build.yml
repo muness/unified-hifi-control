@@ -189,83 +189,72 @@ jobs:
           echo "**Default:** lint, test, web-assets, linux-x64" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Collect enabled builds with their trigger
-          ENABLED_LIST=""
+          # Build optional builds table directly
+          HAS_OPTIONAL="false"
+          TABLE_ROWS=""
+
+          add_row() {
+            TABLE_ROWS="${TABLE_ROWS}| $1 | $2 |
+"
+            HAS_OPTIONAL="true"
+          }
+
           if [[ "$BUILD_LMS" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| lms | release |"
-            elif [[ "$HAS_LABEL_LMS_MACOS" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| lms | build:lms-macos |"
-            elif [[ "$HAS_LABEL_LMS" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| lms | build:lms |"
+            if [[ "$EVENT_NAME" == "release" ]]; then add_row "lms" "release"
+            elif [[ "$HAS_LABEL_LMS_MACOS" == "true" ]]; then add_row "lms" "build:lms-macos"
+            elif [[ "$HAS_LABEL_LMS" == "true" ]]; then add_row "lms" "build:lms"
             fi
           fi
           if [[ "$BUILD_MACOS" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| macos | release |"
-            elif [[ "$HAS_LABEL_LMS_MACOS" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| macos | build:lms-macos |"
-            elif [[ "$HAS_LABEL_MACOS" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| macos | build:macos |"
+            if [[ "$EVENT_NAME" == "release" ]]; then add_row "macos" "release"
+            elif [[ "$HAS_LABEL_LMS_MACOS" == "true" ]]; then add_row "macos" "build:lms-macos"
+            elif [[ "$HAS_LABEL_MACOS" == "true" ]]; then add_row "macos" "build:macos"
             fi
           fi
           if [[ "$BUILD_LINUX_ARM" == "true" ]]; then
-            TRIGGER=""
-            [[ "$EVENT_NAME" == "release" ]] && TRIGGER="release"
+            TRIGGER="release"
             [[ "$HAS_LABEL_LINUX_ARM" == "true" ]] && TRIGGER="build:linux-arm"
             [[ "$HAS_LABEL_SYNOLOGY" == "true" ]] && TRIGGER="build:synology (implicit)"
             [[ "$HAS_LABEL_QNAP_ARM" == "true" ]] && TRIGGER="build:qnap-arm (implicit)"
             [[ "$HAS_LABEL_LINUX_PACKAGES" == "true" ]] && TRIGGER="build:linux-packages (implicit)"
-            ENABLED_LIST="$ENABLED_LIST\n| linux-arm | $TRIGGER |"
+            add_row "linux-arm" "$TRIGGER"
           fi
           if [[ "$BUILD_WINDOWS" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| windows | release |"
-            elif [[ "$HAS_LABEL_WINDOWS" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| windows | build:windows |"
+            if [[ "$EVENT_NAME" == "release" ]]; then add_row "windows" "release"
+            elif [[ "$HAS_LABEL_WINDOWS" == "true" ]]; then add_row "windows" "build:windows"
             fi
           fi
           if [[ "$BUILD_SYNOLOGY" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| synology | release |"
-            elif [[ "$HAS_LABEL_SYNOLOGY" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| synology | build:synology |"
+            if [[ "$EVENT_NAME" == "release" ]]; then add_row "synology" "release"
+            elif [[ "$HAS_LABEL_SYNOLOGY" == "true" ]]; then add_row "synology" "build:synology"
             fi
           fi
           if [[ "$BUILD_QNAP" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| qnap | release |"
-            elif [[ "$HAS_LABEL_QNAP" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| qnap | build:qnap |"
+            if [[ "$EVENT_NAME" == "release" ]]; then add_row "qnap" "release"
+            elif [[ "$HAS_LABEL_QNAP" == "true" ]]; then add_row "qnap" "build:qnap"
             fi
           fi
           if [[ "$BUILD_QNAP_ARM" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| qnap-arm | release |"
-            elif [[ "$HAS_LABEL_QNAP_ARM" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| qnap-arm | build:qnap-arm |"
+            if [[ "$EVENT_NAME" == "release" ]]; then add_row "qnap-arm" "release"
+            elif [[ "$HAS_LABEL_QNAP_ARM" == "true" ]]; then add_row "qnap-arm" "build:qnap-arm"
             fi
           fi
           if [[ "$BUILD_DOCKER" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| docker | release |"
-            elif [[ "$HAS_LABEL_DOCKER" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| docker | build:docker |"
+            if [[ "$EVENT_NAME" == "release" ]]; then add_row "docker" "release"
+            elif [[ "$HAS_LABEL_DOCKER" == "true" ]]; then add_row "docker" "build:docker"
             fi
           fi
           if [[ "$BUILD_LINUX_PACKAGES" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| linux-packages | release |"
-            elif [[ "$HAS_LABEL_LINUX_PACKAGES" == "true" ]]; then
-              ENABLED_LIST="$ENABLED_LIST\n| linux-packages | build:linux-packages |"
+            if [[ "$EVENT_NAME" == "release" ]]; then add_row "linux-packages" "release"
+            elif [[ "$HAS_LABEL_LINUX_PACKAGES" == "true" ]]; then add_row "linux-packages" "build:linux-packages"
             fi
           fi
 
-          if [[ -n "$ENABLED_LIST" ]]; then
+          if [[ "$HAS_OPTIONAL" == "true" ]]; then
             echo "**Optional builds enabled:**" >> $GITHUB_STEP_SUMMARY
             echo "| Build | Triggered by |" >> $GITHUB_STEP_SUMMARY
             echo "|-------|--------------|" >> $GITHUB_STEP_SUMMARY
-            echo -e "$ENABLED_LIST" >> $GITHUB_STEP_SUMMARY
+            printf "%s" "$TABLE_ROWS" >> $GITHUB_STEP_SUMMARY
           else
             echo "_No optional builds enabled. Add labels like \`build:lms\`, \`build:macos\`, etc._" >> $GITHUB_STEP_SUMMARY
           fi
