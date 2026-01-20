@@ -147,9 +147,22 @@ The comment is updated on each push, so you always see the latest artifacts.
 
 ## Label Triggers
 
-Adding a label to a PR triggers a new workflow run (via the `labeled` event type). This means:
-- Add `build:lms-macos` → new run starts with LMS + macOS builds enabled
-- No need to push a commit just to trigger a build with different labels
+Labels control builds in two ways:
+
+**`build:*` labels** control WHAT gets built (see table above).
+
+**`build-me` label** controls WHEN to re-trigger builds:
+- Adding any `build:*` label does NOT trigger a new workflow run
+- Only the `build-me` label triggers builds via the labeled event
+- To re-trigger: remove `build-me`, then add it again
+
+**Workflow:**
+1. Add `build:lms` label to enable LMS builds
+2. Add `build-me` label to trigger the build
+3. Build runs, sees `build:lms` label, builds LMS
+4. To re-run with same labels: remove `build-me`, add it back
+
+This prevents spurious builds from non-build labels (arch, coderabbit, etc.).
 
 ## Caching Strategies
 
