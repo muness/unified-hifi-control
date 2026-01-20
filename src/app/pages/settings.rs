@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 
-use crate::app::api::{AdapterSettings, AppSettings, LmsStatus, RoonStatus};
+use crate::app::api::{AdapterSettings, AppSettings, HqpStatus, LmsStatus, RoonStatus};
 use crate::app::components::Layout;
 use crate::app::sse::use_sse;
 use crate::app::theme::{use_theme, Theme};
@@ -32,6 +32,7 @@ pub fn Settings() -> Element {
     let mut lms_enabled = use_signal(|| false);
     let mut openhome_enabled = use_signal(|| false);
     let mut upnp_enabled = use_signal(|| false);
+    let mut hqplayer_enabled = use_signal(|| false);
 
     // Load settings resource
     let settings = use_resource(|| async {
@@ -47,6 +48,7 @@ pub fn Settings() -> Element {
             lms_enabled.set(s.adapters.lms);
             openhome_enabled.set(s.adapters.openhome);
             upnp_enabled.set(s.adapters.upnp);
+            hqplayer_enabled.set(s.adapters.hqplayer);
         }
     });
 
@@ -71,6 +73,11 @@ pub fn Settings() -> Element {
             .await
             .ok()
     });
+    let mut hqp_status = use_resource(|| async {
+        crate::app::api::fetch_json::<HqpStatus>("/hqplayer/status")
+            .await
+            .ok()
+    });
 
     // Refresh discovery on SSE events
     let event_count = sse.event_count;
@@ -81,6 +88,7 @@ pub fn Settings() -> Element {
             openhome_status.restart();
             upnp_status.restart();
             lms_status.restart();
+            hqp_status.restart();
         }
     });
 
@@ -92,6 +100,7 @@ pub fn Settings() -> Element {
                 lms: lms_enabled(),
                 openhome: openhome_enabled(),
                 upnp: upnp_enabled(),
+                hqplayer: hqplayer_enabled(),
             },
         };
         spawn(async move {
@@ -103,6 +112,7 @@ pub fn Settings() -> Element {
     let openhome_st = openhome_status.read().clone().flatten();
     let upnp_st = upnp_status.read().clone().flatten();
     let lms_st = lms_status.read().clone().flatten();
+    let hqp_st = hqp_status.read().clone().flatten();
 
     rsx! {
         Layout {
@@ -167,6 +177,18 @@ pub fn Settings() -> Element {
                                 }
                             }
                             "UPnP/DLNA"
+                        }
+                        label { class: "flex items-center gap-2",
+                            input {
+                                r#type: "checkbox",
+                                class: "checkbox",
+                                checked: hqplayer_enabled(),
+                                onchange: move |_| {
+                                    hqplayer_enabled.toggle();
+                                    save_settings();
+                                }
+                            }
+                            "HQPlayer"
                         }
                     }
                     p { class: "mt-3 text-sm text-muted",
@@ -307,7 +329,7 @@ pub fn Settings() -> Element {
                                 }
                             }
                             // LMS row
-                            tr {
+                            tr { class: "border-b border-default",
                                 td { class: "py-2 px-3", "LMS" }
                                 td { class: "py-2 px-3",
                                     if !lms_enabled() {
@@ -328,6 +350,36 @@ pub fn Settings() -> Element {
                                     } else if let Some(ref status) = lms_st {
                                         if let (Some(host), Some(port)) = (&status.host, status.port) {
                                             "{host}:{port}"
+                                        } else {
+                                            "-"
+                                        }
+                                    } else {
+                                        "-"
+                                    }
+                                }
+                            }
+                            // HQPlayer row
+                            tr {
+                                td { class: "py-2 px-3", "HQPlayer" }
+                                td { class: "py-2 px-3",
+                                    if !hqplayer_enabled() {
+                                        span { class: "status-disabled", "Disabled" }
+                                    } else if let Some(ref status) = hqp_st {
+                                        if status.connected {
+                                            span { class: "status-ok", "✓ Connected" }
+                                        } else {
+                                            span { class: "status-err", "✗ Not connected" }
+                                        }
+                                    } else {
+                                        "Loading..."
+                                    }
+                                }
+                                td { class: "py-2 px-3 text-muted",
+                                    if !hqplayer_enabled() {
+                                        "-"
+                                    } else if let Some(ref status) = hqp_st {
+                                        if let Some(ref host) = status.host {
+                                            "{host}"
                                         } else {
                                             "-"
                                         }

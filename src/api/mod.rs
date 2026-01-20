@@ -1532,6 +1532,8 @@ pub struct AdapterSettings {
     pub openhome: bool,
     #[serde(default)]
     pub lms: bool,
+    #[serde(default)]
+    pub hqplayer: bool,
 }
 
 fn default_true() -> bool {
@@ -1549,6 +1551,7 @@ impl Default for AppSettings {
                 upnp: false,
                 openhome: false,
                 lms: false,
+                hqplayer: false,
             },
         }
     }
@@ -1640,6 +1643,7 @@ pub async fn api_settings_post_handler(
         ("lms", old_adapters.lms != new_adapters.lms),
         ("openhome", old_adapters.openhome != new_adapters.openhome),
         ("upnp", old_adapters.upnp != new_adapters.upnp),
+        ("hqplayer", old_adapters.hqplayer != new_adapters.hqplayer),
     ];
 
     for (name, changed) in adapter_changes {
@@ -1653,6 +1657,7 @@ pub async fn api_settings_post_handler(
             "lms" => new_adapters.lms,
             "openhome" => new_adapters.openhome,
             "upnp" => new_adapters.upnp,
+            "hqplayer" => new_adapters.hqplayer,
             _ => continue,
         };
 

@@ -2,7 +2,7 @@
 //!
 //! Shows all available zones using Dioxus resources.
 
-use crate::app::api::{NowPlaying, Zone, ZonesResponse};
+use crate::app::api::{HqpMatrixProfilesResponse, HqpProfile, NowPlaying, Zone, ZonesResponse};
 use crate::app::components::{Layout, VolumeControlsCompact};
 use crate::app::sse::{use_sse, SseEvent};
 use dioxus::prelude::*;
@@ -114,6 +114,86 @@ pub fn Zones() -> Element {
         });
     };
 
+    // HQPlayer state (shared across all HQP zones)
+    let mut hqp_profiles = use_signal(Vec::<HqpProfile>::new);
+    let mut hqp_matrix = use_signal(|| None::<HqpMatrixProfilesResponse>);
+    let mut hqp_error = use_signal(|| None::<String>);
+
+    // Check if any zone has HQP
+    let has_any_hqp = use_memo(move || {
+        zones_list_signal().iter().any(|z| {
+            z.dsp
+                .as_ref()
+                .map(|d| d.r#type.as_deref() == Some("hqplayer"))
+                .unwrap_or(false)
+        })
+    });
+
+    // Fetch HQP profiles/matrix when there are HQP zones
+    use_effect(move || {
+        if has_any_hqp() {
+            spawn(async move {
+                if let Ok(profiles) =
+                    crate::app::api::fetch_json::<Vec<HqpProfile>>("/hqplayer/profiles").await
+                {
+                    hqp_profiles.set(profiles);
+                }
+                if let Ok(matrix) = crate::app::api::fetch_json::<HqpMatrixProfilesResponse>(
+                    "/hqplayer/matrix/profiles",
+                )
+                .await
+                {
+                    hqp_matrix.set(Some(matrix));
+                }
+            });
+        }
+    });
+
+    // Load profile handler
+    let load_profile = move |profile: String| {
+        hqp_error.set(None);
+        spawn(async move {
+            #[derive(serde::Serialize)]
+            struct ProfileRequest {
+                profile: String,
+            }
+            let req = ProfileRequest { profile };
+            if let Err(e) = crate::app::api::post_json_no_response("/hqplayer/profile", &req).await
+            {
+                hqp_error.set(Some(format!("Profile load failed: {e}")));
+            }
+        });
+    };
+
+    // Set matrix profile handler
+    let set_matrix = move |profile_idx: u32| {
+        hqp_error.set(None);
+        spawn(async move {
+            #[derive(serde::Serialize)]
+            struct MatrixRequest {
+                profile: u32,
+            }
+            let req = MatrixRequest {
+                profile: profile_idx,
+            };
+            match crate::app::api::post_json_no_response("/hqplayer/matrix/profile", &req).await {
+                Ok(_) => {
+                    // Refresh matrix after change
+                    if let Ok(matrix) = crate::app::api::fetch_json::<HqpMatrixProfilesResponse>(
+                        "/hqplayer/matrix/profiles",
+                    )
+                    .await
+                    {
+                        hqp_matrix.set(Some(matrix));
+                    }
+                }
+                Err(e) => {
+                    hqp_error.set(Some(format!("Matrix profile failed: {e}")));
+                }
+            }
+        });
+    };
+
     let is_loading = zones.read().is_none();
     let zones_list = zones
         .read()
@@ -122,6 +202,9 @@ pub fn Zones() -> Element {
         .map(|r| r.zones)
         .unwrap_or_default();
     let np_map = now_playing();
+
+    let profiles = hqp_profiles();
+    let matrix = hqp_matrix();
 
     let content = if is_loading {
         rsx! {
@@ -139,7 +222,11 @@ pub fn Zones() -> Element {
                         key: "{zone.zone_id}",
                         zone: zone.clone(),
                         now_playing: np_map.get(&zone.zone_id).cloned(),
+                        hqp_profiles: profiles.clone(),
+                        hqp_matrix: matrix.clone(),
                         on_control: control,
+                        on_load_profile: load_profile,
+                        on_set_matrix: set_matrix,
                     }
                 }
             }
@@ -153,6 +240,18 @@ pub fn Zones() -> Element {
 
             h1 { class: "text-2xl font-bold mb-6", "Zones" }
 
+            // HQP error display
+            if let Some(error) = hqp_error() {
+                div { class: "card bg-error/10 border-error text-error p-3 mb-4",
+                    "{error}"
+                    button {
+                        class: "btn btn-ghost btn-sm ml-2",
+                        onclick: move |_| hqp_error.set(None),
+                        "×"
+                    }
+                }
+            }
+
             section { id: "zones",
                 {content}
             }
@@ -165,7 +264,11 @@ pub fn Zones() -> Element {
 fn ZoneCard(
     zone: Zone,
     now_playing: Option<NowPlaying>,
+    hqp_profiles: Vec<HqpProfile>,
+    hqp_matrix: Option<HqpMatrixProfilesResponse>,
     on_control: EventHandler<(String, String)>,
+    on_load_profile: EventHandler<String>,
+    on_set_matrix: EventHandler<u32>,
 ) -> Element {
     let zone_id = zone.zone_id.clone();
     let zone_id_prev = zone_id.clone();
@@ -188,6 +291,10 @@ fn ZoneCard(
     let volume = np.and_then(|n| n.volume);
     let volume_type = np.and_then(|n| n.volume_type.clone());
 
+    // Album art URL
+    let image_url = np.and_then(|n| n.image_url.clone()).unwrap_or_default();
+    let has_image = !image_url.is_empty();
+
     // Now playing display
     let (track, artist) = np
         .map(|n| {
@@ -202,31 +309,103 @@ fn ZoneCard(
         })
         .unwrap_or_default();
 
+    // HQP matrix info
+    let has_matrix = hqp_matrix
+        .as_ref()
+        .map(|m| !m.profiles.is_empty())
+        .unwrap_or(false);
+    let matrix_profiles = hqp_matrix
+        .as_ref()
+        .map(|m| m.profiles.clone())
+        .unwrap_or_default();
+    let matrix_current = hqp_matrix.as_ref().and_then(|m| m.current);
+
     rsx! {
-        div { class: "card p-4",
-            // Header with zone name and badges
-            div { class: "flex items-center gap-2 mb-3",
-                span { class: "font-semibold text-lg", "{zone.zone_name}" }
-                if has_hqp {
-                    span { class: "badge badge-primary", "HQP" }
+        article { class: "zone-card",
+            // Main content with album art and info (same layout as zone detail)
+            div { class: "flex gap-4 items-start",
+                // Album art
+                if has_image {
+                    img {
+                        src: "{image_url}",
+                        alt: "Album art",
+                        class: "w-20 h-20 object-cover rounded-lg bg-elevated flex-shrink-0"
+                    }
+                } else {
+                    div { class: "w-20 h-20 rounded-lg bg-elevated flex items-center justify-center text-muted text-2xl flex-shrink-0",
+                        "♪"
+                    }
                 }
-                if let Some(ref source) = zone.source {
-                    span { class: "badge badge-secondary", "{source}" }
+
+                // Zone info
+                div { class: "flex-1 min-w-0",
+                    // Header with zone name and badges
+                    h3 { class: "flex items-center gap-2 mb-1",
+                        span { class: "truncate", "{zone.zone_name}" }
+                        if has_hqp {
+                            span { class: "badge badge-primary", "HQP" }
+                        }
+                        if let Some(ref source) = zone.source {
+                            span { class: "badge badge-secondary", "{source}" }
+                        }
+                    }
+                    p { class: "text-sm text-muted mb-2",
+                        if is_playing { "playing" } else { "stopped" }
+                    }
+
+                    // Now playing info
+                    if !track.is_empty() {
+                        p { class: "font-medium text-sm truncate mb-0", "{track}" }
+                        p { class: "text-sm text-muted truncate mb-0", "{artist}" }
+                    } else {
+                        p { class: "text-sm text-muted mb-0", "Nothing playing" }
+                    }
                 }
             }
 
-            // Now playing info
-            div { class: "min-h-[40px] overflow-hidden mb-4",
-                if !track.is_empty() {
-                    p { class: "font-medium text-sm truncate", "{track}" }
-                    p { class: "text-sm text-muted truncate", "{artist}" }
-                } else {
-                    p { class: "text-sm text-muted", "Nothing playing" }
+            // HQP controls (for HQP zones only)
+            if has_hqp && (!hqp_profiles.is_empty() || has_matrix) {
+                div { class: "flex gap-2 mt-4",
+                    if !hqp_profiles.is_empty() {
+                        select {
+                            class: "input input-sm flex-1",
+                            onchange: move |evt: Event<FormData>| {
+                                let value = evt.value();
+                                if !value.is_empty() {
+                                    on_load_profile.call(value);
+                                }
+                            },
+                            option { value: "", "Profile..." }
+                            for profile in hqp_profiles.iter() {
+                                option {
+                                    value: "{profile.name.as_deref().unwrap_or_default()}",
+                                    "{profile.title.as_deref().unwrap_or(profile.name.as_deref().unwrap_or(\"?\"))}"
+                                }
+                            }
+                        }
+                    }
+                    if has_matrix {
+                        select {
+                            class: "input input-sm flex-1",
+                            onchange: move |evt: Event<FormData>| {
+                                if let Ok(idx) = evt.value().parse::<u32>() {
+                                    on_set_matrix.call(idx);
+                                }
+                            },
+                            for mp in matrix_profiles.iter() {
+                                option {
+                                    value: "{mp.index}",
+                                    selected: matrix_current == Some(mp.index),
+                                    "{mp.name}"
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
             // Transport controls
-            div { class: "flex items-center gap-2",
+            div { class: "flex items-center gap-2 mt-4",
                 button {
                     class: "btn btn-ghost",
                     onclick: move |_| on_control.call((zone_id_prev.clone(), "previous".to_string())),
