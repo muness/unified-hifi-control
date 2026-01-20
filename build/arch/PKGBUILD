@@ -16,10 +16,10 @@ conflicts=("${_pkgname}")
 backup=('etc/unified-hifi-control/config.json')
 install="${_pkgname}.install"
 
-# Architecture-specific binaries
-source_x86_64=("${_pkgname}-${pkgver}-x86_64::${url}/releases/download/v${pkgver}/unified-hifi-linux-x64")
-source_aarch64=("${_pkgname}-${pkgver}-aarch64::${url}/releases/download/v${pkgver}/unified-hifi-linux-arm64")
-source_armv7h=("${_pkgname}-${pkgver}-armv7h::${url}/releases/download/v${pkgver}/unified-hifi-linux-armv7")
+# Architecture-specific binaries (renamed to 'binary' for $CARCH-agnostic reference)
+source_x86_64=("binary::${url}/releases/download/v${pkgver}/unified-hifi-linux-x64")
+source_aarch64=("binary::${url}/releases/download/v${pkgver}/unified-hifi-linux-arm64")
+source_armv7h=("binary::${url}/releases/download/v${pkgver}/unified-hifi-linux-armv7")
 
 # Web assets (same for all architectures)
 source=("web-assets-${pkgver}.tar.gz::${url}/releases/download/v${pkgver}/web-assets.tar.gz"
@@ -41,8 +41,7 @@ package() {
     cd "${srcdir}"
 
     # Install binary
-    install -Dm755 "${_pkgname}-${pkgver}-${CARCH}" \
-        "${pkgdir}/usr/bin/${_pkgname}"
+    install -Dm755 binary "${pkgdir}/usr/bin/${_pkgname}"
 
     # Install web assets
     install -dm755 "${pkgdir}/usr/share/${_pkgname}"
