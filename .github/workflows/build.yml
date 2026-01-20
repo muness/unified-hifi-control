@@ -79,6 +79,9 @@ jobs:
         id: decide
         env:
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          # The label that triggered a 'labeled' event (empty for other events)
+          LABEL_ADDED: ${{ github.event.label.name }}
           # Labels (only present on PRs)
           HAS_LABEL_ALL: ${{ contains(github.event.pull_request.labels.*.name, 'build:all') }}
           HAS_LABEL_LINUX_ARM: ${{ contains(github.event.pull_request.labels.*.name, 'build:linux-arm') }}
@@ -102,6 +105,27 @@ jobs:
           INPUT_DOCKER: ${{ inputs.build_docker }}
           INPUT_LINUX_PACKAGES: ${{ inputs.build_linux_packages }}
         run: |
+          # Skip if triggered by a non-build label (e.g., arch, coderabbit)
+          # Only the 'build-me' label should trigger builds via labeled event
+          if [[ "$EVENT_ACTION" == "labeled" && "$LABEL_ADDED" != "build-me" ]]; then
+            echo "::notice::Skipping: labeled event for '$LABEL_ADDED' (only 'build-me' triggers builds)"
+            echo "### ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "Label \`$LABEL_ADDED\` added - only \`build-me\` triggers builds." >> $GITHUB_STEP_SUMMARY
+            # Set all outputs to false/empty so dependent jobs skip
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "build_linux_arm=false" >> $GITHUB_OUTPUT
+            echo "build_macos=false" >> $GITHUB_OUTPUT
+            echo "build_windows=false" >> $GITHUB_OUTPUT
+            echo "build_lms=false" >> $GITHUB_OUTPUT
+            echo "build_synology=false" >> $GITHUB_OUTPUT
+            echo "build_qnap=false" >> $GITHUB_OUTPUT
+            echo "build_qnap_arm=false" >> $GITHUB_OUTPUT
+            echo "build_docker=false" >> $GITHUB_OUTPUT
+            echo "build_linux_packages=false" >> $GITHUB_OUTPUT
+            echo "lms_matrix=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           # Helper function
           should_build() {
             [[ "$EVENT_NAME" == "release" ]] && return 0
@@ -290,7 +314,7 @@ jobs:
             echo "|-------|--------------|" >> $GITHUB_STEP_SUMMARY
             printf "%s" "$TABLE_ROWS" >> $GITHUB_STEP_SUMMARY
           else
-            echo "_No optional builds enabled. Add labels like \`build:lms\`, \`build:macos\`, etc._" >> $GITHUB_STEP_SUMMARY
+            echo "_No optional builds enabled. Add \`build:*\` labels then \`build-me\` to trigger._" >> $GITHUB_STEP_SUMMARY
           fi
 
   # =============================================================================
@@ -776,8 +800,8 @@ jobs:
           cp ../binary/${{ matrix.binary_name }} Bin/${{ matrix.bundled_name }}
           chmod +x Bin/${{ matrix.bundled_name }}
 
-          # Copy web assets to public directory
-          cp -r ../web-assets public
+          # Copy web assets to Bin/public (Dioxus expects public/ next to binary)
+          cp -r ../web-assets Bin/public
 
           # Create ZIP with everything
           zip -r ../dist/lms-unified-hifi-control-${{ steps.version.outputs.version }}-${{ matrix.platform }}.zip . \
@@ -1498,7 +1522,7 @@ jobs:
             echo "| $name | $size |" >> $GITHUB_STEP_SUMMARY
           done || echo "| (none) | - |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "_Add labels to enable optional builds: build:lms, build:synology, build:qnap-arm, build:linux-arm, build:macos, build:windows, build:all_" >> $GITHUB_STEP_SUMMARY
+          echo "_Add \`build:*\` labels to configure builds, then add \`build-me\` to trigger. Labels: build:lms, build:synology, build:qnap-arm, build:linux-arm, build:macos, build:windows, build:all_" >> $GITHUB_STEP_SUMMARY
 
   # =============================================================================
   # PR Comment with Artifact Links
