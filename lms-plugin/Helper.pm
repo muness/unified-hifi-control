@@ -29,7 +29,7 @@ use constant HEALTH_CHECK_INTERVAL => 30;  # seconds
 use constant MAX_RESTARTS          => 5;   # before giving up
 use constant RESTART_RESET_TIME    => 300; # reset counter after 5 min stable
 
-my ($configDir, $publicDir);
+my ($configDir);
 
 sub init {
     my ($class) = @_;
@@ -39,8 +39,6 @@ sub init {
     unless (-d $configDir) {
         make_path($configDir) or $log->error("Failed to create data directory $configDir: $!");
     }
-
-    $publicDir = catdir(Plugins::UnifiedHiFi::Plugin->_pluginDataFor('basedir'), 'Bin', 'public');
 
     # On macOS, clear quarantine flag to prevent Gatekeeper blocking unsigned binary
     if (Slim::Utils::OSDetect::OS() eq 'mac' && (my $binary = $class->bin())) {
