@@ -210,7 +210,7 @@ jobs:
           # Step summary - show label → build mapping
           echo "### Build Plan" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Default:** lint, test, web-assets, linux-x64" >> $GITHUB_STEP_SUMMARY
+          echo "**Default:** lint, test, fullstack-check, linux-x64" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Build optional builds table directly
@@ -335,32 +335,26 @@ jobs:
           RUSTC_WRAPPER: "sccache"
         run: cargo test --workspace
 
-  build-web-assets:
-    name: Build Web Assets
-    needs: plan
+  # Note: Web assets are now embedded in the binary (ADR 002).
+  # The fullstack-check job validates the fullstack build works correctly.
+  fullstack-check:
+    name: Fullstack Build Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
 
-      # Note: sccache disabled for WASM builds - doesn't work well with wasm32 target
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "wasm-build"
+          shared-key: "fullstack-build"
           cache-all-crates: true
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
           cache-directories: |
             target/dx
-            target/wasm32-unknown-unknown
-
-      - name: Fetch dependencies
-        run: cargo fetch --target wasm32-unknown-unknown
 
       - name: Cache Dioxus CLI
         id: cache-dx
@@ -376,30 +370,8 @@ jobs:
       - name: Build Tailwind CSS
         run: make css
 
-      - name: Build web assets
-        run: dx build --release --platform web --features web
-
-      - name: Create web assets tarball
-        if: needs.plan.outputs.is_release == 'true'
-        run: |
-          cd target/dx/unified-hifi-control/release/web
-          tar -czvf web-assets.tar.gz public/
-          mv web-assets.tar.gz ${{ github.workspace }}/
-
-      - name: Upload web assets
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-assets
-          path: target/dx/unified-hifi-control/release/web/public/
-          retention-days: 5
-
-      - name: Upload web assets tarball
-        if: needs.plan.outputs.is_release == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-assets-tarball
-          path: web-assets.tar.gz
-          retention-days: 5
+      - name: Build fullstack (SSR with embedded assets)
+        run: dx build --fullstack --release
 
   build-linux-x64:
     name: Build Linux x64
@@ -669,13 +641,13 @@ jobs:
 
   # Universal ZIP: all platform binaries bundled
   # Uses LMS platform folder structure so findBin() works automatically
+  # Note: Web assets are embedded in the binary (ADR 002), no separate assets needed
   build-lms-universal:
     name: Build LMS Plugin (universal)
-    needs: [plan, build-web-assets, build-linux-x64, build-linux-arm, build-macos-universal, build-windows]
+    needs: [plan, build-linux-x64, build-linux-arm, build-macos-universal, build-windows]
     if: |
       always() &&
       needs.plan.outputs.build_lms == 'true' &&
-      needs.build-web-assets.result == 'success' &&
       needs.build-linux-x64.result == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -730,12 +702,6 @@ jobs:
           name: binary-windows
           path: binaries/
 
-      - name: Download web assets
-        uses: actions/download-artifact@v4
-        with:
-          name: web-assets
-          path: web-assets/
-
       - name: Update install.xml version
         run: |
           sed -i "s|<version>[^<]*</version>|<version>${{ steps.version.outputs.version }}</version>|" lms-plugin/install.xml
@@ -779,8 +745,8 @@ jobs:
             cp ../binaries/unified-hifi-win64.exe Bin/MSWin32-x64-multi-thread/unified-hifi-control.exe
           fi
 
-          # Copy web assets (next to binaries, Dioxus convention)
-          cp -r ../web-assets Bin/public
+          # Note: Web assets are embedded in the binary (ADR 002)
+          # No separate public/ folder needed
 
           # Show what we bundled
           echo "Bundled binaries:"
@@ -809,17 +775,17 @@ jobs:
           retention-days: 5
 
   # =============================================================================
-  # PACKAGING: Depends on binaries + web assets
+  # PACKAGING: Depends on binaries (web assets embedded per ADR 002)
   # =============================================================================
 
+  # Note: Web assets are embedded in the binary (ADR 002)
   build-synology:
     name: Build Synology SPK (${{ matrix.arch }})
-    needs: [plan, build-linux-x64, build-linux-arm, build-web-assets]
+    needs: [plan, build-linux-x64, build-linux-arm]
     if: |
       always() &&
       needs.plan.outputs.build_synology == 'true' &&
-      needs.build-linux-x64.result == 'success' &&
-      needs.build-web-assets.result == 'success'
+      needs.build-linux-x64.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -847,12 +813,6 @@ jobs:
         with:
           name: binary-${{ matrix.target }}
           path: build/synology/package/
-
-      - name: Download web assets
-        uses: actions/download-artifact@v4
-        with:
-          name: web-assets
-          path: build/synology/package/public/
 
       - name: Rename binary
         run: |
@@ -888,9 +848,10 @@ jobs:
           path: dist/installers/*.spk
           retention-days: 5
 
+  # Note: Web assets are embedded in the binary (ADR 002)
   build-qnap-x64:
     name: Build QNAP (x64)
-    needs: [plan, build-linux-x64, build-web-assets]
+    needs: [plan, build-linux-x64]
     if: needs.plan.outputs.build_qnap == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -901,12 +862,6 @@ jobs:
         with:
           name: binary-x86_64-unknown-linux-musl
           path: dist/bin/
-
-      - name: Download web assets
-        uses: actions/download-artifact@v4
-        with:
-          name: web-assets
-          path: dist/public/
 
       - name: Make binary executable
         run: chmod +x dist/bin/*
@@ -926,7 +881,6 @@ jobs:
           mkdir -p qnap-build/shared
           cp dist/bin/unified-hifi-linux-x64 qnap-build/shared/unified-hifi-control
           chmod +x qnap-build/shared/unified-hifi-control
-          cp -r dist/public qnap-build/shared/public
           cp build/qnap/shared/*.sh qnap-build/shared/
           chmod +x qnap-build/shared/*.sh
           cp -r build/qnap/shared/icons qnap-build/
@@ -953,14 +907,14 @@ jobs:
           path: dist/installers/*.qpkg
           retention-days: 5
 
+  # Note: Web assets are embedded in the binary (ADR 002)
   build-qnap-arm:
     name: Build QNAP (arm64)
-    needs: [plan, build-linux-arm, build-web-assets]
+    needs: [plan, build-linux-arm]
     if: |
       always() &&
       needs.plan.outputs.build_qnap_arm == 'true' &&
-      needs.build-linux-arm.result == 'success' &&
-      needs.build-web-assets.result == 'success'
+      needs.build-linux-arm.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -970,12 +924,6 @@ jobs:
         with:
           name: binary-aarch64-unknown-linux-musl
           path: dist/bin/
-
-      - name: Download web assets
-        uses: actions/download-artifact@v4
-        with:
-          name: web-assets
-          path: dist/public/
 
       - name: Make binary executable
         run: chmod +x dist/bin/*
@@ -995,7 +943,6 @@ jobs:
           mkdir -p qnap-build/shared
           cp dist/bin/unified-hifi-linux-arm64 qnap-build/shared/unified-hifi-control
           chmod +x qnap-build/shared/unified-hifi-control
-          cp -r dist/public qnap-build/shared/public
           cp build/qnap/shared/*.sh qnap-build/shared/
           chmod +x qnap-build/shared/*.sh
           cp -r build/qnap/shared/icons qnap-build/
@@ -1022,9 +969,10 @@ jobs:
           path: dist/installers/*.qpkg
           retention-days: 5
 
+  # Note: Web assets are embedded in the binary (ADR 002)
   build-docker-x64:
     name: Build Docker (x64)
-    needs: [plan, build-linux-x64, build-web-assets]
+    needs: [plan, build-linux-x64]
     # Only for PRs/branches - releases use build-docker-release
     if: needs.plan.outputs.build_docker == 'true' && needs.plan.outputs.is_release != 'true'
     runs-on: ubuntu-latest
@@ -1039,16 +987,11 @@ jobs:
           name: binary-x86_64-unknown-linux-musl
           path: binaries/
 
-      - name: Download web assets
-        uses: actions/download-artifact@v4
-        with:
-          name: web-assets
-          path: public/
-
       - name: Prepare binary
         run: |
           mv binaries/unified-hifi-linux-x64 binaries/unified-hifi-linux-amd64
-          ls -la binaries/ public/
+          chmod +x binaries/*
+          ls -la binaries/
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -1082,9 +1025,10 @@ jobs:
   # RELEASE ONLY: Multi-arch Docker
   # =============================================================================
 
+  # Note: Web assets are embedded in the binary (ADR 002)
   build-docker-release:
     name: Build Docker (${{ matrix.arch }})
-    needs: [plan, build-linux-x64, build-linux-arm, build-web-assets]
+    needs: [plan, build-linux-x64, build-linux-arm]
     if: needs.plan.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     strategy:
@@ -1110,12 +1054,6 @@ jobs:
         with:
           name: binary-${{ matrix.target }}
           path: dist/
-
-      - name: Download web assets
-        uses: actions/download-artifact@v4
-        with:
-          name: web-assets
-          path: dist/public/
 
       - name: Prepare binary
         run: |
@@ -1203,14 +1141,14 @@ jobs:
               $(printf 'muness/unified-hifi-control@sha256:%s ' *)
           fi
 
+  # Note: Web assets are embedded in the binary (ADR 002)
   build-linux-packages:
     name: Build Linux Packages (deb/rpm)
-    needs: [plan, build-linux-x64, build-linux-arm, build-web-assets]
+    needs: [plan, build-linux-x64, build-linux-arm]
     if: |
       always() &&
       needs.plan.outputs.build_linux_packages == 'true' &&
-      needs.build-linux-x64.result == 'success' &&
-      needs.build-web-assets.result == 'success'
+      needs.build-linux-x64.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1221,12 +1159,6 @@ jobs:
           pattern: binary-*-linux-*
           path: dist/bin/
           merge-multiple: true
-
-      - name: Download web assets
-        uses: actions/download-artifact@v4
-        with:
-          name: web-assets
-          path: dist/public/
 
       - name: Make binaries executable
         run: chmod +x dist/bin/*
@@ -1258,7 +1190,6 @@ jobs:
             -a amd64 \
             --after-install build/linux/postinst.sh \
             dist/bin/unified-hifi-linux-x64=/usr/bin/unified-hifi-control \
-            dist/public/=/usr/share/unified-hifi-control/public \
             build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
 
       - name: Build rpm package (x64)
@@ -1272,7 +1203,6 @@ jobs:
             -a x86_64 \
             --after-install build/linux/postinst.sh \
             dist/bin/unified-hifi-linux-x64=/usr/bin/unified-hifi-control \
-            dist/public/=/usr/share/unified-hifi-control/public \
             build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
 
       - name: Build deb package (arm64)
@@ -1287,7 +1217,6 @@ jobs:
             -a arm64 \
             --after-install build/linux/postinst.sh \
             dist/bin/unified-hifi-linux-arm64=/usr/bin/unified-hifi-control \
-            dist/public/=/usr/share/unified-hifi-control/public \
             build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
 
       - name: Build deb package (armv7/armhf)
@@ -1302,7 +1231,6 @@ jobs:
             -a armhf \
             --after-install build/linux/postinst.sh \
             dist/bin/unified-hifi-linux-armv7=/usr/bin/unified-hifi-control \
-            dist/public/=/usr/share/unified-hifi-control/public \
             build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
 
       - name: Upload Linux packages
@@ -1318,9 +1246,10 @@ jobs:
   # RELEASE ONLY: Upload to GitHub Release
   # =============================================================================
 
+  # Note: Web assets are embedded in the binary (ADR 002)
   upload-release:
     name: Upload to Release
-    needs: [plan, build-linux-x64, build-linux-arm, build-macos-universal, build-windows, build-linux-packages, build-lms-universal, build-synology, build-qnap-x64, build-qnap-arm, build-web-assets]
+    needs: [plan, build-linux-x64, build-linux-arm, build-macos-universal, build-windows, build-linux-packages, build-lms-universal, build-synology, build-qnap-x64, build-qnap-arm]
     if: needs.plan.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1345,7 +1274,6 @@ jobs:
           find artifacts -name "*.zip" -type f -exec cp {} release/ \;
           find artifacts -name "*.spk" -type f -exec cp {} release/ \;
           find artifacts -name "*.qpkg" -type f -exec cp {} release/ \;
-          find artifacts -name "*.tar.gz" -type f -exec cp {} release/ \;
           ls -la release/
 
       - name: Generate asset list
@@ -1354,6 +1282,8 @@ jobs:
           ## Download Guide
 
           ### Standalone Binaries
+          All binaries include embedded web assets - no separate download needed.
+
           | Platform | File |
           |----------|------|
           | Linux x64 | `unified-hifi-linux-x64` |
@@ -1372,9 +1302,6 @@ jobs:
 
           ### LMS Plugin
           - `lms-unified-hifi-control-*.zip` - Install via LMS Settings > Plugins
-
-          ### Web Assets
-          - `web-assets.tar.gz` - Pre-built web UI (included in packages)
           EOF
 
       - name: Upload to release
@@ -1493,8 +1420,8 @@ jobs:
       - plan
       - lint
       - test
+      - fullstack-check
       - build-linux-x64
-      - build-web-assets
       - build-linux-arm
       - build-macos-universal
       - build-windows
