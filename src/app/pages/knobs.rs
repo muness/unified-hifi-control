@@ -446,7 +446,10 @@ fn format_ago(timestamp: Option<&str>) -> String {
             let diff_ms = now - date.get_time();
             let secs = (diff_ms / 1000.0) as i64;
 
-            if secs < 60 {
+            // Handle clock skew (negative values) or very recent times
+            if secs <= 0 {
+                "just now".to_string()
+            } else if secs < 60 {
                 format!("{}s ago", secs)
             } else if secs < 3600 {
                 format!("{}m ago", secs / 60)

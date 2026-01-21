@@ -511,12 +511,15 @@ fn HqpSection(
 ) -> Element {
     let Some(ref pipe) = pipeline else {
         return rsx! {
-            section { id: "hqp-section",
-                hgroup {
-                    h2 { "HQPlayer DSP" }
-                    p { "Pipeline controls for zone-linked HQPlayer" }
+            section { id: "hqp-section", class: "mt-6",
+                div { class: "card p-6",
+                    div { class: "flex items-center justify-between mb-4",
+                        h3 { class: "text-lg font-semibold m-0", "HQPlayer DSP" }
+                    }
+                    p { class: "text-muted text-center py-8", aria_busy: "true",
+                        "Loading DSP settings..."
+                    }
                 }
-                article { aria_busy: "true", "Loading DSP settings..." }
             }
         };
     };
@@ -557,32 +560,33 @@ fn HqpSection(
         .unwrap_or("Shaper");
 
     rsx! {
-        section { id: "hqp-section",
-            hgroup {
-                h2 { "HQPlayer DSP" }
-                p { class: "flex items-center gap-2",
-                    "Pipeline controls for zone-linked HQPlayer"
-                    // Status indicator
-                    if let Some(ref st) = status {
-                        if st.connected {
-                            span { class: "status-ok text-sm", "✓ Connected" }
-                        } else {
-                            span { class: "status-err text-sm", "✗ Disconnected" }
+        section { id: "hqp-section", class: "mt-6",
+            div { class: "card p-6",
+                // Header with status
+                div { class: "flex items-center justify-between mb-4",
+                    h3 { class: "text-lg font-semibold m-0", "HQPlayer DSP" }
+                    div { class: "flex items-center gap-2",
+                        // Status indicator
+                        if let Some(ref st) = status {
+                            if st.connected {
+                                span { class: "status-ok text-sm", "✓ Connected" }
+                            } else {
+                                span { class: "status-err text-sm", "✗ Disconnected" }
+                            }
+                        }
+                        // Loading indicator
+                        if loading {
+                            span { class: "text-muted text-sm", aria_busy: "true", "Updating..." }
                         }
                     }
-                    // Loading indicator
-                    if loading {
-                        span { class: "text-muted text-sm ml-2", aria_busy: "true", "Updating..." }
-                    }
                 }
-            }
-            article {
-                // Profile and Matrix selectors side by side
+
+                // Profile selectors (full width, stacked on mobile)
                 if !profiles.is_empty() || has_matrix {
-                    div { class: "grid grid-cols-2 gap-4 mb-4",
+                    div { class: "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6",
                         if !profiles.is_empty() {
-                            label {
-                                "Profile"
+                            label { class: "block",
+                                span { class: "block text-sm font-medium mb-1", "Profile" }
                                 HqpProfileSelect {
                                     profiles: profiles.clone(),
                                     on_select: on_load_profile,
@@ -591,8 +595,8 @@ fn HqpSection(
                             }
                         }
                         if has_matrix {
-                            label {
-                                "Matrix Profile"
+                            label { class: "block",
+                                span { class: "block text-sm font-medium mb-1", "Matrix" }
                                 HqpMatrixSelect {
                                     profiles: matrix_profiles,
                                     active: matrix_current,
@@ -604,8 +608,8 @@ fn HqpSection(
                     }
                 }
 
-                // Pipeline settings in a 2-column grid
-                div { class: "grid grid-cols-2 gap-4",
+                // Pipeline settings - responsive grid
+                div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4",
                     HqpSelect {
                         id: "hqp-mode",
                         label: "Mode",

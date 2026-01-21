@@ -32,6 +32,20 @@ fn extract_knob_id(headers: &HeaderMap, query_knob_id: Option<&str>) -> Option<S
         .or_else(|| query_knob_id.map(|s| s.to_string()))
 }
 
+/// Extract client IP from headers (X-Forwarded-For) or connection info
+fn extract_client_ip(headers: &HeaderMap) -> Option<String> {
+    // Check X-Forwarded-For first (when behind a proxy)
+    if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+        // X-Forwarded-For can be a comma-separated list; take the first one
+        return forwarded.split(',').next().map(|s| s.trim().to_string());
+    }
+    // Check X-Real-IP (nginx style)
+    if let Some(real_ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+        return Some(real_ip.to_string());
+    }
+    None
+}
+
 /// Extract knob version from headers
 fn extract_knob_version(headers: &HeaderMap) -> Option<String> {
     headers
@@ -241,6 +255,7 @@ pub async fn knob_now_playing_handler(
     // Update knob status if knob ID present
     let knob_id = extract_knob_id(&headers, params.knob_id.as_deref());
     let knob_version = extract_knob_version(&headers);
+    let client_ip = extract_client_ip(&headers);
     let mut config_sha = None;
 
     if let Some(ref id) = knob_id {
@@ -254,7 +269,7 @@ pub async fn knob_now_playing_handler(
             zone_id: Some(zone_id.clone()),
             battery_level,
             battery_charging,
-            ..Default::default()
+            ip: client_ip,
         };
         state.knobs.update_status(id, status_update).await;
         config_sha = state.knobs.get_config_sha(id).await;
@@ -993,10 +1008,16 @@ pub async fn knob_config_handler(
         )
     })?;
 
+    // Build config response with name included in config object (matches frontend expected format)
+    let mut config = serde_json::to_value(&knob.config).unwrap_or_default();
+    if let serde_json::Value::Object(ref mut obj) = config {
+        obj.insert("knob_id".to_string(), serde_json::json!(knob_id.clone()));
+        obj.insert("name".to_string(), serde_json::json!(knob.name));
+    }
+
     Ok(Json(serde_json::json!({
         "knob_id": knob_id,
-        "name": knob.name,
-        "config": knob.config,
+        "config": config,
         "config_sha": knob.config_sha,
     })))
 }

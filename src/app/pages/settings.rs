@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 
 use crate::app::api::{AdapterSettings, AppSettings, HqpStatus, LmsStatus, RoonStatus};
 use crate::app::components::Layout;
+use crate::app::settings_context::use_settings;
 use crate::app::sse::use_sse;
 use crate::app::theme::{use_theme, Theme};
 
@@ -26,6 +27,7 @@ struct UpnpStatus {
 pub fn Settings() -> Element {
     let sse = use_sse();
     let theme_ctx = use_theme();
+    let settings_ctx = use_settings();
 
     // Adapter toggle signals
     let mut roon_enabled = use_signal(|| true);
@@ -57,6 +59,9 @@ pub fn Settings() -> Element {
             hide_knobs.set(s.hide_knobs_page);
             hide_hqp.set(s.hide_hqp_page);
             hide_lms.set(s.hide_lms_page);
+            // Sync to shared context for Nav reactivity
+            settings_ctx.update(s.hide_knobs_page, s.hide_hqp_page, s.hide_lms_page);
+            settings_ctx.mark_loaded();
         }
     });
 
@@ -102,6 +107,13 @@ pub fn Settings() -> Element {
 
     // Save settings handler
     let save_settings = move || {
+        let hk = hide_knobs();
+        let hh = hide_hqp();
+        let hl = hide_lms();
+
+        // Update shared context immediately for reactive Nav updates
+        settings_ctx.update(hk, hh, hl);
+
         let settings = AppSettings {
             adapters: AdapterSettings {
                 roon: roon_enabled(),
@@ -110,9 +122,9 @@ pub fn Settings() -> Element {
                 upnp: upnp_enabled(),
                 hqplayer: hqplayer_enabled(),
             },
-            hide_knobs_page: hide_knobs(),
-            hide_hqp_page: hide_hqp(),
-            hide_lms_page: hide_lms(),
+            hide_knobs_page: hk,
+            hide_hqp_page: hh,
+            hide_lms_page: hl,
         };
         spawn(async move {
             let _ = crate::app::api::post_json_no_response("/api/settings", &settings).await;
@@ -268,16 +280,16 @@ pub fn Settings() -> Element {
                 }
 
                 div { class: "card p-6",
-                    div { class: "flex flex-wrap gap-3",
+                    div { class: "grid grid-cols-2 sm:grid-cols-4 gap-4",
                         for theme in [Theme::System, Theme::Light, Theme::Dark, Theme::Oled] {
                             button {
-                                class: if theme_ctx.get() == theme { "btn-primary" } else { "btn-outline" },
+                                class: if theme_ctx.get() == theme { "btn-primary py-3" } else { "btn-outline py-3" },
                                 onclick: move |_| theme_ctx.set(theme),
                                 "{theme.label()}"
                             }
                         }
                     }
-                    p { class: "mt-3 text-sm text-muted",
+                    p { class: "mt-4 text-sm text-muted",
                         match theme_ctx.get() {
                             Theme::System => "Using your system's color scheme preference.",
                             Theme::Light => "Light theme for bright environments.",

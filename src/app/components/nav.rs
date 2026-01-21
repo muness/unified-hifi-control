@@ -1,6 +1,6 @@
 //! Navigation component using Tailwind CSS.
 
-use crate::app::api::AppSettings;
+use crate::app::settings_context::use_settings;
 use crate::app::Route;
 use dioxus::prelude::*;
 
@@ -8,13 +8,13 @@ use dioxus::prelude::*;
 pub struct NavProps {
     /// The currently active page ID (e.g., "dashboard", "zones")
     pub active: String,
-    /// Hide HQPlayer tab (overridden by settings if loaded)
+    /// Hide HQPlayer tab (fallback if settings not loaded)
     #[props(default = false)]
     pub hide_hqp: bool,
-    /// Hide LMS tab (overridden by settings if loaded)
+    /// Hide LMS tab (fallback if settings not loaded)
     #[props(default = false)]
     pub hide_lms: bool,
-    /// Hide Knobs tab (overridden by settings if loaded)
+    /// Hide Knobs tab (fallback if settings not loaded)
     #[props(default = false)]
     pub hide_knobs: bool,
 }
@@ -24,17 +24,18 @@ pub struct NavProps {
 pub fn Nav(props: NavProps) -> Element {
     let mut menu_open = use_signal(|| false);
 
-    // Fetch settings to get hide tab preferences
-    let settings = use_resource(|| async {
-        crate::app::api::fetch_json::<AppSettings>("/api/settings")
-            .await
-            .ok()
-    });
+    // Use shared settings context for reactive updates
+    let settings_ctx = use_settings();
 
-    // Use settings if loaded, otherwise fall back to props
-    let (hide_hqp, hide_lms, hide_knobs) = match settings.read().as_ref() {
-        Some(Some(s)) => (s.hide_hqp_page, s.hide_lms_page, s.hide_knobs_page),
-        _ => (props.hide_hqp, props.hide_lms, props.hide_knobs),
+    // Use context values if loaded, otherwise fall back to props
+    let (hide_hqp, hide_lms, hide_knobs) = if settings_ctx.is_loaded() {
+        (
+            settings_ctx.hide_hqp(),
+            settings_ctx.hide_lms(),
+            settings_ctx.hide_knobs(),
+        )
+    } else {
+        (props.hide_hqp, props.hide_lms, props.hide_knobs)
     };
 
     let nav_link_class = |page: &str| {

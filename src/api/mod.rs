@@ -417,9 +417,11 @@ pub async fn hqp_pipeline_update_handler(
     Json(req): Json<HqpPipelineRequest>,
 ) -> impl IntoResponse {
     // Convert value to u32 - accept both numeric and string representations
+    // Note: HQPlayer mode values can be negative (e.g., -1 for PCM), so we parse as i64 first
+    // and cast to u32 to preserve the bit pattern
     let value: u32 = match &req.value {
-        serde_json::Value::Number(n) => n.as_u64().unwrap_or(0) as u32,
-        serde_json::Value::String(s) => s.parse().unwrap_or(0),
+        serde_json::Value::Number(n) => n.as_i64().unwrap_or(0) as u32,
+        serde_json::Value::String(s) => s.parse::<i64>().unwrap_or(0) as u32,
         _ => 0,
     };
 

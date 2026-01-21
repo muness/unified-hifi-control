@@ -351,16 +351,16 @@ fn ZoneCard(
     rsx! {
         article { class: "zone-card",
             // Main content with album art and info (same layout as zone detail)
-            div { class: "flex gap-4 items-start",
-                // Album art
+            div { class: "flex gap-5 items-start",
+                // Album art (96px)
                 if has_image {
                     img {
                         src: "{image_url}",
                         alt: "Album art",
-                        class: "w-20 h-20 object-cover rounded-lg bg-elevated flex-shrink-0"
+                        class: "w-24 h-24 object-cover rounded-lg bg-elevated flex-shrink-0"
                     }
                 } else {
-                    div { class: "w-20 h-20 rounded-lg bg-elevated flex items-center justify-center text-muted text-2xl flex-shrink-0",
+                    div { class: "w-24 h-24 rounded-lg bg-elevated flex items-center justify-center text-muted text-3xl flex-shrink-0",
                         "♪"
                     }
                 }
@@ -368,7 +368,7 @@ fn ZoneCard(
                 // Zone info
                 div { class: "flex-1 min-w-0",
                     // Header with zone name and badges
-                    h3 { class: "flex items-center gap-2 mb-1",
+                    h3 { class: "flex items-center gap-2 mb-2 text-base font-semibold",
                         span { class: "truncate", "{zone.zone_name}" }
                         if has_hqp {
                             span { class: "badge badge-primary", "HQP" }
@@ -377,16 +377,16 @@ fn ZoneCard(
                             span { class: "badge badge-secondary", "{source}" }
                         }
                     }
-                    p { class: "text-sm text-muted mb-2",
+                    p { class: "text-sm text-muted mb-3",
                         if is_playing { "playing" } else { "stopped" }
                     }
 
                     // Now playing info
                     if !track.is_empty() {
-                        p { class: "font-medium text-sm truncate mb-0", "{track}" }
-                        p { class: "text-sm text-muted truncate mb-0", "{artist}" }
+                        p { class: "font-medium text-sm truncate mb-1", "{track}" }
+                        p { class: "text-sm text-muted truncate", "{artist}" }
                     } else {
-                        p { class: "text-sm text-muted mb-0", "Nothing playing" }
+                        p { class: "text-sm text-muted", "Nothing playing" }
                     }
                 }
             }
