@@ -73,10 +73,24 @@
                         Remove="uninstall"
                         Wait="yes" />
 
-        <!-- Environment variable for config directory -->
+        <!-- Environment variables -->
         <Environment Id="ConfigDir"
-                     Name="UNIFIED_HIFI_CONFIG_DIR"
+                     Name="CONFIG_DIR"
                      Value="[INSTALLFOLDER]data"
+                     Permanent="no"
+                     Part="all"
+                     Action="set"
+                     System="yes" />
+        <Environment Id="PublicDir"
+                     Name="PUBLIC_DIR"
+                     Value="[INSTALLFOLDER]public"
+                     Permanent="no"
+                     Part="all"
+                     Action="set"
+                     System="yes" />
+        <Environment Id="Port"
+                     Name="PORT"
+                     Value="8088"
                      Permanent="no"
                      Part="all"
                      Action="set"

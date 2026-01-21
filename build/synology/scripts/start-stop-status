@@ -24,6 +24,12 @@ start_daemon() {
         return 1
     fi
 
+    # Environment variables
+    export PORT=8088
+    export CONFIG_DIR="${TARGET_DIR}"
+    export PUBLIC_DIR="${TARGET_DIR}/public"
+    export RUST_LOG=info
+
     # Start the binary
     nohup "${TARGET_DIR}/unified-hifi-control" >> "$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"

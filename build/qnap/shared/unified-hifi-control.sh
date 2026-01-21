@@ -26,6 +26,12 @@ case "$1" in
 
     cd "$QPKG_ROOT" || { echo "Failed to cd to $QPKG_ROOT"; exit 1; }
 
+    # Environment variables
+    export PORT=8088
+    export CONFIG_DIR="${QPKG_ROOT}"
+    export PUBLIC_DIR="${QPKG_ROOT}/public"
+    export RUST_LOG=info
+
     # Start the static binary (musl-linked, no dependencies)
     "${QPKG_ROOT}/unified-hifi-control" >> "$LOGF" 2>&1 &
     echo $! > "$PIDF"

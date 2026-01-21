@@ -4,9 +4,18 @@
 
 set -e
 
-# Create data directory
+# Create directories
 mkdir -p /usr/local/var/unified-hifi-control
 mkdir -p /usr/local/var/log
+mkdir -p /usr/local/share/unified-hifi-control
+
+# Copy public assets (PKG should include these in payload)
+# They get installed to /usr/local/share/unified-hifi-control/public/
+if [ -d "/usr/local/share/unified-hifi-control/public" ]; then
+    echo "Web assets installed to /usr/local/share/unified-hifi-control/public/"
+else
+    echo "Warning: Web assets not found. Service may not work correctly."
+fi
 
 # Set permissions
 chmod 755 /usr/local/bin/unified-hifi-control

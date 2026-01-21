@@ -34,6 +34,10 @@
         <string>8088</string>
         <key>CONFIG_DIR</key>
         <string>/usr/local/var/unified-hifi-control</string>
+        <key>PUBLIC_DIR</key>
+        <string>/usr/local/share/unified-hifi-control/public</string>
+        <key>RUST_LOG</key>
+        <string>info</string>
     </dict>
 
     <key>WorkingDirectory</key>
