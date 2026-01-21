@@ -58,9 +58,9 @@ pub fn Nav(props: NavProps) -> Element {
                 div { class: "flex items-center",
                     Link { class: "nav-brand flex items-center", to: Route::Dashboard {},
                         img {
-                            src: "/hifi-banner.png",
+                            src: "/hifi-logo.png",
                             alt: "Hi-Fi Control",
-                            class: "h-8 w-auto"
+                            class: "h-6 w-6 rounded"
                         }
                     }
                 }
