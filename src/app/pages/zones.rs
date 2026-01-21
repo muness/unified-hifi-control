@@ -218,6 +218,10 @@ pub fn Zones() -> Element {
             let source = zone.source.clone().unwrap_or_else(|| "Other".to_string());
             groups.entry(source).or_default().push(zone.clone());
         }
+        // Sort zones within each group by name for stable ordering
+        for zones in groups.values_mut() {
+            zones.sort_by(|a, b| a.zone_name.cmp(&b.zone_name));
+        }
         // Sort groups in a sensible order: Roon, LMS, OpenHome, UPnP, then others
         let priority = |s: &str| -> i32 {
             match s.to_lowercase().as_str() {
@@ -319,8 +323,14 @@ fn ZoneCard(
     let volume = np.and_then(|n| n.volume);
     let volume_type = np.and_then(|n| n.volume_type.clone());
 
-    // Album art URL
-    let image_url = np.and_then(|n| n.image_url.clone()).unwrap_or_default();
+    // Album art URL with cache-busting image_key
+    let base_image_url = np.and_then(|n| n.image_url.clone()).unwrap_or_default();
+    let image_key = np.and_then(|n| n.image_key.clone());
+    let image_url = if let Some(key) = image_key {
+        format!("{}&k={}", base_image_url, key)
+    } else {
+        base_image_url
+    };
     let has_image = !image_url.is_empty();
 
     // Now playing display

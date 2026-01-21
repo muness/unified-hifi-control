@@ -90,6 +90,8 @@ pub struct NowPlaying {
     pub line2: Option<String>,
     pub line3: Option<String>,
     pub image_url: Option<String>,
+    /// Image key for cache busting (changes when track changes)
+    pub image_key: Option<String>,
     pub is_playing: bool,
     pub volume: Option<f32>,
     pub volume_type: Option<String>,

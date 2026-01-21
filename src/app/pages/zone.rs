@@ -390,7 +390,14 @@ fn ZoneDisplay(
         })
         .unwrap_or_default();
 
-    let image_url = np.and_then(|n| n.image_url.clone()).unwrap_or_default();
+    // Album art URL with cache-busting image_key
+    let base_image_url = np.and_then(|n| n.image_url.clone()).unwrap_or_default();
+    let image_key = np.and_then(|n| n.image_key.clone());
+    let image_url = if let Some(key) = image_key {
+        format!("{}&k={}", base_image_url, key)
+    } else {
+        base_image_url
+    };
 
     // Volume type handling:
     // - "db": show value with " dB" suffix
