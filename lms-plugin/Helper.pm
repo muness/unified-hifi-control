@@ -60,7 +60,7 @@ sub pluginVersion {
     return Plugins::UnifiedHiFi::Plugin->_pluginDataFor('version') || '0.0.0';
 }
 
-# Get path to the binary using LMS's built-in findBin
+# Get path to the binary using LMS's built-in findbin
 # Binary is in platform-specific folders: Bin/darwin/, Bin/x86_64-linux/, etc.
 sub bin {
     my $class = shift;
@@ -73,10 +73,10 @@ sub bin {
 
     # Let LMS find the right binary for this platform
     # LMS knows about platform folders (darwin/, x86_64-linux/, MSWin32-x64-multi-thread/, etc.)
-    my $binary = Slim::Utils::Misc::findBin('unified-hifi-control');
+    my $binary = Slim::Utils::Misc::findbin('unified-hifi-control');
 
     if ($binary && -x $binary) {
-        $log->debug("Found binary via LMS findBin: $binary");
+        $log->debug("Found binary via LMS findbin: $binary");
         return $binary;
     }
 
@@ -117,6 +117,7 @@ sub _doStart {
     # Build environment for subprocess
     # Use plugin's Bin directory for config (contains public/ for web assets)
     my $configDir = $class->pluginBinDir();
+    my $publicDir = $class->bundledPublicDir();
     my $lmsPort = $serverPrefs->get('httpport');
 
     $log->info("Starting Unified Hi-Fi Control: $binaryPath on port $port");
@@ -130,11 +131,12 @@ sub _doStart {
     # Using local ensures they're restored after Proc::Background->new() returns
     local $ENV{PORT} = $port;
     local $ENV{CONFIG_DIR} = $configDir;
+    local $ENV{PUBLIC_DIR} = $publicDir if $publicDir;
     local $ENV{LMS_HOST} = '127.0.0.1';
     local $ENV{LMS_PORT} = $lmsPort;
     local $ENV{LMS_UNIFIEDHIFI_STARTED} = 'true';
 
-    $log->debug("Running: $binaryPath (with env: PORT=$port CONFIG_DIR=$configDir LMS_HOST=127.0.0.1 LMS_PORT=$lmsPort)");
+    $log->debug("Running: $binaryPath (with env: PORT=$port CONFIG_DIR=$configDir PUBLIC_DIR=$publicDir LMS_HOST=127.0.0.1 LMS_PORT=$lmsPort)");
 
     # Platform-specific process spawning
     if (main::ISWINDOWS) {
@@ -297,7 +299,7 @@ Binaries are bundled in the plugin ZIP in LMS platform folder structure:
       MSWin32-x64-multi-thread/unified-hifi-control.exe
       public/  (web assets)
 
-LMS's C<Slim::Utils::Misc::findBin()> automatically finds the correct binary
+LMS's C<Slim::Utils::Misc::findbin()> automatically finds the correct binary
 for the current platform.
 
 =cut
