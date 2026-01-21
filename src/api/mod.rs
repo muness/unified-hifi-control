@@ -1582,7 +1582,7 @@ pub fn load_app_settings() -> AppSettings {
         None => AppSettings::default(),
     };
 
-    // Issue #62: Auto-enable LMS adapter when started from LMS plugin
+    // Auto-enable LMS adapter when started from LMS plugin
     // The LMS plugin sets LMS_UNIFIEDHIFI_STARTED=true when launching the bridge
     if crate::config::is_lms_plugin_started() && !settings.adapters.lms {
         tracing::info!("LMS plugin detected (LMS_UNIFIEDHIFI_STARTED), auto-enabling LMS adapter");
@@ -1696,7 +1696,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_lms_auto_enabled_when_plugin_started() {
-        // Issue #62: When started from LMS plugin, adapters.lms should be auto-enabled
+        // When started from LMS plugin, adapters.lms should be auto-enabled
         env::set_var("LMS_UNIFIEDHIFI_STARTED", "true");
         env::set_var("UHC_CONFIG_DIR", "/tmp/uhc-test-nonexistent-api");
 

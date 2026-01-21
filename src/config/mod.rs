@@ -398,7 +398,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_lms_host_env_enables_lms_config() {
-        // Issue #62: When LMS_HOST is set, config.lms should be Some
+        // When LMS_HOST is set, config.lms should be Some
         // This simulates the LMS plugin starting the bridge with LMS_HOST=127.0.0.1
         let _g1 = EnvGuard::set("LMS_HOST", "127.0.0.1");
         let _g2 = EnvGuard::set("UHC_CONFIG_DIR", "/tmp/uhc-test-nonexistent");
