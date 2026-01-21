@@ -63,6 +63,92 @@ mod server {
         Redirect::to("/settings")
     }
 
+    /// Set up public directory for Dioxus static asset serving
+    ///
+    /// Dioxus fullstack expects public/ to be next to the executable.
+    /// This function handles different deployment scenarios:
+    /// - PUBLIC_DIR env var: symlink from exe_dir/public -> $PUBLIC_DIR
+    /// - Working directory has public/: symlink from exe_dir/public -> cwd/public
+    /// - Fallback: create empty public/ next to executable
+    fn setup_public_directory() {
+        let exe_dir = match std::env::current_exe() {
+            Ok(exe) => exe.parent().map(|p| p.to_path_buf()),
+            Err(e) => {
+                tracing::warn!("Failed to get executable path: {}", e);
+                None
+            }
+        };
+
+        let exe_public = exe_dir.as_ref().map(|d| d.join("public"));
+
+        // If public/ already exists next to binary, we're done
+        if let Some(ref path) = exe_public {
+            if path.exists() {
+                tracing::debug!("Public directory exists at {:?}", path);
+                return;
+            }
+        }
+
+        // Check PUBLIC_DIR env var first
+        if let Ok(public_dir) = std::env::var("PUBLIC_DIR") {
+            let source = std::path::Path::new(&public_dir);
+            if source.exists() {
+                if let Some(ref target) = exe_public {
+                    match symlink_dir(source, target) {
+                        Ok(_) => {
+                            tracing::info!("Created symlink: {:?} -> {:?}", target, source);
+                            return;
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to create symlink to PUBLIC_DIR: {}", e);
+                        }
+                    }
+                }
+            } else {
+                tracing::warn!("PUBLIC_DIR {:?} does not exist", source);
+            }
+        }
+
+        // Check if working directory has public/
+        let cwd_public = std::path::Path::new("public");
+        if cwd_public.exists() && cwd_public.is_dir() {
+            if let (Some(ref target), Ok(source)) = (&exe_public, cwd_public.canonicalize()) {
+                // Don't symlink to self
+                if target.canonicalize().ok() != Some(source.clone()) {
+                    match symlink_dir(&source, target) {
+                        Ok(_) => {
+                            tracing::info!("Created symlink: {:?} -> {:?}", target, source);
+                            return;
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to create symlink to cwd/public: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: create empty public/ (Dioxus will use default index.html)
+        if let Some(ref path) = exe_public {
+            if let Err(e) = std::fs::create_dir_all(path) {
+                tracing::warn!("Failed to create public directory at {:?}: {}", path, e);
+            } else {
+                tracing::debug!("Created empty public directory at {:?}", path);
+            }
+        }
+    }
+
+    /// Cross-platform directory symlink
+    #[cfg(unix)]
+    fn symlink_dir(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+        std::os::unix::fs::symlink(src, dst)
+    }
+
+    #[cfg(windows)]
+    fn symlink_dir(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+        std::os::windows::fs::symlink_dir(src, dst)
+    }
+
     pub async fn run() -> Result<()> {
         // Initialize logging
         // Priority: RUST_LOG > LOG_LEVEL (legacy) > default
@@ -80,12 +166,9 @@ mod server {
             env!("CARGO_PKG_VERSION")
         );
 
-        // Ensure public directory exists (required by Dioxus fullstack)
-        if !std::path::Path::new("public").exists() {
-            if let Err(e) = std::fs::create_dir_all("public") {
-                tracing::warn!("Failed to create public directory: {}", e);
-            }
-        }
+        // Ensure public directory exists where Dioxus expects it (next to binary)
+        // Dioxus fullstack hardcodes looking for public/ relative to the executable
+        setup_public_directory();
 
         // Load configuration
         let config = config::load_config()?;
