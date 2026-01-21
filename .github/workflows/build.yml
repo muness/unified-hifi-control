@@ -73,7 +73,6 @@ jobs:
       build_qnap_arm: ${{ steps.decide.outputs.build_qnap_arm }}
       build_docker: ${{ steps.decide.outputs.build_docker }}
       build_linux_packages: ${{ steps.decide.outputs.build_linux_packages }}
-      lms_matrix: ${{ steps.decide.outputs.lms_matrix }}
     steps:
       - name: Decide what to build
         id: decide
@@ -207,40 +206,6 @@ jobs:
           if [[ "$HAS_LABEL_LINUX_PACKAGES" == "true" ]]; then BUILD_LINUX_PACKAGES="true"; fi
           if [[ "$INPUT_LINUX_PACKAGES" == "true" ]]; then BUILD_LINUX_PACKAGES="true"; fi
           echo "build_linux_packages=$BUILD_LINUX_PACKAGES" >> $GITHUB_OUTPUT
-
-          # LMS full ZIP matrix - only include platforms whose binaries are built
-          LMS_MATRIX='{"include":['
-          LMS_FIRST="true"
-
-          # linux-x64 always included when LMS is built (requires linux-x64 which is always built)
-          if [[ "$BUILD_LMS" == "true" ]]; then
-            LMS_MATRIX="$LMS_MATRIX"'{"platform":"linux-x64","binary_artifact":"binary-x86_64-unknown-linux-musl","binary_name":"unified-hifi-linux-x64","bundled_name":"unified-hifi-control"}'
-            LMS_FIRST="false"
-          fi
-
-          # linux-arm64 and linux-armv7 require ARM build
-          if [[ "$BUILD_LMS" == "true" && "$BUILD_LINUX_ARM" == "true" ]]; then
-            [[ "$LMS_FIRST" == "false" ]] && LMS_MATRIX="$LMS_MATRIX,"
-            LMS_MATRIX="$LMS_MATRIX"'{"platform":"linux-arm64","binary_artifact":"binary-aarch64-unknown-linux-musl","binary_name":"unified-hifi-linux-arm64","bundled_name":"unified-hifi-control"}'
-            LMS_MATRIX="$LMS_MATRIX,"'{"platform":"linux-armv7","binary_artifact":"binary-armv7-unknown-linux-musleabihf","binary_name":"unified-hifi-linux-armv7","bundled_name":"unified-hifi-control"}'
-            LMS_FIRST="false"
-          fi
-
-          # macos requires macOS build
-          if [[ "$BUILD_LMS" == "true" && "$BUILD_MACOS" == "true" ]]; then
-            [[ "$LMS_FIRST" == "false" ]] && LMS_MATRIX="$LMS_MATRIX,"
-            LMS_MATRIX="$LMS_MATRIX"'{"platform":"macos","binary_artifact":"binary-macos-universal","binary_name":"unified-hifi-macos-universal","bundled_name":"unified-hifi-control"}'
-            LMS_FIRST="false"
-          fi
-
-          # windows requires Windows build
-          if [[ "$BUILD_LMS" == "true" && "$BUILD_WINDOWS" == "true" ]]; then
-            [[ "$LMS_FIRST" == "false" ]] && LMS_MATRIX="$LMS_MATRIX,"
-            LMS_MATRIX="$LMS_MATRIX"'{"platform":"windows","binary_artifact":"binary-windows","binary_name":"unified-hifi-win64.exe","bundled_name":"unified-hifi-control.exe"}'
-          fi
-
-          LMS_MATRIX="$LMS_MATRIX]}"
-          echo "lms_matrix=$LMS_MATRIX" >> $GITHUB_OUTPUT
 
           # Step summary - show label → build mapping
           echo "### Build Plan" >> $GITHUB_STEP_SUMMARY
@@ -693,12 +658,16 @@ jobs:
           path: dist/bin/
           retention-days: 5
 
-  # Bootstrap ZIP: no bundled binaries, downloads on first run
-  # This is the default for release builds - smaller download, works on any platform
-  build-lms-bootstrap:
-    name: Build LMS Plugin (bootstrap)
-    needs: plan
-    if: needs.plan.outputs.build_lms == 'true'
+  # Universal ZIP: all platform binaries bundled
+  # Uses LMS platform folder structure so findBin() works automatically
+  build-lms-universal:
+    name: Build LMS Plugin (universal)
+    needs: [plan, build-web-assets, build-linux-x64, build-linux-arm, build-macos-universal, build-windows]
+    if: |
+      always() &&
+      needs.plan.outputs.build_lms == 'true' &&
+      needs.build-web-assets.result == 'success' &&
+      needs.build-linux-x64.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -713,21 +682,104 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      # Download all available binaries
+      - name: Download Linux x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-x86_64-unknown-linux-musl
+          path: binaries/
+
+      - name: Download Linux ARM64 binary
+        uses: actions/download-artifact@v4
+        if: needs.build-linux-arm.result == 'success'
+        continue-on-error: true
+        with:
+          name: binary-aarch64-unknown-linux-musl
+          path: binaries/
+
+      - name: Download Linux ARMv7 binary
+        uses: actions/download-artifact@v4
+        if: needs.build-linux-arm.result == 'success'
+        continue-on-error: true
+        with:
+          name: binary-armv7-unknown-linux-musleabihf
+          path: binaries/
+
+      - name: Download macOS binary
+        uses: actions/download-artifact@v4
+        if: needs.build-macos-universal.result == 'success'
+        continue-on-error: true
+        with:
+          name: binary-macos-universal
+          path: binaries/
+
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        if: needs.build-windows.result == 'success'
+        continue-on-error: true
+        with:
+          name: binary-windows
+          path: binaries/
+
+      - name: Download web assets
+        uses: actions/download-artifact@v4
+        with:
+          name: web-assets
+          path: web-assets/
+
       - name: Update install.xml version
         run: |
           sed -i "s|<version>[^<]*</version>|<version>${{ steps.version.outputs.version }}</version>|" lms-plugin/install.xml
 
-      - name: Create LMS plugin ZIP
+      - name: Bundle LMS plugin with all binaries
         run: |
           mkdir -p dist
           cd lms-plugin
+
+          # Create platform-specific Bin directories (LMS findBin convention)
+          # See: https://github.com/LMS-Community/slimserver/tree/public/9.1/Bin
+          mkdir -p Bin/x86_64-linux
+          mkdir -p Bin/aarch64-linux
+          mkdir -p Bin/arm-linux
+          mkdir -p Bin/darwin
+          mkdir -p Bin/MSWin32-x64-multi-thread
+
+          # Copy binaries to their platform folders
+          # All use same name so LMS findBin('unified-hifi-control') works
+          if [ -f ../binaries/unified-hifi-linux-x64 ]; then
+            cp ../binaries/unified-hifi-linux-x64 Bin/x86_64-linux/unified-hifi-control
+            chmod +x Bin/x86_64-linux/unified-hifi-control
+          fi
+
+          if [ -f ../binaries/unified-hifi-linux-arm64 ]; then
+            cp ../binaries/unified-hifi-linux-arm64 Bin/aarch64-linux/unified-hifi-control
+            chmod +x Bin/aarch64-linux/unified-hifi-control
+          fi
+
+          if [ -f ../binaries/unified-hifi-linux-armv7 ]; then
+            cp ../binaries/unified-hifi-linux-armv7 Bin/arm-linux/unified-hifi-control
+            chmod +x Bin/arm-linux/unified-hifi-control
+          fi
+
+          if [ -f ../binaries/unified-hifi-macos-universal ]; then
+            cp ../binaries/unified-hifi-macos-universal Bin/darwin/unified-hifi-control
+            chmod +x Bin/darwin/unified-hifi-control
+          fi
+
+          if [ -f ../binaries/unified-hifi-win64.exe ]; then
+            cp ../binaries/unified-hifi-win64.exe Bin/MSWin32-x64-multi-thread/unified-hifi-control.exe
+          fi
+
+          # Copy web assets (next to binaries, Dioxus convention)
+          cp -r ../web-assets Bin/public
+
+          # Show what we bundled
+          echo "Bundled binaries:"
+          find Bin -type f -name "unified-hifi-control*" | head -20
+
+          # Create ZIP with everything
           zip -r ../dist/lms-unified-hifi-control-${{ steps.version.outputs.version }}.zip . \
-            -x "*.git*" \
-            -x "Bin/*"
-          mkdir -p Bin
-          echo "# Binaries downloaded on first run" > Bin/.gitkeep
-          zip -r ../dist/lms-unified-hifi-control-${{ steps.version.outputs.version }}.zip Bin/.gitkeep
-          rm -rf Bin
+            -x "*.git*"
 
       - name: Repack with correct directory structure
         run: |
@@ -743,85 +795,7 @@ jobs:
       - name: Upload LMS plugin
         uses: actions/upload-artifact@v4
         with:
-          name: lms-plugin-bootstrap
-          path: dist/lms-unified-hifi-control-*.zip
-          retention-days: 5
-
-  # Full ZIPs: bundled binaries + web assets for each platform
-  # Used for PR testing and offline installations
-  build-lms-full:
-    name: Build LMS Plugin (${{ matrix.platform }})
-    needs: [plan, build-web-assets, build-linux-x64, build-linux-arm, build-macos-universal, build-windows]
-    if: |
-      always() &&
-      needs.plan.outputs.build_lms == 'true' &&
-      needs.build-web-assets.result == 'success' &&
-      needs.build-linux-x64.result == 'success'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.lms_matrix) }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Get version
-        id: version
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
-          else
-            VERSION="0.0.0-dev"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Download binary
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.binary_artifact }}
-          path: binary/
-
-      - name: Download web assets
-        uses: actions/download-artifact@v4
-        with:
-          name: web-assets
-          path: web-assets/
-
-      - name: Update install.xml version
-        run: |
-          sed -i "s|<version>[^<]*</version>|<version>${{ steps.version.outputs.version }}</version>|" lms-plugin/install.xml
-
-      - name: Bundle LMS plugin with binary
-        run: |
-          mkdir -p dist
-          cd lms-plugin
-
-          # Create Bin directory with bundled binary
-          mkdir -p Bin
-          cp ../binary/${{ matrix.binary_name }} Bin/${{ matrix.bundled_name }}
-          chmod +x Bin/${{ matrix.bundled_name }}
-
-          # Copy web assets to Bin/public (Dioxus expects public/ next to binary)
-          cp -r ../web-assets Bin/public
-
-          # Create ZIP with everything
-          zip -r ../dist/lms-unified-hifi-control-${{ steps.version.outputs.version }}-${{ matrix.platform }}.zip . \
-            -x "*.git*"
-
-      - name: Repack with correct directory structure
-        run: |
-          cd dist
-          mkdir -p repack
-          unzip lms-unified-hifi-control-${{ steps.version.outputs.version }}-${{ matrix.platform }}.zip -d repack/UnifiedHiFi
-          rm lms-unified-hifi-control-${{ steps.version.outputs.version }}-${{ matrix.platform }}.zip
-          cd repack
-          zip -r ../lms-unified-hifi-control-${{ steps.version.outputs.version }}-${{ matrix.platform }}.zip UnifiedHiFi
-          cd ..
-          rm -rf repack
-
-      - name: Upload LMS plugin
-        uses: actions/upload-artifact@v4
-        with:
-          name: lms-plugin-${{ matrix.platform }}
+          name: lms-plugin
           path: dist/lms-unified-hifi-control-*.zip
           retention-days: 5
 
@@ -1336,7 +1310,7 @@ jobs:
 
   upload-release:
     name: Upload to Release
-    needs: [plan, build-linux-x64, build-linux-arm, build-macos-universal, build-windows, build-linux-packages, build-lms-bootstrap, build-lms-full, build-synology, build-qnap-x64, build-qnap-arm, build-web-assets]
+    needs: [plan, build-linux-x64, build-linux-arm, build-macos-universal, build-windows, build-linux-packages, build-lms-universal, build-synology, build-qnap-x64, build-qnap-arm, build-web-assets]
     if: needs.plan.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1483,8 +1457,7 @@ jobs:
       - build-linux-arm
       - build-macos-universal
       - build-windows
-      - build-lms-bootstrap
-      - build-lms-full
+      - build-lms-universal
       - build-synology
       - build-qnap-x64
       - build-qnap-arm

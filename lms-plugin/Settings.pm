@@ -25,7 +25,7 @@ sub page {
 }
 
 sub prefs {
-    return ($prefs, qw(autorun port bin));
+    return ($prefs, qw(autorun port));
 }
 
 sub handler {
@@ -43,11 +43,6 @@ sub handler {
     my $needsRestart = 0;
     if ($params->{'saveSettings'}) {
         if (($params->{'pref_port'} // 8088) != ($prefs->get('port') // 8088)) {
-            $needsRestart = 1;
-        }
-
-        # Check if binary changed
-        elsif (($params->{'pref_bin'} // '') ne ($prefs->get('bin') // '')) {
             $needsRestart = 1;
         }
 
@@ -81,15 +76,9 @@ sub beforeRender {
     }
 
     # Add template variables
-    $params->{'running'}    = Plugins::UnifiedHiFi::Helper->running();
-    $params->{'webUrl'}     = Plugins::UnifiedHiFi::Helper->webUrl();
-    # Single binary per platform now - dropdown only shows if size > 1 (never)
-    my $platformBinary = Plugins::UnifiedHiFi::Helper::BINARY_MAP->{Plugins::UnifiedHiFi::Helper->detectPlatform()};
-    $params->{'binaries'}   = $platformBinary ? [$platformBinary] : [];
-
-    # Binary download status
-    $params->{'binaryStatus'}   = Plugins::UnifiedHiFi::Helper->binaryStatus();
-    $params->{'binaryPlatform'} = Plugins::UnifiedHiFi::Helper->detectPlatform();
+    $params->{'running'}      = Plugins::UnifiedHiFi::Helper->running();
+    $params->{'webUrl'}       = Plugins::UnifiedHiFi::Helper->webUrl();
+    $params->{'binaryStatus'} = Plugins::UnifiedHiFi::Helper->binaryStatus();
 
     return $class->SUPER::beforeRender($params, $client);
 }
