@@ -176,23 +176,16 @@ Alternative: Use `include_bytes!` + runtime base64 encoding (adds ~1KB code, avo
 - CSS changes require full recompile
 - Slightly larger binary (~31KB)
 - May need fallback for favicon/images
-- Dioxus runtime still requires empty `public/` directory (see Known Limitations)
 
-## Known Limitations
+## Implementation Notes
 
-### Dioxus `public/` Directory Requirement
+### Avoiding the `public/` Directory Requirement
 
-Even with all CSS and images embedded, `serve_dioxus_application()` still expects a `public/` directory to exist next to the executable. This is a limitation of Dioxus 0.7.x - the `ServeConfig` panics if it can't read the directory (see [dioxus-server server.rs:409](https://github.com/DioxusLabs/dioxus/blob/main/packages/server/src/server.rs)).
+Dioxus's `serve_dioxus_application()` tries to serve static assets from a `public/` directory next to the executable. Since we embed all assets, we use `serve_api_application()` instead, which provides the same SSR functionality without the static asset serving:
 
-**Current workaround:** Package managers must create an empty `public/` directory alongside the binary:
-- Docker: `RUN mkdir -p /app/public`
-- deb/rpm: Include empty dir in package
-- AUR: `install -dm755 "$pkgdir/opt/unified-hifi-control/public"`
-- Smoke tests: `mkdir -p dist/public`
+```rust
+// Instead of: .serve_dioxus_application(ServeConfig::new(), app::App)
+.serve_api_application(dioxus::server::ServeConfig::new(), app::App)
+```
 
-**Potential future fixes:**
-1. Upstream Dioxus PR to make `public/` optional when using `ServeConfig::builder().index_html(...)`
-2. Create empty dir at runtime (requires write permissions)
-3. Use custom axum router instead of `serve_dioxus_application`
-
-This doesn't affect the "single binary" goal in practice - the empty directory is a packaging artifact, not user-managed content
+This achieves true single-binary distribution - no external files or directories needed

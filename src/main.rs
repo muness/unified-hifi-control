@@ -391,9 +391,10 @@ mod server {
             .layer(CompressionLayer::new())
             .layer(TraceLayer::new_for_http())
             .with_state(state)
-            // Dioxus fullstack app (serves UI routes with WASM hydration)
-            // serve_dioxus_application handles SSR, hydration, static assets, and server functions
-            .serve_dioxus_application(dioxus::server::ServeConfig::new(), app::App);
+            // Dioxus fullstack app (serves UI routes with SSR)
+            // Use serve_api_application instead of serve_dioxus_application to skip static
+            // asset serving - we have embedded assets so we don't need the public/ directory
+            .serve_api_application(dioxus::server::ServeConfig::new(), app::App);
 
         // Start server with graceful shutdown
         let addr = SocketAddr::from(([0, 0, 0, 0], config.port));

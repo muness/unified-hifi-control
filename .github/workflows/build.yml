@@ -438,11 +438,6 @@ jobs:
       - name: Make executable
         run: chmod +x dist/unified-hifi-linux-x64
 
-      - name: Create public directory
-        # Dioxus serve_dioxus_application expects a public/ directory next to the binary
-        # Even with embedded assets, this directory must exist (can be empty)
-        run: mkdir -p dist/public
-
       - name: Start server
         run: |
           export RUST_BACKTRACE=1
@@ -1277,16 +1272,6 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Prepare package structure (x64)
-        run: |
-          # Create /opt structure with empty public/ directory (Dioxus requirement - ADR 002)
-          mkdir -p pkg-x64/opt/unified-hifi-control/public
-          cp dist/bin/unified-hifi-linux-x64 pkg-x64/opt/unified-hifi-control/unified-hifi-control
-          chmod +x pkg-x64/opt/unified-hifi-control/unified-hifi-control
-          # Create symlink for PATH access
-          mkdir -p pkg-x64/usr/bin
-          ln -s /opt/unified-hifi-control/unified-hifi-control pkg-x64/usr/bin/unified-hifi-control
-
       - name: Build deb package (x64)
         run: |
           fpm -s dir -t deb \
@@ -1297,8 +1282,7 @@ jobs:
             --license "PolyForm Noncommercial 1.0.0" \
             -a amd64 \
             --after-install build/linux/postinst.sh \
-            -C pkg-x64 \
-            opt usr \
+            dist/bin/unified-hifi-linux-x64=/usr/bin/unified-hifi-control \
             build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
 
       - name: Build rpm package (x64)
@@ -1311,18 +1295,8 @@ jobs:
             --license "PolyForm Noncommercial 1.0.0" \
             -a x86_64 \
             --after-install build/linux/postinst.sh \
-            -C pkg-x64 \
-            opt usr \
+            dist/bin/unified-hifi-linux-x64=/usr/bin/unified-hifi-control \
             build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
-
-      - name: Prepare package structure (arm64)
-        if: hashFiles('dist/bin/unified-hifi-linux-arm64') != ''
-        run: |
-          mkdir -p pkg-arm64/opt/unified-hifi-control/public
-          cp dist/bin/unified-hifi-linux-arm64 pkg-arm64/opt/unified-hifi-control/unified-hifi-control
-          chmod +x pkg-arm64/opt/unified-hifi-control/unified-hifi-control
-          mkdir -p pkg-arm64/usr/bin
-          ln -s /opt/unified-hifi-control/unified-hifi-control pkg-arm64/usr/bin/unified-hifi-control
 
       - name: Build deb package (arm64)
         if: hashFiles('dist/bin/unified-hifi-linux-arm64') != ''
@@ -1335,18 +1309,8 @@ jobs:
             --license "PolyForm Noncommercial 1.0.0" \
             -a arm64 \
             --after-install build/linux/postinst.sh \
-            -C pkg-arm64 \
-            opt usr \
+            dist/bin/unified-hifi-linux-arm64=/usr/bin/unified-hifi-control \
             build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
-
-      - name: Prepare package structure (armv7)
-        if: hashFiles('dist/bin/unified-hifi-linux-armv7') != ''
-        run: |
-          mkdir -p pkg-armv7/opt/unified-hifi-control/public
-          cp dist/bin/unified-hifi-linux-armv7 pkg-armv7/opt/unified-hifi-control/unified-hifi-control
-          chmod +x pkg-armv7/opt/unified-hifi-control/unified-hifi-control
-          mkdir -p pkg-armv7/usr/bin
-          ln -s /opt/unified-hifi-control/unified-hifi-control pkg-armv7/usr/bin/unified-hifi-control
 
       - name: Build deb package (armv7/armhf)
         if: hashFiles('dist/bin/unified-hifi-linux-armv7') != ''
@@ -1359,8 +1323,7 @@ jobs:
             --license "PolyForm Noncommercial 1.0.0" \
             -a armhf \
             --after-install build/linux/postinst.sh \
-            -C pkg-armv7 \
-            opt usr \
+            dist/bin/unified-hifi-linux-armv7=/usr/bin/unified-hifi-control \
             build/linux/unified-hifi-control.service=/etc/systemd/system/unified-hifi-control.service
 
       - name: Upload Linux packages
