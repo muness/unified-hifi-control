@@ -303,6 +303,7 @@ jobs:
           shared-key: "native-build"
           cache-all-crates: true
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
 
       - name: Check formatting
         run: cargo fmt --check
@@ -326,6 +327,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "test-build"
+          save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
 
       - name: Run tests
         env:
@@ -352,6 +354,7 @@ jobs:
           shared-key: "wasm-build"
           cache-all-crates: true
           cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
           cache-directories: |
             target/dx
             target/wasm32-unknown-unknown
@@ -414,6 +417,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: zigbuild-x86_64-unknown-linux-musl
+          save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
 
       - name: Install zig
         run: |
@@ -477,6 +481,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: zigbuild-${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
 
       - name: Install zig
         run: |
@@ -536,6 +541,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: macos-x64
+          save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
 
       - name: Build x86_64
         env:
@@ -570,6 +576,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: macos-arm64
+          save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
 
       - name: Build aarch64
         env:
@@ -638,6 +645,8 @@ jobs:
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
 
       - name: Build
         env:
@@ -1016,7 +1025,8 @@ jobs:
   build-docker-x64:
     name: Build Docker (x64)
     needs: [plan, build-linux-x64, build-web-assets]
-    if: needs.plan.outputs.build_docker == 'true'
+    # Only for PRs/branches - releases use build-docker-release
+    if: needs.plan.outputs.build_docker == 'true' && needs.plan.outputs.is_release != 'true'
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -1441,6 +1451,37 @@ jobs:
           git add lms-plugin/repo.xml
           git commit -m "chore: Update repo.xml to v${{ steps.version.outputs.version }} [skip ci]" || echo "No changes to commit"
           git push
+
+  publish-aur:
+    name: Publish to AUR
+    needs: [plan, upload-release]
+    if: needs.plan.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get release version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update PKGBUILD version
+        run: |
+          cd build/arch
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        with:
+          pkgname: unified-hifi-control-bin
+          pkgbuild: build/arch/PKGBUILD
+          assets: |
+            build/arch/unified-hifi-control.service
+            build/arch/unified-hifi-control.install
+          commit_username: ${{ github.actor }}
+          commit_email: ${{ github.actor }}@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to v${{ steps.version.outputs.version }}"
 
   # =============================================================================
   # Build Summary
