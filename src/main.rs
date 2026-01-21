@@ -69,22 +69,21 @@ mod server {
     /// This function handles different deployment scenarios:
     /// - PUBLIC_DIR env var: symlink from exe_dir/public -> $PUBLIC_DIR
     /// - Working directory has public/: symlink from exe_dir/public -> cwd/public
-    /// - Fallback: create empty public/ next to executable
+    /// - Fallback: error with helpful message
     fn setup_public_directory() {
-        let exe_dir = match std::env::current_exe() {
-            Ok(exe) => exe.parent().map(|p| p.to_path_buf()),
-            Err(e) => {
-                tracing::warn!("Failed to get executable path: {}", e);
-                None
-            }
-        };
-
+        let exe_path = std::env::current_exe().ok();
+        let exe_dir = exe_path
+            .as_ref()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()));
         let exe_public = exe_dir.as_ref().map(|d| d.join("public"));
 
-        // If public/ already exists next to binary, we're done
+        // Helper to check if a public dir has actual content (not just empty)
+        let has_index = |path: &std::path::Path| path.join("index.html").exists();
+
+        // If public/ already exists next to binary with content, we're done
         if let Some(ref path) = exe_public {
-            if path.exists() {
-                tracing::debug!("Public directory exists at {:?}", path);
+            if path.exists() && has_index(path) {
+                tracing::debug!("Public directory with assets found at {:?}", path);
                 return;
             }
         }
@@ -92,11 +91,15 @@ mod server {
         // Check PUBLIC_DIR env var first
         if let Ok(public_dir) = std::env::var("PUBLIC_DIR") {
             let source = std::path::Path::new(&public_dir);
-            if source.exists() {
+            if source.exists() && has_index(source) {
                 if let Some(ref target) = exe_public {
+                    // Remove empty/broken public dir if it exists
+                    if target.exists() {
+                        let _ = std::fs::remove_dir_all(target);
+                    }
                     match symlink_dir(source, target) {
                         Ok(_) => {
-                            tracing::info!("Created symlink: {:?} -> {:?}", target, source);
+                            tracing::info!("Linked web assets: {:?} -> {:?}", target, source);
                             return;
                         }
                         Err(e) => {
@@ -104,6 +107,8 @@ mod server {
                         }
                     }
                 }
+            } else if source.exists() {
+                tracing::warn!("PUBLIC_DIR {:?} exists but has no index.html", source);
             } else {
                 tracing::warn!("PUBLIC_DIR {:?} does not exist", source);
             }
@@ -111,30 +116,56 @@ mod server {
 
         // Check if working directory has public/
         let cwd_public = std::path::Path::new("public");
-        if cwd_public.exists() && cwd_public.is_dir() {
+        if cwd_public.exists() && cwd_public.is_dir() && has_index(cwd_public) {
             if let (Some(ref target), Ok(source)) = (&exe_public, cwd_public.canonicalize()) {
                 // Don't symlink to self
                 if target.canonicalize().ok() != Some(source.clone()) {
+                    // Remove empty/broken public dir if it exists
+                    if target.exists() {
+                        let _ = std::fs::remove_dir_all(target);
+                    }
                     match symlink_dir(&source, target) {
                         Ok(_) => {
-                            tracing::info!("Created symlink: {:?} -> {:?}", target, source);
+                            tracing::info!("Linked web assets: {:?} -> {:?}", target, source);
                             return;
                         }
                         Err(e) => {
                             tracing::warn!("Failed to create symlink to cwd/public: {}", e);
                         }
                     }
+                } else {
+                    // Already pointing to the right place
+                    tracing::debug!("Public directory already set up at {:?}", target);
+                    return;
                 }
             }
         }
 
-        // Fallback: create empty public/ (Dioxus will use default index.html)
+        // No assets found - log helpful error
+        tracing::error!("=============================================================");
+        tracing::error!("Web assets (public/) not found!");
+        tracing::error!("=============================================================");
+        tracing::error!("");
+        tracing::error!("The web UI requires bundled assets that couldn't be located.");
+        tracing::error!("");
+        tracing::error!("Checked locations:");
         if let Some(ref path) = exe_public {
-            if let Err(e) = std::fs::create_dir_all(path) {
-                tracing::warn!("Failed to create public directory at {:?}: {}", path, e);
-            } else {
-                tracing::debug!("Created empty public directory at {:?}", path);
-            }
+            tracing::error!("  - {:?} (next to binary)", path);
+        }
+        if let Ok(public_dir) = std::env::var("PUBLIC_DIR") {
+            tracing::error!("  - {:?} (PUBLIC_DIR env var)", public_dir);
+        }
+        tracing::error!("  - ./public (working directory)");
+        tracing::error!("");
+        tracing::error!("If you installed from an official package (AUR, deb, rpm, etc.),");
+        tracing::error!("please file an issue: https://github.com/open-horizon-labs/unified-hifi-control/issues");
+        tracing::error!("");
+        tracing::error!("If running manually, ensure web-assets.tar.gz is extracted to public/");
+        tracing::error!("=============================================================");
+
+        // Create empty public/ so Dioxus doesn't panic, but it won't work properly
+        if let Some(ref path) = exe_public {
+            let _ = std::fs::create_dir_all(path);
         }
     }
 
