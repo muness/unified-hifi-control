@@ -79,6 +79,38 @@ impl ZoneAggregator {
                     self.now_playing.write().await.insert(zone_id, np);
                 }
 
+                BusEvent::VolumeChanged {
+                    output_id,
+                    value,
+                    is_muted,
+                } => {
+                    debug!(
+                        "Volume changed: {} = {} (muted: {})",
+                        output_id, value, is_muted
+                    );
+                    // Find zone containing this output and update volume_control
+                    let mut zones = self.zones.write().await;
+                    for zone in zones.values_mut() {
+                        // Check if this zone's ID matches or contains the output_id
+                        // Roon: output_id is separate from zone_id
+                        // LMS: output_id is the player MAC (same as zone_id suffix)
+                        if zone.zone_id.contains(&output_id) || output_id.contains(&zone.zone_id) {
+                            if let Some(ref mut vc) = zone.volume_control {
+                                vc.value = value;
+                                vc.is_muted = is_muted;
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                BusEvent::SeekPositionChanged { zone_id, position } => {
+                    debug!("Seek position changed: {} = {}", zone_id, position);
+                    if let Some(np) = self.now_playing.write().await.get_mut(&zone_id) {
+                        np.seek_position = Some(position as f64);
+                    }
+                }
+
                 BusEvent::AdapterStopping { adapter, .. } => {
                     info!("Flushing zones for adapter: {}", adapter);
                     let prefix = format!("{}:", adapter);
