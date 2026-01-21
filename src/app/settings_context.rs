@@ -5,6 +5,9 @@
 
 use dioxus::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
+use crate::app::api::AppSettings;
+
 /// Global settings state shared via context
 #[derive(Clone, Copy)]
 pub struct SettingsContext {
