@@ -453,7 +453,7 @@ jobs:
   # Smoke test: verify the musl binary actually works with embedded assets
   smoke-test:
     name: Smoke Test Binary
-    needs: build-linux-x64
+    needs: [plan, build-linux-x64]
     runs-on: ubuntu-latest
     steps:
       - name: Download binary
@@ -498,6 +498,32 @@ jobs:
             exit 1
           fi
           echo "✓ HTTP 200 OK"
+
+      - name: Verify version injection
+        env:
+          EXPECTED_VERSION: ${{ needs.plan.outputs.version }}
+          EXPECTED_SHA: ${{ needs.plan.outputs.git_sha }}
+        run: |
+          RESP=$(curl -s http://localhost:8088/status)
+          echo "Status response: $RESP"
+
+          VERSION=$(echo "$RESP" | jq -r '.version')
+          GIT_SHA=$(echo "$RESP" | jq -r '.git_sha')
+
+          echo "Expected version: $EXPECTED_VERSION, got: $VERSION"
+          echo "Expected SHA: $EXPECTED_SHA, got: $GIT_SHA"
+
+          if [ "$VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::Version mismatch! Expected $EXPECTED_VERSION, got $VERSION"
+            exit 1
+          fi
+          echo "✓ Version correct: $VERSION"
+
+          if [ "$GIT_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Git SHA mismatch! Expected $EXPECTED_SHA, got $GIT_SHA"
+            exit 1
+          fi
+          echo "✓ Git SHA correct: $GIT_SHA"
 
       - name: Verify embedded assets
         run: |
