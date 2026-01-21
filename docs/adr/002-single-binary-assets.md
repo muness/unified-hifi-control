@@ -37,7 +37,10 @@ The fullstack binary starts and serves pages without the `public/` folder, but C
 | tailwind.css | 20KB | 20KB |
 | dx-theme.css | 3KB | 3KB |
 | Component CSS | 8KB | 8KB |
-| **Total** | **~1.6MB** | **31KB** |
+| favicon.ico | 4KB | 4KB |
+| apple-touch-icon.png | 25KB | 25KB |
+| hifi-logo.png | 5KB | 5KB |
+| **Total** | **~1.6MB** | **65KB** |
 
 ## Options
 
@@ -119,11 +122,29 @@ Rationale:
 - `src/components/button/component.rs` - button/style.css (1.4KB)
 - `src/components/collapsible/component.rs` - collapsible/style.css (0.8KB)
 
+## Image Handling
+
+Images (65KB total) can be embedded as base64 data URLs:
+
+```rust
+// In layout.rs
+const FAVICON: &str = concat!("data:image/x-icon;base64,", include_str!("../../../public/favicon.ico.b64"));
+document::Link { rel: "icon", href: FAVICON }
+
+// In nav.rs
+const LOGO: &str = concat!("data:image/png;base64,", include_str!("../../../public/hifi-logo.png.b64"));
+img { src: LOGO, alt: "Hi-Fi Control" }
+```
+
+Build step needed: `base64 < public/favicon.ico > public/favicon.ico.b64`
+
+Alternative: Use `include_bytes!` + runtime base64 encoding (adds ~1KB code, avoids build step).
+
 ## Open Questions
 
-1. **Favicon/Icons**: Keep as external files, embed as data URLs, or drop?
-2. **Logo image**: Currently served from `/hifi-logo.png` - needs similar treatment
-3. **Cross-compilation**: Does `dx build --fullstack` work with cross-compilation targets?
+1. **Build complexity**: Pre-encode base64 in build, or runtime encode?
+2. **Cross-compilation**: Does `dx build --fullstack` work with cross-compilation targets?
+3. **Binary size**: 65KB embedded is ~0.6% of 10MB binary - acceptable?
 
 ## Consequences
 
