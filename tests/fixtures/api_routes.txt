@@ -10,9 +10,13 @@
 
 GET /admin
 GET /api/settings
+GET /apple-touch-icon.png
+GET /assets/{*path}
 GET /config/{knob_id}
 GET /control
+GET /dx-components-theme.css
 GET /events
+GET /favicon.ico
 GET /firmware/download
 GET /firmware/version
 GET /hqp/discover
@@ -46,6 +50,7 @@ GET /roon/status
 GET /roon/zone/{zone_id}
 GET /roon/zones
 GET /status
+GET /tailwind.css
 GET /upnp/status
 GET /upnp/zones
 GET /zones

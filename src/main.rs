@@ -6,7 +6,7 @@
 #[cfg(feature = "server")]
 mod server {
     use unified_hifi_control::{
-        adapters, aggregator, api, app, bus, config, coordinator, firmware, knobs, mdns,
+        adapters, aggregator, api, app, bus, config, coordinator, embedded, firmware, knobs, mdns,
     };
 
     // Import Startable trait for adapter lifecycle methods
@@ -80,6 +80,18 @@ mod server {
             env!("UHC_VERSION"),
             env!("UHC_GIT_SHA")
         );
+
+        // Log embedded assets status (ADR 002)
+        if embedded::has_embedded_assets() {
+            let assets = embedded::list_embedded_assets();
+            tracing::info!(
+                "Embedded WASM assets: {} files (single-binary mode)",
+                assets.len()
+            );
+            tracing::debug!("Embedded files: {:?}", assets);
+        } else {
+            tracing::info!("No embedded WASM assets (development mode, use dx serve)");
+        }
 
         // Load configuration
         let config = config::load_config()?;
@@ -380,14 +392,65 @@ mod server {
             // Legacy redirects
             .route("/control", get(control_redirect))
             .route("/admin", get(settings_redirect))
+            // Embedded WASM/JS assets (ADR 002: serve from memory, no disk extraction)
+            .route("/assets/{*path}", get(embedded::serve_embedded_asset))
+            // Embedded static files (favicon, CSS, images)
+            .route(
+                "/favicon.ico",
+                get(|| embedded::serve_static_file(axum::extract::Path("favicon.ico".to_string()))),
+            )
+            .route(
+                "/apple-touch-icon.png",
+                get(|| {
+                    embedded::serve_static_file(axum::extract::Path(
+                        "apple-touch-icon.png".to_string(),
+                    ))
+                }),
+            )
+            .route(
+                "/tailwind.css",
+                get(|| {
+                    embedded::serve_static_file(axum::extract::Path("tailwind.css".to_string()))
+                }),
+            )
+            .route(
+                "/dx-components-theme.css",
+                get(|| {
+                    embedded::serve_static_file(axum::extract::Path(
+                        "dx-components-theme.css".to_string(),
+                    ))
+                }),
+            )
             // Middleware
             .layer(CorsLayer::permissive())
             .layer(CompressionLayer::new())
             .layer(TraceLayer::new_for_http())
-            .with_state(state)
-            // Dioxus fullstack app with SSR (ADR 002: single binary, no public/ directory)
-            // All CSS/images are embedded via include_str!/data URLs - no static file serving needed
-            .serve_api_application(dioxus::server::ServeConfig::new(), app::App);
+            .with_state(state);
+
+        // ADR 002: Embedded assets mode - SSR with injected bootstrap scripts
+        // serve_api_application() provides SSR + server functions, but no static assets
+        // Our middleware injects the bootstrap scripts (from embedded index.html) into SSR HTML
+        // This enables WASM hydration without requiring a public/ directory at runtime
+        let router = if embedded::has_embedded_assets() {
+            if let Some(bootstrap) = embedded::extract_bootstrap_snippet() {
+                tracing::info!("Using embedded SSR mode (bootstrap scripts will be injected)");
+                tracing::debug!("Bootstrap snippet:\n{}", bootstrap);
+                router
+                    .serve_api_application(dioxus::server::ServeConfig::new(), app::App)
+                    .layer(embedded::InjectDioxusBootstrapLayer::new(bootstrap))
+            } else {
+                tracing::warn!(
+                    "Embedded assets found but no bootstrap scripts - falling back to SPA"
+                );
+                router
+                    .serve_api_application(dioxus::server::ServeConfig::new(), app::App)
+                    .fallback(embedded::serve_index_html)
+            }
+        } else {
+            tracing::info!("Using SSR mode (no embedded assets, use dx serve for development)");
+            // Standard SSR mode for development
+            router.serve_dioxus_application(dioxus::server::ServeConfig::new(), app::App)
+        };
 
         // Start server with graceful shutdown
         let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
