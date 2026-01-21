@@ -9,9 +9,11 @@
 //! - POST /knob/config - Update device configuration
 //! - GET /knob/devices - List registered knobs (admin)
 
+use std::net::SocketAddr;
+
 use axum::{
     body::Body,
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::Response,
     Json,
@@ -32,8 +34,23 @@ fn extract_knob_id(headers: &HeaderMap, query_knob_id: Option<&str>) -> Option<S
         .or_else(|| query_knob_id.map(|s| s.to_string()))
 }
 
-/// Extract client IP from headers (X-Forwarded-For) or connection info
-fn extract_client_ip(headers: &HeaderMap) -> Option<String> {
+/// Format IP address, converting IPv4-mapped IPv6 to plain IPv4
+fn format_ip(ip: std::net::IpAddr) -> String {
+    match ip {
+        std::net::IpAddr::V4(v4) => v4.to_string(),
+        std::net::IpAddr::V6(v6) => {
+            // Check for IPv4-mapped IPv6 address (::ffff:x.x.x.x)
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                v4.to_string()
+            } else {
+                v6.to_string()
+            }
+        }
+    }
+}
+
+/// Extract client IP from headers (X-Forwarded-For, X-Real-IP) or socket address
+fn extract_client_ip(headers: &HeaderMap, socket_addr: Option<SocketAddr>) -> Option<String> {
     // Check X-Forwarded-For first (when behind a proxy)
     if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
         // X-Forwarded-For can be a comma-separated list; take the first one
@@ -43,7 +60,8 @@ fn extract_client_ip(headers: &HeaderMap) -> Option<String> {
     if let Some(real_ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
         return Some(real_ip.to_string());
     }
-    None
+    // Fall back to socket address
+    socket_addr.map(|addr| format_ip(addr.ip()))
 }
 
 /// Extract knob version from headers
@@ -233,6 +251,7 @@ async fn get_zone_infos(state: &AppState) -> Vec<ZoneInfo> {
 /// GET /knob/now_playing - Get current playback state (routes by zone_id prefix)
 pub async fn knob_now_playing_handler(
     State(state): State<AppState>,
+    connect_info: Result<ConnectInfo<SocketAddr>, axum::extract::rejection::ExtensionRejection>,
     headers: HeaderMap,
     Query(params): Query<NowPlayingQuery>,
 ) -> Result<Json<NowPlayingResponse>, (StatusCode, Json<serde_json::Value>)> {
@@ -255,7 +274,7 @@ pub async fn knob_now_playing_handler(
     // Update knob status if knob ID present
     let knob_id = extract_knob_id(&headers, params.knob_id.as_deref());
     let knob_version = extract_knob_version(&headers);
-    let client_ip = extract_client_ip(&headers);
+    let client_ip = extract_client_ip(&headers, connect_info.ok().map(|c| c.0));
     let mut config_sha = None;
 
     if let Some(ref id) = knob_id {
