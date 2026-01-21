@@ -89,8 +89,8 @@ Jobs maximize parallelism while respecting dependencies:
 
 - **Binary builds run in parallel**: Linux, macOS (x64 + arm64), and Windows start simultaneously
 - **macOS universal**: x64 and arm64 build in parallel, then combined with `lipo`
-- **Packaging waits for binaries + web assets**: Docker, Synology, QNAP, LMS-full jobs
-- **Dynamic LMS matrix**: Only builds platform variants whose binaries are enabled
+- **Packaging waits for binaries + web assets**: Docker, Synology, QNAP, LMS jobs
+- **Universal LMS ZIP**: Bundles all platform binaries in one package
 - **Optional jobs skip cleanly**: ARM builds skip if not requested
 
 The GitHub Actions UI shows the full dependency DAG.
