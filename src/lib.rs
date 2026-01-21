@@ -10,6 +10,21 @@
 //! - Server-Sent Events for real-time updates
 //! - Web UI (Dioxus + Tailwind CSS + DioxusLabs components)
 
+// =============================================================================
+// Lints - Enforce code quality and consistency
+// =============================================================================
+
+// Deny truly dangerous patterns (these will fail the build)
+#![deny(unsafe_code)]
+#![deny(unused_must_use)]
+
+// Note: The following lints are NOT enabled because the pre-commit hook
+// uses `cargo clippy -- -D warnings` which promotes all warnings to errors.
+// These should be enabled once violations are fixed:
+// - clippy::unwrap_used, clippy::expect_used (31 violations)
+// - clippy::panic, clippy::todo, clippy::unimplemented
+// - clippy::pedantic, clippy::nursery, clippy::cargo (hundreds of violations)
+
 // Dioxus UI app (shared between server SSR and WASM client)
 pub mod app;
 

@@ -74,12 +74,14 @@ pub fn Zones() -> Element {
         // Refresh zones list on structural changes
         if matches!(
             event.as_ref(),
-            Some(SseEvent::ZoneUpdated { .. })
-                | Some(SseEvent::ZoneRemoved { .. })
-                | Some(SseEvent::RoonConnected)
-                | Some(SseEvent::RoonDisconnected)
-                | Some(SseEvent::LmsConnected)
-                | Some(SseEvent::LmsDisconnected)
+            Some(
+                SseEvent::ZoneUpdated { .. }
+                    | SseEvent::ZoneRemoved { .. }
+                    | SseEvent::RoonConnected
+                    | SseEvent::RoonDisconnected
+                    | SseEvent::LmsConnected
+                    | SseEvent::LmsDisconnected
+            )
         ) {
             zones.restart();
         }
@@ -87,9 +89,11 @@ pub fn Zones() -> Element {
         // Refresh now_playing on playback/volume changes (without reloading zones)
         if matches!(
             event.as_ref(),
-            Some(SseEvent::NowPlayingChanged { .. })
-                | Some(SseEvent::VolumeChanged { .. })
-                | Some(SseEvent::LmsPlayerStateChanged { .. })
+            Some(
+                SseEvent::NowPlayingChanged { .. }
+                    | SseEvent::VolumeChanged { .. }
+                    | SseEvent::LmsPlayerStateChanged { .. }
+            )
         ) {
             let zone_list = zones_list_signal();
             if !zone_list.is_empty() {

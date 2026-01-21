@@ -360,13 +360,26 @@ mod error_handling {
     }
 
     #[tokio::test]
-    async fn lms_handles_invalid_json_gracefully() {
+    #[serial_test::serial]
+    async fn lms_fails_gracefully_when_unconfigured() {
+        // Use temp config dir to ensure no saved config interferes
+        std::env::set_var(
+            "UHC_CONFIG_DIR",
+            "/tmp/uhc-test-nonexistent-lms-unconfigured",
+        );
+
         let (bus, _rx) = test_bus();
         let adapter = LmsAdapter::new(bus);
 
         // Without configuration, operations should fail gracefully
         let result = adapter.get_players().await;
-        assert!(result.is_err());
+
+        std::env::remove_var("UHC_CONFIG_DIR");
+
+        assert!(
+            result.is_err(),
+            "get_players should fail when not configured"
+        );
     }
 }
 
