@@ -8,11 +8,8 @@ license = "PolyForm-Noncommercial-1.0.0"
 repository = "https://github.com/open-horizon-labs/unified-hifi-control"
 
 [features]
-# NOTE: default features must be empty for Dioxus fullstack builds!
-# The dx CLI automatically enables "server" for native and "web" for WASM.
-# Having default = ["server"] causes WASM builds to fail with cryptic errors
-# because server deps like tokio/mio can't compile to WASM.
-default = []
+# Default to server for standalone cargo build/test (dx build uses explicit features)
+default = ["server"]
 server = [
     "dioxus/server",
     "dep:axum",
