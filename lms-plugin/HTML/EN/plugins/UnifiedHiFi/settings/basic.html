@@ -2,15 +2,10 @@
     [% title = "PLUGIN_UNIFIED_HIFI" %]
 
     [% WRAPPER setting title="PLUGIN_UNIFIED_HIFI" desc="" %]
-    <!-- Binary download status -->
-    [% IF binaryStatus == 'not_downloaded' %]
-    <div class="prefDesc" style="padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; margin-bottom: 15px;">
-        [% "PLUGIN_UNIFIED_HIFI_DOWNLOAD_NEEDED" | string(binaryPlatform) %]
-    </div>
-    [% ELSIF binaryStatus == 'downloading' %]
-    <div class="prefDesc" style="padding: 10px; background: #cce5ff; border: 1px solid #007bff; border-radius: 4px; margin-bottom: 15px;">
-        [% "PLUGIN_UNIFIED_HIFI_DOWNLOADING" | string(binaryPlatform) %]
-        <script>setTimeout(function() { location.reload(); }, 5000);</script>
+    <!-- Binary status warning -->
+    [% IF binaryStatus == 'missing' %]
+    <div class="prefDesc" style="padding: 10px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; margin-bottom: 15px;">
+        [% "PLUGIN_UNIFIED_HIFI_BINARY_MISSING" | string %]
     </div>
     [% END %]
 
@@ -49,17 +44,6 @@
                value="[% prefs.port || 8088 %]" min="1024" max="65535"
                style="width: 80px;" />
     [% END %]
-
-    [% IF binaries.size > 1; WRAPPER setting title="PLUGIN_UNIFIED_HIFI_BINARY" desc="PLUGIN_UNIFIED_HIFI_BINARY_DESC" %]
-        <select name="pref_bin" id="pref_bin">
-            [% FOREACH bin IN binaries %]
-                <option value="[% bin %]"
-                        [% IF prefs.bin == bin %]selected[% END %]>
-                    [% bin %]
-                </option>
-            [% END %]
-        </select>
-    [% END; END %]
 
 <!-- Knob Configuration Section -->
     <hr/>

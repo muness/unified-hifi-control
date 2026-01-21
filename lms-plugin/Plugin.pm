@@ -26,7 +26,6 @@ my $prefs = preferences('plugin.unifiedhifi');
 $prefs->init({
     autorun  => 1,
     port     => 8088,
-    bin      => undef,
 });
 
 sub initPlugin {
