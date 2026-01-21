@@ -546,6 +546,7 @@ pub struct ImageQuery {
 use crate::knobs::image::jpeg_to_rgb565;
 
 /// GET /knob/now_playing/image - Get album artwork
+#[allow(clippy::unwrap_used)] // Response::builder().body().unwrap() cannot fail with valid inputs
 pub async fn knob_image_handler(
     State(state): State<AppState>,
     Query(params): Query<ImageQuery>,
@@ -1116,6 +1117,7 @@ struct FirmwareVersionInfo {
 }
 
 /// GET /firmware/version - Get available firmware version
+#[allow(clippy::unwrap_used)] // Response::builder().body().unwrap() cannot fail with valid inputs
 pub async fn firmware_version_handler() -> Response {
     let fw_dir = firmware_dir();
 
@@ -1205,6 +1207,7 @@ pub async fn firmware_version_handler() -> Response {
 }
 
 /// GET /firmware/download - Download firmware binary
+#[allow(clippy::unwrap_used)] // Response::builder().body().unwrap() cannot fail with valid inputs
 pub async fn firmware_download_handler() -> Response {
     let fw_dir = firmware_dir();
 
@@ -1291,6 +1294,7 @@ pub async fn firmware_download_handler() -> Response {
 }
 
 /// GET /manifest-s3.json - ESP Web Tools manifest
+#[allow(clippy::unwrap_used)] // Response::builder().body().unwrap() cannot fail with valid inputs
 pub async fn manifest_handler() -> Response {
     let fw_dir = firmware_dir();
     let version_path = fw_dir.join("version.json");

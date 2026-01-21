@@ -484,6 +484,7 @@ mod server {
     }
 
     /// Wait for shutdown signal (Ctrl+C or SIGTERM)
+    #[allow(clippy::expect_used)] // Signal handlers must succeed for graceful shutdown
     async fn shutdown_signal() {
         let ctrl_c = async {
             signal::ctrl_c()

@@ -17,13 +17,14 @@
 // Deny truly dangerous patterns (these will fail the build)
 #![deny(unsafe_code)]
 #![deny(unused_must_use)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![deny(clippy::panic)]
+#![deny(clippy::todo)]
+#![deny(clippy::unimplemented)]
 
-// Note: The following lints are NOT enabled because the pre-commit hook
-// uses `cargo clippy -- -D warnings` which promotes all warnings to errors.
-// These should be enabled once violations are fixed:
-// - clippy::unwrap_used, clippy::expect_used (31 violations)
-// - clippy::panic, clippy::todo, clippy::unimplemented
-// - clippy::pedantic, clippy::nursery, clippy::cargo (hundreds of violations)
+// Note: clippy::pedantic, clippy::nursery, and clippy::cargo are NOT enabled
+// because they have hundreds of existing violations. Enable incrementally.
 
 // Dioxus UI app (shared between server SSR and WASM client)
 pub mod app;

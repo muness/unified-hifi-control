@@ -316,9 +316,9 @@ pub fn Zone() -> Element {
             }
 
             // Zone display (only shown when zone selected)
-            if selected_zone.is_some() {
+            if let Some(zone) = selected_zone {
                 ZoneDisplay {
-                    zone: selected_zone.unwrap().clone(),
+                    zone: zone.clone(),
                     now_playing: np,
                     on_control: control,
                 }
