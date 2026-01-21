@@ -440,7 +440,8 @@ jobs:
 
       - name: Start server
         run: |
-          dist/unified-hifi-linux-x64 &
+          export RUST_BACKTRACE=1
+          dist/unified-hifi-linux-x64 > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid
           # Wait for server to be ready (max 30s)
           for i in {1..30}; do
@@ -448,10 +449,18 @@ jobs:
               echo "Server ready after ${i}s"
               exit 0
             fi
+            # Check if process died
+            if ! kill -0 $(cat /tmp/server.pid) 2>/dev/null; then
+              echo "Server process died!"
+              echo "=== Server output ==="
+              cat /tmp/server.log
+              exit 1
+            fi
             sleep 1
           done
           echo "Server failed to start within 30s"
-          cat /tmp/server.log 2>/dev/null || true
+          echo "=== Server output ==="
+          cat /tmp/server.log
           exit 1
 
       - name: Verify HTTP response
