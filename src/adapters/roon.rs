@@ -611,8 +611,13 @@ async fn run_roon_loop(
     let base_url_for_events = base_url;
     handles.spawn(async move {
         loop {
-            if let Some((event, msg)) = core_rx.recv().await {
-                match event {
+            let Some((event, msg)) = core_rx.recv().await else {
+                // Channel closed - Roon connection lost, exit event loop
+                // Without this break, the loop spins at 100% CPU (issue #128)
+                tracing::info!("Roon event channel closed, exiting event loop");
+                break;
+            };
+            match event {
                     CoreEvent::Found(mut core) => {
                         let core_name = core.display_name.clone();
                         let core_version = core.display_version.clone();
@@ -833,7 +838,6 @@ async fn run_roon_loop(
                         _ => {}
                     }
                 }
-            }
         }
     });
 
