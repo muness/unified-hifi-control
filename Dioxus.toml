@@ -12,14 +12,5 @@ watch_path = ["src", "public"]
 [web.resource.dev]
 base_path = "/"
 
-[web.resource]
-style = ["/dx-components-theme.css", "/tailwind.css"]
-
-# Favicon
-[[web.resource.head]]
-element = "link"
-attrs = { rel = "icon", href = "/favicon.ico" }
-
-[[web.resource.head]]
-element = "link"
-attrs = { rel = "apple-touch-icon", sizes = "180x180", href = "/apple-touch-icon.png" }
+# CSS and favicon are embedded in the binary (ADR 002)
+# See src/app/components/layout.rs for document::Style and document::Link with data URLs
