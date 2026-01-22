@@ -356,6 +356,56 @@ jobs:
           RUSTC_WRAPPER: "sccache"
         run: cargo test --workspace
 
+  # Build WASM assets once - shared by all platform builds
+  # WASM is platform-independent, so we build once and share
+  build-wasm:
+    name: Build WASM Assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "wasm-build"
+          cache-all-crates: true
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
+          cache-directories: |
+            target/dx
+
+      - name: Cache Dioxus CLI
+        id: cache-dx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/dx
+          key: dx-cli-0.7.3
+
+      - name: Install Dioxus CLI
+        if: steps.cache-dx.outputs.cache-hit != 'true'
+        run: cargo install dioxus-cli@0.7.3 --locked
+
+      - name: Build Tailwind CSS
+        run: make css
+
+      - name: Build WASM assets (ADR 002)
+        run: |
+          dx build --fullstack --release @client --no-default-features --features web @server --features server
+          echo "Generated assets:"
+          find target/dx -name "*.wasm" -o -name "*.js" | head -10
+
+      - name: Upload WASM assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-assets
+          path: target/dx/
+          retention-days: 1
+
   # Note: Web assets are now embedded in the binary (ADR 002).
   # The fullstack-check job validates the fullstack build works correctly.
   fullstack-check:
@@ -400,7 +450,7 @@ jobs:
 
   build-linux-x64:
     name: Build Linux x64
-    needs: plan
+    needs: [plan, build-wasm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -408,15 +458,13 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl,wasm32-unknown-unknown
+          targets: x86_64-unknown-linux-musl
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: zigbuild-x86_64-unknown-linux-musl
           save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
-          cache-directories: |
-            target/dx
 
       - name: Install zig
         run: |
@@ -435,26 +483,11 @@ jobs:
         if: steps.cache-zigbuild.outputs.cache-hit != 'true'
         run: cargo install cargo-zigbuild --locked
 
-      - name: Cache Dioxus CLI
-        id: cache-dx
-        uses: actions/cache@v4
+      - name: Download WASM assets
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.cargo/bin/dx
-          key: dx-cli-0.7.3
-
-      - name: Install Dioxus CLI
-        if: steps.cache-dx.outputs.cache-hit != 'true'
-        run: cargo install dioxus-cli@0.7.3 --locked
-
-      - name: Build Tailwind CSS
-        run: make css
-
-      - name: Build WASM assets (ADR 002)
-        run: |
-          # Generate WASM/JS assets that will be embedded in the binary
-          dx build --fullstack --release @client --no-default-features --features web @server --features server
-          echo "Generated assets:"
-          find target/dx -name "*.wasm" -o -name "*.js" | head -10
+          name: wasm-assets
+          path: target/dx/
 
       - name: Build with zigbuild (embeds WASM)
         env:
@@ -622,7 +655,7 @@ jobs:
 
   build-linux-arm:
     name: Build Linux ARM (${{ matrix.arch }})
-    needs: plan
+    needs: [plan, build-wasm]
     if: needs.plan.outputs.build_linux_arm == 'true'
     runs-on: ubuntu-latest
     strategy:
@@ -640,15 +673,13 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }},wasm32-unknown-unknown
+          targets: ${{ matrix.target }}
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: zigbuild-${{ matrix.target }}
           save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
-          cache-directories: |
-            target/dx
 
       - name: Install zig
         run: |
@@ -667,24 +698,11 @@ jobs:
         if: steps.cache-zigbuild.outputs.cache-hit != 'true'
         run: cargo install cargo-zigbuild --locked
 
-      - name: Cache Dioxus CLI
-        id: cache-dx
-        uses: actions/cache@v4
+      - name: Download WASM assets
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.cargo/bin/dx
-          key: dx-cli-0.7.3
-
-      - name: Install Dioxus CLI
-        if: steps.cache-dx.outputs.cache-hit != 'true'
-        run: cargo install dioxus-cli@0.7.3 --locked
-
-      - name: Build Tailwind CSS
-        run: make css
-
-      - name: Build WASM assets (ADR 002)
-        run: |
-          # Generate WASM/JS assets that will be embedded in the binary
-          dx build --fullstack --release @client --no-default-features --features web @server --features server
+          name: wasm-assets
+          path: target/dx/
 
       - name: Build with zigbuild (embeds WASM)
         env:
@@ -715,7 +733,7 @@ jobs:
 
   build-macos-x64:
     name: Build macOS (x86_64)
-    needs: plan
+    needs: [plan, build-wasm]
     if: needs.plan.outputs.build_macos == 'true'
     runs-on: macos-latest
     steps:
@@ -724,7 +742,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-apple-darwin,wasm32-unknown-unknown
+          targets: x86_64-apple-darwin
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -734,26 +752,12 @@ jobs:
         with:
           shared-key: macos-x64
           save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
-          cache-directories: |
-            target/dx
 
-      - name: Cache Dioxus CLI
-        id: cache-dx
-        uses: actions/cache@v4
+      - name: Download WASM assets
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.cargo/bin/dx
-          key: dx-cli-macos-0.7.3
-
-      - name: Install Dioxus CLI
-        if: steps.cache-dx.outputs.cache-hit != 'true'
-        run: cargo install dioxus-cli@0.7.3 --locked
-
-      - name: Build Tailwind CSS
-        run: make css
-
-      - name: Build WASM assets (ADR 002)
-        run: |
-          dx build --fullstack --release @client --no-default-features --features web @server --features server
+          name: wasm-assets
+          path: target/dx/
 
       - name: Build x86_64 (embeds WASM)
         env:
@@ -775,7 +779,7 @@ jobs:
 
   build-macos-arm64:
     name: Build macOS (arm64)
-    needs: plan
+    needs: [plan, build-wasm]
     if: needs.plan.outputs.build_macos == 'true'
     runs-on: macos-latest
     steps:
@@ -784,7 +788,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,wasm32-unknown-unknown
+          targets: aarch64-apple-darwin
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -794,26 +798,12 @@ jobs:
         with:
           shared-key: macos-arm64
           save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
-          cache-directories: |
-            target/dx
 
-      - name: Cache Dioxus CLI
-        id: cache-dx
-        uses: actions/cache@v4
+      - name: Download WASM assets
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.cargo/bin/dx
-          key: dx-cli-macos-0.7.3
-
-      - name: Install Dioxus CLI
-        if: steps.cache-dx.outputs.cache-hit != 'true'
-        run: cargo install dioxus-cli@0.7.3 --locked
-
-      - name: Build Tailwind CSS
-        run: make css
-
-      - name: Build WASM assets (ADR 002)
-        run: |
-          dx build --fullstack --release @client --no-default-features --features web @server --features server
+          name: wasm-assets
+          path: target/dx/
 
       - name: Build aarch64 (embeds WASM)
         env:
@@ -873,7 +863,7 @@ jobs:
 
   build-windows:
     name: Build Windows
-    needs: plan
+    needs: [plan, build-wasm]
     if: needs.plan.outputs.build_windows == 'true'
     runs-on: windows-latest
     steps:
@@ -881,8 +871,6 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -891,28 +879,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/v3' || github.ref == 'refs/heads/master' }}
-          cache-directories: |
-            target/dx
 
-      - name: Cache Dioxus CLI
-        id: cache-dx
-        uses: actions/cache@v4
+      - name: Download WASM assets
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.cargo/bin/dx.exe
-          key: dx-cli-windows-0.7.3
-
-      - name: Install Dioxus CLI
-        if: steps.cache-dx.outputs.cache-hit != 'true'
-        run: cargo install dioxus-cli@0.7.3 --locked
-
-      - name: Build Tailwind CSS
-        run: make css
-        shell: bash
-
-      - name: Build WASM assets (ADR 002)
-        run: |
-          dx build --fullstack --release @client --no-default-features --features web @server --features server
-        shell: bash
+          name: wasm-assets
+          path: target/dx/
 
       - name: Build (embeds WASM)
         env:
@@ -1674,6 +1646,7 @@ jobs:
       - lint
       - test
       - fullstack-check
+      - build-wasm
       - build-linux-x64
       - smoke-test
       - build-linux-arm
