@@ -713,6 +713,8 @@ async fn run_roon_loop(
                     s.core_version = None;
                     s.zones.clear();
                     s.transport = None;
+                    s.image = None;
+                    s.pending_images.clear();
 
                     // Publish disconnected event
                     bus_for_events.publish(BusEvent::RoonDisconnected);
