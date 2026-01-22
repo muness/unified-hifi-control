@@ -1886,15 +1886,22 @@ impl HqpInstanceManager {
 
     /// Save all instances to config file
     pub async fn save_to_config(&self) {
-        let instances = self.instances.read().await;
-        let mut configs = Vec::new();
+        // Clone adapters while holding lock, then release before async operations
+        let adapters: Vec<(String, Arc<HqpAdapter>)> = {
+            let instances = self.instances.read().await;
+            instances
+                .iter()
+                .map(|(name, adapter)| (name.clone(), adapter.clone()))
+                .collect()
+        };
 
-        for (name, adapter) in instances.iter() {
+        let mut configs = Vec::new();
+        for (name, adapter) in adapters {
             let status = adapter.get_status().await;
             if let Some(host) = status.host {
                 let state = adapter.state.read().await;
                 configs.push(HqpInstanceConfig {
-                    name: name.clone(),
+                    name,
                     host,
                     port: status.port,
                     web_port: state.web_port,
@@ -1938,13 +1945,20 @@ impl HqpInstanceManager {
 
     /// List all configured instances
     pub async fn list_instances(&self) -> Vec<HqpInstanceInfo> {
-        let instances = self.instances.read().await;
-        let mut result = Vec::new();
+        // Clone adapters while holding lock, then release before async operations
+        let adapters: Vec<(String, Arc<HqpAdapter>)> = {
+            let instances = self.instances.read().await;
+            instances
+                .iter()
+                .map(|(name, adapter)| (name.clone(), adapter.clone()))
+                .collect()
+        };
 
-        for (name, adapter) in instances.iter() {
+        let mut result = Vec::new();
+        for (name, adapter) in adapters {
             let status = adapter.get_status().await;
             result.push(HqpInstanceInfo {
-                name: name.clone(),
+                name,
                 host: status.host,
                 port: status.port,
                 connected: status.connected,
