@@ -425,11 +425,21 @@ jobs:
             echo "::notice::WASM cache miss - built from source"
           fi
 
+      - name: Verify WASM assets exist
+        run: |
+          if [ ! -d "target/dx/unified-hifi-control" ]; then
+            echo "::error::WASM assets not found in target/dx/ - cache may be corrupted"
+            exit 1
+          fi
+          echo "WASM assets found:"
+          find target/dx -name "*.wasm" -o -name "*.js" | head -5
+
       - name: Upload WASM assets
         uses: actions/upload-artifact@v4
         with:
           name: wasm-assets
           path: target/dx/
+          if-no-files-found: error
           retention-days: 1
 
   # Note: Web assets are now embedded in the binary (ADR 002).
