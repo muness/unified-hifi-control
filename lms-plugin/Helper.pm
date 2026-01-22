@@ -43,6 +43,7 @@ sub init {
     # On macOS, clear quarantine flag to prevent Gatekeeper blocking unsigned binary
     if (Slim::Utils::OSDetect::OS() eq 'mac' && (my $binary = $class->bin())) {
         system('xattr', '-cr', $binary);
+        $? && $log->error("Failed to clear quarantine attribute on $binary: $!");
     }
 }
 
@@ -51,14 +52,14 @@ sub pluginVersion {
     return Plugins::UnifiedHiFi::Plugin->_pluginDataFor('version') || '0.0.0';
 }
 
-# Get path to the binary using LMS's built-in findBin
+# Get path to the binary using LMS's built-in findbin
 # Binary is in platform-specific folders: Bin/darwin/, Bin/x86_64-linux/, etc.
 sub bin {
     my $class = shift;
 
     # Let LMS find the right binary for this platform
     # LMS knows about platform folders (darwin/, x86_64-linux/, MSWin32-x64-multi-thread/, etc.)
-    my $binary = Slim::Utils::Misc::findBin('unified-hifi-control');
+    my $binary = Slim::Utils::Misc::findbin('unified-hifi-control');
 
     if ($binary) {
         $log->debug("Found binary via LMS findbin: $binary");
@@ -268,7 +269,7 @@ Binaries are bundled in the plugin ZIP in LMS platform folder structure:
 Web assets (CSS, images) are embedded in the binary - no separate public/
 folder is needed (see ADR 002).
 
-LMS's C<Slim::Utils::Misc::findBin()> automatically finds the correct binary
+LMS's C<Slim::Utils::Misc::findbin()> automatically finds the correct binary
 for the current platform.
 
 =cut
