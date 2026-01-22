@@ -189,24 +189,30 @@ impl AdapterCoordinator {
 
     /// Stop a single adapter
     pub async fn stop_adapter(&self, prefix: &str) -> Result<()> {
-        let mut adapters = self.adapters.write().await;
+        // Extract handle and cancel token while holding lock, then release before awaiting
+        let handle = {
+            let mut adapters = self.adapters.write().await;
 
-        let adapter = adapters
-            .get_mut(prefix)
-            .ok_or_else(|| anyhow::anyhow!("Adapter {} not registered", prefix))?;
+            let adapter = adapters
+                .get_mut(prefix)
+                .ok_or_else(|| anyhow::anyhow!("Adapter {} not registered", prefix))?;
 
-        if adapter.handle.is_none() {
-            debug!("Adapter {} not running", prefix);
-            return Ok(());
-        }
+            if adapter.handle.is_none() {
+                debug!("Adapter {} not running", prefix);
+                return Ok(());
+            }
 
-        info!("Stopping adapter: {}", prefix);
+            info!("Stopping adapter: {}", prefix);
 
-        // Cancel the adapter's token
-        adapter.cancel.cancel();
+            // Cancel the adapter's token
+            adapter.cancel.cancel();
 
-        // Wait for the task to complete with timeout
-        if let Some(handle) = adapter.handle.take() {
+            // Take the handle - lock released after this block
+            adapter.handle.take()
+        };
+
+        // Wait for the task to complete with timeout (lock not held)
+        if let Some(handle) = handle {
             match tokio::time::timeout(self.shutdown_timeout, handle).await {
                 Ok(Ok(())) => {
                     info!("Adapter {} stopped cleanly", prefix);
@@ -220,8 +226,13 @@ impl AdapterCoordinator {
             }
         }
 
-        // Reset cancel token for potential restart
-        adapter.cancel = self.shutdown.child_token();
+        // Re-acquire lock to reset cancel token for potential restart
+        {
+            let mut adapters = self.adapters.write().await;
+            if let Some(adapter) = adapters.get_mut(prefix) {
+                adapter.cancel = self.shutdown.child_token();
+            }
+        }
 
         Ok(())
     }
@@ -269,17 +280,21 @@ impl AdapterCoordinator {
         // Cancel global token (catches any stragglers)
         self.shutdown.cancel();
 
-        // Wait for all task handles
-        {
+        // Collect all task handles (release lock before awaiting)
+        let handles: Vec<(String, tokio::task::JoinHandle<()>)> = {
             let mut adapters = self.adapters.write().await;
-            for (prefix, adapter) in adapters.iter_mut() {
-                if let Some(handle) = adapter.handle.take() {
-                    match tokio::time::timeout(Duration::from_secs(1), handle).await {
-                        Ok(Ok(())) => debug!("Adapter {} task joined", prefix),
-                        Ok(Err(e)) => warn!("Adapter {} task panicked: {}", prefix, e),
-                        Err(_) => warn!("Adapter {} task did not join, abandoning", prefix),
-                    }
-                }
+            adapters
+                .iter_mut()
+                .filter_map(|(prefix, adapter)| adapter.handle.take().map(|h| (prefix.clone(), h)))
+                .collect()
+        };
+
+        // Wait for all task handles (lock not held)
+        for (prefix, handle) in handles {
+            match tokio::time::timeout(Duration::from_secs(1), handle).await {
+                Ok(Ok(())) => debug!("Adapter {} task joined", prefix),
+                Ok(Err(e)) => warn!("Adapter {} task panicked: {}", prefix, e),
+                Err(_) => warn!("Adapter {} task did not join, abandoning", prefix),
             }
         }
 

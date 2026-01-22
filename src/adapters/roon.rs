@@ -321,11 +321,14 @@ impl RoonAdapter {
 
     /// Control playback
     pub async fn control(&self, zone_id: &str, action: &str) -> Result<()> {
-        let state = self.state.read().await;
-        let transport = state
-            .transport
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Not connected to Roon"))?;
+        // Clone transport while holding lock, then release before await
+        let transport = {
+            let state = self.state.read().await;
+            state
+                .transport
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Not connected to Roon"))?
+        };
 
         let control = match action {
             "play" => Control::Play,
@@ -348,38 +351,38 @@ impl RoonAdapter {
     /// Naively clamping to 0-100 would send -12 dB → 0 (MAX VOLUME), risking
     /// equipment damage. See tests/volume_safety.rs for regression protection.
     pub async fn change_volume(&self, output_id: &str, value: i32, relative: bool) -> Result<()> {
-        let state = self.state.read().await;
-        let transport = state
-            .transport
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Not connected to Roon"))?;
+        // Clone transport and gather volume info while holding lock, then release before await
+        let (transport, mode, final_value) = {
+            let state = self.state.read().await;
+            let transport = state
+                .transport
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Not connected to Roon"))?;
 
-        if relative {
-            // Relative volume changes - clamp step size to prevent wild jumps
-            let clamped_step = clamp(value, -MAX_RELATIVE_STEP, MAX_RELATIVE_STEP);
-            transport
-                .change_volume(output_id, &volume::ChangeMode::Relative, clamped_step)
-                .await;
-        } else {
-            // Absolute volume - MUST use output's actual range
-            let output = self.find_output(&state, output_id);
-            let (min, max) = get_volume_range(output.as_ref());
-            let clamped_value = clamp(value, min, max);
+            if relative {
+                // Relative volume changes - clamp step size to prevent wild jumps
+                let clamped_step = clamp(value, -MAX_RELATIVE_STEP, MAX_RELATIVE_STEP);
+                (transport, volume::ChangeMode::Relative, clamped_step)
+            } else {
+                // Absolute volume - MUST use output's actual range
+                let output = self.find_output(&state, output_id);
+                let (min, max) = get_volume_range(output.as_ref());
+                let clamped_value = clamp(value, min, max);
 
-            tracing::debug!(
-                "Volume change: output={}, requested={}, clamped={}, range={}..{}",
-                output_id,
-                value,
-                clamped_value,
-                min,
-                max
-            );
+                tracing::debug!(
+                    "Volume change: output={}, requested={}, clamped={}, range={}..{}",
+                    output_id,
+                    value,
+                    clamped_value,
+                    min,
+                    max
+                );
 
-            transport
-                .change_volume(output_id, &volume::ChangeMode::Absolute, clamped_value)
-                .await;
-        }
+                (transport, volume::ChangeMode::Absolute, clamped_value)
+            }
+        };
 
+        transport.change_volume(output_id, &mode, final_value).await;
         Ok(())
     }
 
@@ -397,11 +400,14 @@ impl RoonAdapter {
 
     /// Mute/unmute
     pub async fn mute(&self, output_id: &str, mute: bool) -> Result<()> {
-        let state = self.state.read().await;
-        let transport = state
-            .transport
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Not connected to Roon"))?;
+        // Clone transport while holding lock, then release before await
+        let transport = {
+            let state = self.state.read().await;
+            state
+                .transport
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Not connected to Roon"))?
+        };
 
         let how = if mute {
             volume::Mute::Mute
@@ -421,33 +427,35 @@ impl RoonAdapter {
     ) -> Result<ImageData> {
         let (tx, rx) = oneshot::channel();
 
-        // Request the image
-        let req_id = {
-            let mut state = self.state.write().await;
-            let image = state
+        // Clone image service while holding lock, then release before await
+        let image = {
+            let state = self.state.read().await;
+            state
                 .image
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Image service not available"))?;
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Image service not available"))?
+        };
 
-            // Build scaling args
-            let scaling = match (width, height) {
-                (Some(w), Some(h)) => Some(Scaling::new(Scale::Fit, w, h)),
-                (Some(w), None) => Some(Scaling::new(Scale::Fit, w, w)),
-                (None, Some(h)) => Some(Scaling::new(Scale::Fit, h, h)),
-                (None, None) => Some(Scaling::new(Scale::Fit, 300, 300)),
-            };
+        // Build scaling args
+        let scaling = match (width, height) {
+            (Some(w), Some(h)) => Some(Scaling::new(Scale::Fit, w, h)),
+            (Some(w), None) => Some(Scaling::new(Scale::Fit, w, w)),
+            (None, Some(h)) => Some(Scaling::new(Scale::Fit, h, h)),
+            (None, None) => Some(Scaling::new(Scale::Fit, 300, 300)),
+        };
 
-            let args = ImageArgs::new(scaling, Some(ImageFormat::Jpeg));
-            let req_id = image.get_image(image_key, args).await;
+        // Request the image (lock not held)
+        let args = ImageArgs::new(scaling, Some(ImageFormat::Jpeg));
+        let req_id = image.get_image(image_key, args).await;
 
-            if let Some(req_id) = req_id {
-                state
-                    .pending_images
-                    .insert(req_id, (image_key.to_string(), tx));
-                req_id
-            } else {
-                return Err(anyhow::anyhow!("Failed to request image"));
+        let req_id = match req_id {
+            Some(id) => {
+                // Re-acquire lock to insert pending request
+                let mut state = self.state.write().await;
+                state.pending_images.insert(id, (image_key.to_string(), tx));
+                id
             }
+            None => return Err(anyhow::anyhow!("Failed to request image")),
         };
 
         tracing::debug!("Requested image {} with req_id {}", image_key, req_id);
@@ -653,28 +661,34 @@ async fn run_roon_loop(
                         status.set_status(message, false).await;
                     }
 
-                    let mut s = state_for_events.write().await;
-                    s.connected = true;
-                    s.core_name = Some(core_name.clone());
-                    s.core_version = Some(core_version.clone());
+                    // Get transport and image services BEFORE acquiring lock
+                    let transport = core.get_transport().cloned();
+                    let image = core.get_image().cloned();
 
-                    // Publish connected event
+                    // Subscribe to zones BEFORE acquiring lock (async operation)
+                    if let Some(ref t) = transport {
+                        t.subscribe_zones().await;
+                    }
+
+                    // Now acquire lock and update state synchronously
+                    {
+                        let mut s = state_for_events.write().await;
+                        s.connected = true;
+                        s.core_name = Some(core_name.clone());
+                        s.core_version = Some(core_version.clone());
+                        s.transport = transport;
+                        s.image = image.clone();
+                    }
+
+                    if image.is_some() {
+                        tracing::info!("Roon Image service available");
+                    }
+
+                    // Publish connected event (after lock released)
                     bus_for_events.publish(BusEvent::RoonConnected {
                         core_name: core_name.clone(),
                         version: core_version.clone(),
                     });
-
-                    // Get transport service and subscribe to zones
-                    if let Some(transport) = core.get_transport().cloned() {
-                        transport.subscribe_zones().await;
-                        s.transport = Some(transport);
-                    }
-
-                    // Get image service for album art
-                    if let Some(image) = core.get_image().cloned() {
-                        s.image = Some(image);
-                        tracing::info!("Roon Image service available");
-                    }
                 }
                 CoreEvent::Lost(mut core) => {
                     let lost_core_name = core.display_name.clone();
@@ -829,10 +843,18 @@ async fn run_roon_loop(
                             .map(|(k, _)| *k)
                         {
                             if let Some((_key, sender)) = s.pending_images.remove(&req_id) {
-                                let _ = sender.send(Some(ImageData {
-                                    content_type: "image/jpeg".to_string(),
-                                    data,
-                                }));
+                                if sender
+                                    .send(Some(ImageData {
+                                        content_type: "image/jpeg".to_string(),
+                                        data,
+                                    }))
+                                    .is_err()
+                                {
+                                    tracing::debug!(
+                                        "Image request cancelled (receiver dropped): {}",
+                                        image_key
+                                    );
+                                }
                             }
                         }
                     }
@@ -847,10 +869,18 @@ async fn run_roon_loop(
                             .map(|(k, _)| *k)
                         {
                             if let Some((_key, sender)) = s.pending_images.remove(&req_id) {
-                                let _ = sender.send(Some(ImageData {
-                                    content_type: "image/png".to_string(),
-                                    data,
-                                }));
+                                if sender
+                                    .send(Some(ImageData {
+                                        content_type: "image/png".to_string(),
+                                        data,
+                                    }))
+                                    .is_err()
+                                {
+                                    tracing::debug!(
+                                        "Image request cancelled (receiver dropped): {}",
+                                        image_key
+                                    );
+                                }
                             }
                         }
                     }
