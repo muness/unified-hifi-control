@@ -369,8 +369,12 @@ jobs:
         id: cache-wasm
         uses: actions/cache@v4
         with:
-          path: target/dx/
+          path: |
+            target/dx/
+            target/wasm32-unknown-unknown/
           key: wasm-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'Dioxus.toml', 'src/**/*.rs', 'assets/**', 'input.css') }}
+          restore-keys: |
+            wasm-
 
       - name: Setup Rust
         if: steps.cache-wasm.outputs.cache-hit != 'true'
