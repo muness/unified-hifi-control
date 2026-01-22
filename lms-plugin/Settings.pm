@@ -29,7 +29,7 @@ sub prefs {
 }
 
 sub handler {
-    my ($class, $client, $params, $callback, @args) = @_;
+    my ($class, $client, $params) = @_;
 
     # Handle start/stop actions
     if ($params->{'start'}) {
@@ -52,14 +52,10 @@ sub handler {
         }
     }
 
-    Plugins::UnifiedHiFi::Helper->knobStatus(sub {
-        my ($status) = @_;
-        $params->{'knobStatus'} = $status;
-        my $body = $class->SUPER::handler($client, $params);
-        $callback->($client, $params, $body, @args);
-    });
+    # Knob status will be fetched via JavaScript on the page if needed
+    $params->{'knobStatus'} = { knobs => [] };
 
-    return;
+    return $class->SUPER::handler($client, $params);
 }
 
 sub beforeRender {
@@ -75,10 +71,12 @@ sub beforeRender {
         });
     }
 
-    # Add template variables
-    $params->{'running'}      = Plugins::UnifiedHiFi::Helper->running();
-    $params->{'webUrl'}       = Plugins::UnifiedHiFi::Helper->webUrl();
-    $params->{'binaryStatus'} = Plugins::UnifiedHiFi::Helper->binaryStatus();
+    # Add template variables (wrapped in eval for safety)
+    $params->{'running'}      = eval { Plugins::UnifiedHiFi::Helper->running() } || 0;
+    $params->{'webUrl'}       = eval { Plugins::UnifiedHiFi::Helper->webUrl() } || '';
+    $params->{'binaryStatus'} = eval { Plugins::UnifiedHiFi::Helper->binaryStatus() } || 'unknown';
+
+    $log->error("Error in beforeRender: $@") if $@;
 
     return $class->SUPER::beforeRender($params, $client);
 }
