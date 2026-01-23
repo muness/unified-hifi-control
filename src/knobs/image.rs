@@ -20,8 +20,7 @@ pub struct Rgb565Image {
 /// Convert any image buffer (JPEG, PNG, SVG, etc.) to RGB565 format for ESP32 LCD
 ///
 /// Returns RGB565 data in little-endian byte order (ESP32 native).
-/// Supports JPEG, PNG, GIF, BMP, ICO, TIFF, WebP via the `image` crate,
-/// and SVG via `resvg`.
+/// Supports JPEG, PNG, GIF, BMP, WebP via the `image` crate, and SVG via `resvg`.
 pub fn jpeg_to_rgb565(
     image_data: &[u8],
     target_width: u32,
