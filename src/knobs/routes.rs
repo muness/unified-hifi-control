@@ -256,12 +256,17 @@ async fn get_zone_infos(state: &AppState) -> Vec<ZoneInfo> {
 fn compute_zones_sha(zones: &[ZoneInfo]) -> String {
     let mut hasher = Sha256::new();
     // Hash zone IDs and names - sorted for deterministic output
+    // Use length-prefixing to avoid delimiter collision (e.g., if zone name contains special chars)
     let mut zone_data: Vec<_> = zones
         .iter()
         .map(|z| format!("{}:{}", z.zone_id, z.zone_name))
         .collect();
     zone_data.sort();
-    hasher.update(zone_data.join(",").as_bytes());
+    for item in &zone_data {
+        let len = item.len() as u32;
+        hasher.update(len.to_be_bytes());
+        hasher.update(item.as_bytes());
+    }
     let result = hasher.finalize();
     hex::encode(&result[..4]) // First 8 hex chars
 }
@@ -1422,5 +1427,128 @@ pub async fn admin_fetch_firmware_handler(
                 "error": format!("Failed to fetch firmware: {}", e)
             })),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_zone(id: &str, name: &str) -> ZoneInfo {
+        ZoneInfo {
+            zone_id: id.to_string(),
+            zone_name: name.to_string(),
+            source: "test".to_string(),
+            state: "stopped".to_string(),
+            dsp: None,
+        }
+    }
+
+    #[test]
+    fn zones_sha_deterministic() {
+        // Same input should always produce same output
+        let zones = vec![
+            make_zone("zone-1", "Living Room"),
+            make_zone("zone-2", "Kitchen"),
+        ];
+
+        let sha1 = compute_zones_sha(&zones);
+        let sha2 = compute_zones_sha(&zones);
+        let sha3 = compute_zones_sha(&zones);
+
+        assert_eq!(sha1, sha2);
+        assert_eq!(sha2, sha3);
+        assert_eq!(sha1.len(), 8, "SHA should be 8 hex chars");
+    }
+
+    #[test]
+    fn zones_sha_order_insensitive() {
+        // Same zones in different order should produce same SHA
+        let zones_a = vec![
+            make_zone("zone-1", "Living Room"),
+            make_zone("zone-2", "Kitchen"),
+        ];
+
+        let zones_b = vec![
+            make_zone("zone-2", "Kitchen"),
+            make_zone("zone-1", "Living Room"),
+        ];
+
+        let sha_a = compute_zones_sha(&zones_a);
+        let sha_b = compute_zones_sha(&zones_b);
+
+        assert_eq!(sha_a, sha_b, "Order should not affect SHA");
+    }
+
+    #[test]
+    fn zones_sha_changes_on_add() {
+        let zones_before = vec![make_zone("zone-1", "Living Room")];
+
+        let zones_after = vec![
+            make_zone("zone-1", "Living Room"),
+            make_zone("zone-2", "Kitchen"),
+        ];
+
+        let sha_before = compute_zones_sha(&zones_before);
+        let sha_after = compute_zones_sha(&zones_after);
+
+        assert_ne!(sha_before, sha_after, "SHA should change when zone added");
+    }
+
+    #[test]
+    fn zones_sha_changes_on_remove() {
+        let zones_before = vec![
+            make_zone("zone-1", "Living Room"),
+            make_zone("zone-2", "Kitchen"),
+        ];
+
+        let zones_after = vec![make_zone("zone-1", "Living Room")];
+
+        let sha_before = compute_zones_sha(&zones_before);
+        let sha_after = compute_zones_sha(&zones_after);
+
+        assert_ne!(sha_before, sha_after, "SHA should change when zone removed");
+    }
+
+    #[test]
+    fn zones_sha_changes_on_rename() {
+        let zones_before = vec![make_zone("zone-1", "Living Room")];
+
+        let zones_after = vec![make_zone("zone-1", "Lounge")];
+
+        let sha_before = compute_zones_sha(&zones_before);
+        let sha_after = compute_zones_sha(&zones_after);
+
+        assert_ne!(sha_before, sha_after, "SHA should change when zone renamed");
+    }
+
+    #[test]
+    fn zones_sha_empty_list() {
+        // Empty list should produce a valid SHA
+        let zones: Vec<ZoneInfo> = vec![];
+        let sha = compute_zones_sha(&zones);
+
+        assert_eq!(sha.len(), 8, "Empty list should still produce 8-char SHA");
+        assert!(
+            sha.chars().all(|c| c.is_ascii_hexdigit()),
+            "SHA should be hex"
+        );
+    }
+
+    #[test]
+    fn zones_sha_special_chars_no_collision() {
+        // Zone names with special chars should not cause collisions
+        // These would collide with comma-joining: "a,b" vs ["a", "b"]
+        let zones_a = vec![make_zone("z1", "Room A,B")];
+
+        let zones_b = vec![make_zone("z1", "Room A"), make_zone("z2", "B")];
+
+        let sha_a = compute_zones_sha(&zones_a);
+        let sha_b = compute_zones_sha(&zones_b);
+
+        assert_ne!(
+            sha_a, sha_b,
+            "Special chars in names should not cause collision"
+        );
     }
 }
