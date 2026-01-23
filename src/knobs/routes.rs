@@ -476,6 +476,12 @@ pub async fn knob_image_handler(
         .await
     {
         Ok(image_data) => {
+            // If RGB565 was requested but conversion failed (content_type != octet-stream),
+            // return the placeholder instead of misleading headers
+            if format == Some("rgb565") && image_data.content_type != "application/octet-stream" {
+                return placeholder_response();
+            }
+
             let mut response = Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, &image_data.content_type);

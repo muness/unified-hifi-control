@@ -22,6 +22,7 @@ server = [
     "dep:tracing-subscriber",
     "dep:config",
     "dep:image",
+    "dep:resvg",
     "dep:tokio-stream",
     "dep:tokio-util",
     "dep:ssdp-client",
@@ -117,7 +118,9 @@ gethostname = { version = "1.1.0", optional = true }
 rust-embed = { version = "8", optional = true }
 mime_guess = { version = "2", optional = true }
 http-body-util = { version = "0.1", optional = true }
-resvg = { version = "0.46.0", features = ["default"] }
+
+# SVG rasterization (server only)
+resvg = { version = "0.46.0", features = ["default"], optional = true }
 
 # ============ WEB-ONLY DEPENDENCIES ============
 [target.'cfg(target_arch = "wasm32")'.dependencies]
