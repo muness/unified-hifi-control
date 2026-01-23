@@ -113,7 +113,7 @@ pub async fn knob_zones_handler(
     Json(ZonesResponse { zones })
 }
 
-/// Helper to aggregate zones from all adapters (respects adapter settings, public for UI module)
+/// Helper to aggregate zones from aggregator (respects adapter settings, public for UI module)
 pub async fn get_all_zones_internal(state: &AppState) -> Vec<ZoneInfo> {
     use crate::api::load_app_settings;
     use std::collections::HashMap;
@@ -143,71 +143,36 @@ pub async fn get_all_zones_internal(state: &AppState) -> Vec<ZoneInfo> {
         })
     };
 
-    let mut zones = Vec::new();
+    // Get all zones from aggregator (already prefixed with source:)
+    let all_zones = state.aggregator.get_zones().await;
 
-    // Roon zones (prefixed with roon: for routing)
-    if adapters.roon {
-        for z in state.roon.get_zones().await {
-            let zone_id = format!("roon:{}", z.zone_id);
-            zones.push(ZoneInfo {
-                dsp: get_dsp(&zone_id),
-                zone_id,
-                zone_name: z.display_name,
-                source: "roon".to_string(),
-                state: z.state,
-            });
-        }
-    }
-
-    // LMS players (prefixed with lms:)
-    if adapters.lms {
-        for p in state.lms.get_cached_players().await {
-            let zone_id = format!("lms:{}", p.playerid);
-            zones.push(ZoneInfo {
-                dsp: get_dsp(&zone_id),
-                zone_id,
-                zone_name: p.name,
-                source: "lms".to_string(),
-                state: if p.mode == "play" {
-                    "playing".to_string()
-                } else if p.mode == "pause" {
-                    "paused".to_string()
-                } else {
-                    "stopped".to_string()
-                },
-            });
-        }
-    }
-
-    // OpenHome zones (prefixed with openhome:)
-    if adapters.openhome {
-        for z in state.openhome.get_zones().await {
-            let zone_id = format!("openhome:{}", z.zone_id);
-            zones.push(ZoneInfo {
-                dsp: get_dsp(&zone_id),
-                zone_id,
-                zone_name: z.zone_name,
-                source: "openhome".to_string(),
-                state: z.state.clone(),
-            });
-        }
-    }
-
-    // UPnP zones (prefixed with upnp:)
-    if adapters.upnp {
-        for z in state.upnp.get_zones().await {
-            let zone_id = format!("upnp:{}", z.zone_id);
-            zones.push(ZoneInfo {
-                dsp: get_dsp(&zone_id),
-                zone_id,
-                zone_name: z.zone_name,
-                source: "upnp".to_string(),
-                state: z.state.clone(),
-            });
-        }
-    }
-
-    zones
+    // Filter by enabled adapters and convert to ZoneInfo
+    all_zones
+        .into_iter()
+        .filter(|z| {
+            // Filter based on adapter settings
+            if z.zone_id.starts_with("roon:") {
+                adapters.roon
+            } else if z.zone_id.starts_with("lms:") {
+                adapters.lms
+            } else if z.zone_id.starts_with("openhome:") {
+                adapters.openhome
+            } else if z.zone_id.starts_with("upnp:") {
+                adapters.upnp
+            } else if z.zone_id.starts_with("hqp:") {
+                adapters.hqplayer
+            } else {
+                true // Unknown prefix, include by default
+            }
+        })
+        .map(|z| ZoneInfo {
+            dsp: get_dsp(&z.zone_id),
+            zone_id: z.zone_id,
+            zone_name: z.zone_name,
+            source: z.source,
+            state: z.state.to_string(),
+        })
+        .collect()
 }
 
 /// Query params for now_playing
@@ -323,276 +288,109 @@ pub async fn knob_now_playing_handler(
     );
     let zone_infos = get_zone_infos(&state).await;
 
-    // Route based on zone_id prefix
-    if zone_id.starts_with("lms:") {
-        // LMS player
-        let player_id = zone_id.trim_start_matches("lms:");
-        let player = match state.lms.get_cached_player(player_id).await {
-            Some(p) => p,
-            None => {
-                return Err((
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({
-                        "error": "zone not found",
-                        "error_code": "ZONE_NOT_FOUND",
-                        "zones": zone_infos
-                    })),
-                ));
-            }
-        };
+    // Handle legacy zone_id without prefix (assume Roon)
+    let prefixed_zone_id = if !zone_id.contains(':') {
+        format!("roon:{}", zone_id)
+    } else {
+        zone_id.clone()
+    };
 
-        let state_str = if player.mode == "play" {
-            "playing"
-        } else if player.mode == "pause" {
-            "paused"
-        } else {
-            "stopped"
-        };
+    // Get zone from aggregator (single source of truth)
+    let zone = match state.aggregator.get_zone(&prefixed_zone_id).await {
+        Some(z) => z,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "zone not found",
+                    "error_code": "ZONE_NOT_FOUND",
+                    "zones": zone_infos
+                })),
+            ));
+        }
+    };
 
-        // Node.js format: line1/line2/line3/is_playing with volume info
-        let is_playing = state_str == "playing";
+    // Check if zone's adapter is enabled
+    use crate::api::load_app_settings;
+    let settings = load_app_settings();
+    let adapter_enabled = match zone.source.as_str() {
+        "roon" => settings.adapters.roon,
+        "lms" => settings.adapters.lms,
+        "openhome" => settings.adapters.openhome,
+        "upnp" => settings.adapters.upnp,
+        "hqplayer" => settings.adapters.hqplayer,
+        _ => true,
+    };
 
-        Ok(Json(NowPlayingResponse {
-            zone_id: zone_id.clone(),
-            line1: if player.title.is_empty() {
+    if !adapter_enabled {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "zone not found",
+                "error_code": "ZONE_NOT_FOUND",
+                "zones": zone_infos
+            })),
+        ));
+    }
+
+    // Extract now_playing info (title/artist/album -> line1/line2/line3)
+    let np = zone.now_playing.as_ref();
+    let line1 = np
+        .map(|n| {
+            if n.title.is_empty() {
                 "Idle".to_string()
             } else {
-                player.title
-            },
-            line2: player.artist,
-            line3: if player.album.is_empty() {
-                None
-            } else {
-                Some(player.album)
-            },
-            is_playing,
-            volume: Some(player.volume as f64),
-            volume_type: Some("number".to_string()),
-            volume_min: Some(0.0),
-            volume_max: Some(100.0),
-            volume_step: Some(1.0),
-            image_url: Some(image_url),
-            image_key: player
-                .artwork_url
-                .or(player.coverid)
-                .or(player.artwork_track_id),
-            seek_position: Some(player.time as i64),
-            length: Some(player.duration as u32),
-            is_play_allowed: !is_playing,
-            is_pause_allowed: is_playing,
-            is_next_allowed: true,
-            is_previous_allowed: true,
-            zones: zone_infos.clone(),
-            config_sha,
-            zones_sha: Some(compute_zones_sha(&zone_infos)),
-        }))
-    } else if zone_id.starts_with("openhome:") {
-        // OpenHome zone - zone_id is the UUID
-        let uuid = zone_id.trim_start_matches("openhome:");
-        let device = match state.openhome.get_zone(uuid).await {
-            Some(d) => d,
-            None => {
-                return Err((
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({
-                        "error": "zone not found",
-                        "error_code": "ZONE_NOT_FOUND",
-                        "zones": zone_infos
-                    })),
-                ));
+                n.title.clone()
             }
-        };
-
-        let np = state.openhome.get_now_playing(uuid).await;
-        let is_playing = device.state == "playing";
-
-        Ok(Json(NowPlayingResponse {
-            zone_id: zone_id.clone(),
-            line1: np
-                .as_ref()
-                .map(|n| n.line1.clone())
-                .unwrap_or_else(|| "Idle".to_string()),
-            line2: np.as_ref().map(|n| n.line2.clone()).unwrap_or_default(),
-            line3: np.as_ref().and_then(|n| {
-                if n.line3.is_empty() {
-                    None
-                } else {
-                    Some(n.line3.clone())
-                }
-            }),
-            is_playing,
-            volume: np.as_ref().and_then(|n| n.volume.map(|v| v as f64)),
-            volume_type: Some(if np.as_ref().and_then(|n| n.volume).is_some() {
-                "number".to_string()
-            } else {
-                "fixed".to_string()
-            }),
-            volume_min: if np.as_ref().and_then(|n| n.volume).is_some() {
-                np.as_ref().map(|n| n.volume_min as f64)
-            } else {
-                Some(0.0)
-            },
-            volume_max: if np.as_ref().and_then(|n| n.volume).is_some() {
-                np.as_ref().map(|n| n.volume_max as f64)
-            } else {
-                Some(0.0)
-            },
-            volume_step: Some(1.0),
-            image_url: Some(image_url),
-            image_key: np.as_ref().and_then(|n| n.image_key.clone()),
-            seek_position: np.as_ref().and_then(|n| n.seek_position),
-            length: np.as_ref().and_then(|n| n.length),
-            is_play_allowed: !is_playing,
-            is_pause_allowed: is_playing,
-            is_next_allowed: true,
-            is_previous_allowed: true,
-            zones: zone_infos.clone(),
-            config_sha,
-            zones_sha: Some(compute_zones_sha(&zone_infos)),
-        }))
-    } else if zone_id.starts_with("upnp:") {
-        // UPnP zone - zone_id_part is the zone_id from UPnPZone
-        let zone_id_part = zone_id.trim_start_matches("upnp:");
-        let zones = state.upnp.get_zones().await;
-        let zone = match zones.into_iter().find(|z| z.zone_id == zone_id_part) {
-            Some(z) => z,
-            None => {
-                return Err((
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({
-                        "error": "zone not found",
-                        "error_code": "ZONE_NOT_FOUND",
-                        "zones": zone_infos
-                    })),
-                ));
-            }
-        };
-
-        let np = state.upnp.get_now_playing(zone_id_part).await;
-        let is_playing = zone.state == "playing";
-
-        Ok(Json(NowPlayingResponse {
-            zone_id: zone_id.clone(),
-            line1: np
-                .as_ref()
-                .map(|n| n.line1.clone())
-                .unwrap_or_else(|| "Idle".to_string()),
-            line2: np.as_ref().map(|n| n.line2.clone()).unwrap_or_default(),
-            line3: np.as_ref().and_then(|n| {
-                if n.line3.is_empty() {
-                    None
-                } else {
-                    Some(n.line3.clone())
-                }
-            }),
-            is_playing,
-            volume: np.as_ref().and_then(|n| n.volume.map(|v| v as f64)),
-            volume_type: Some(if np.as_ref().and_then(|n| n.volume).is_some() {
-                "number".to_string()
-            } else {
-                "fixed".to_string()
-            }),
-            volume_min: if np.as_ref().and_then(|n| n.volume).is_some() {
-                np.as_ref().map(|n| n.volume_min as f64)
-            } else {
-                Some(0.0)
-            },
-            volume_max: if np.as_ref().and_then(|n| n.volume).is_some() {
-                np.as_ref().map(|n| n.volume_max as f64)
-            } else {
-                Some(0.0)
-            },
-            volume_step: Some(1.0),
-            image_url: Some(image_url),
-            image_key: np.as_ref().and_then(|n| n.image_key.clone()),
-            seek_position: np.as_ref().and_then(|n| n.seek_position),
-            length: np.as_ref().and_then(|n| n.length),
-            is_play_allowed: !is_playing,
-            is_pause_allowed: is_playing,
-            is_next_allowed: true,
-            is_previous_allowed: true,
-            zones: zone_infos.clone(),
-            config_sha,
-            zones_sha: Some(compute_zones_sha(&zone_infos)),
-        }))
-    } else {
-        // Roon zone (or legacy zone_id without prefix)
-        let roon_zone_id = if zone_id.starts_with("roon:") {
-            zone_id.trim_start_matches("roon:").to_string()
+        })
+        .unwrap_or_else(|| "Idle".to_string());
+    let line2 = np.map(|n| n.artist.clone()).unwrap_or_default();
+    let line3 = np.and_then(|n| {
+        if n.album.is_empty() {
+            None
         } else {
-            zone_id.clone()
-        };
+            Some(n.album.clone())
+        }
+    });
 
-        let zone = match state.roon.get_zone(&roon_zone_id).await {
-            Some(z) => z,
-            None => {
-                return Err((
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({
-                        "error": "zone not found",
-                        "error_code": "ZONE_NOT_FOUND",
-                        "zones": zone_infos
-                    })),
-                ));
-            }
-        };
+    // Determine playback state
+    let is_playing = zone.state == crate::bus::PlaybackState::Playing;
 
-        let np = zone.now_playing;
-        let is_playing = zone.state == "playing";
+    // Extract volume info from zone's volume_control
+    let vc = zone.volume_control.as_ref();
+    let volume_type = match vc {
+        Some(v) => match v.scale {
+            crate::bus::VolumeScale::Decibel => "db".to_string(),
+            crate::bus::VolumeScale::Percentage => "number".to_string(),
+            crate::bus::VolumeScale::Linear => "number".to_string(),
+            crate::bus::VolumeScale::Unknown => "fixed".to_string(),
+        },
+        None => "fixed".to_string(),
+    };
 
-        // Node.js format: line1 = title, line2 = artist, line3 = album
-        let line1 = np
-            .as_ref()
-            .map(|n| n.title.clone())
-            .unwrap_or_else(|| "Idle".to_string());
-        let line2 = np.as_ref().map(|n| n.artist.clone()).unwrap_or_default();
-        let line3 = np.as_ref().and_then(|n| {
-            if n.album.is_empty() {
-                None
-            } else {
-                Some(n.album.clone())
-            }
-        });
-
-        // Extract volume from first output (Roon zones have volume per-output)
-        let vol = zone.outputs.first().and_then(|o| o.volume.as_ref());
-
-        Ok(Json(NowPlayingResponse {
-            zone_id: zone.zone_id,
-            line1,
-            line2,
-            line3,
-            is_playing,
-            volume: vol.and_then(|v| v.value.map(|x| x as f64)),
-            volume_type: Some(if vol.is_some() {
-                "db".to_string()
-            } else {
-                "fixed".to_string()
-            }),
-            volume_min: if vol.is_some() {
-                vol.and_then(|v| v.min.map(|x| x as f64))
-            } else {
-                Some(0.0)
-            },
-            volume_max: if vol.is_some() {
-                vol.and_then(|v| v.max.map(|x| x as f64))
-            } else {
-                Some(0.0)
-            },
-            volume_step: Some(1.0),
-            image_url: Some(image_url),
-            image_key: np.as_ref().and_then(|n| n.image_key.clone()),
-            seek_position: np.as_ref().and_then(|n| n.seek_position),
-            length: np.as_ref().and_then(|n| n.length),
-            is_play_allowed: zone.is_play_allowed,
-            is_pause_allowed: zone.is_pause_allowed,
-            is_next_allowed: zone.is_next_allowed,
-            is_previous_allowed: zone.is_previous_allowed,
-            zones: zone_infos.clone(),
-            config_sha,
-            zones_sha: Some(compute_zones_sha(&zone_infos)),
-        }))
-    }
+    Ok(Json(NowPlayingResponse {
+        zone_id: zone.zone_id,
+        line1,
+        line2,
+        line3,
+        is_playing,
+        volume: vc.map(|v| v.value as f64),
+        volume_type: Some(volume_type),
+        volume_min: vc.map(|v| v.min as f64).or(Some(0.0)),
+        volume_max: vc.map(|v| v.max as f64).or(Some(0.0)),
+        volume_step: vc.map(|v| v.step as f64).or(Some(1.0)),
+        image_url: Some(image_url),
+        image_key: np.and_then(|n| n.image_key.clone()),
+        seek_position: np.and_then(|n| n.seek_position.map(|p| p as i64)),
+        length: np.and_then(|n| n.duration.map(|d| d as u32)),
+        is_play_allowed: zone.is_play_allowed,
+        is_pause_allowed: zone.is_pause_allowed,
+        is_next_allowed: zone.is_next_allowed,
+        is_previous_allowed: zone.is_previous_allowed,
+        zones: zone_infos.clone(),
+        config_sha,
+        zones_sha: Some(compute_zones_sha(&zone_infos)),
+    }))
 }
 
 /// Query params for image endpoint

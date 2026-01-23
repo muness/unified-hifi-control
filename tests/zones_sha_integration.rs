@@ -48,6 +48,16 @@ async fn create_test_app_with_lms(mock_addr: std::net::SocketAddr) -> Router {
     let bus = create_bus();
     let coordinator = Arc::new(AdapterCoordinator::new(bus.clone()));
 
+    // Create and start aggregator FIRST so it receives ZoneDiscovered events
+    let aggregator = Arc::new(ZoneAggregator::new(bus.clone()));
+    let agg_clone = aggregator.clone();
+    tokio::spawn(async move {
+        agg_clone.run().await;
+    });
+
+    // Give aggregator time to start its event loop
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
     let roon = Arc::new(RoonAdapter::new_disconnected(bus.clone()));
     let hqp_instances = Arc::new(HqpInstanceManager::new(bus.clone()));
     let hqplayer = hqp_instances.get_default().await;
@@ -67,13 +77,12 @@ async fn create_test_app_with_lms(mock_addr: std::net::SocketAddr) -> Router {
     .await;
     lms.start().await.expect("LMS adapter should start");
 
-    // Wait for adapter to discover players
+    // Wait for adapter to discover players (aggregator will receive events)
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let startable_adapters: Vec<Arc<dyn Startable>> =
         vec![roon.clone(), lms.clone(), openhome.clone(), upnp.clone()];
 
-    let aggregator = Arc::new(ZoneAggregator::new(bus.clone()));
     let state = AppState::new(
         roon,
         hqplayer,
@@ -101,6 +110,9 @@ async fn create_test_app_with_lms(mock_addr: std::net::SocketAddr) -> Router {
 /// Issue #148: /knob/now_playing MUST include zones_sha for dynamic zone detection
 #[tokio::test]
 async fn now_playing_includes_zones_sha() {
+    // Enable LMS adapter in settings (simulates plugin signal)
+    std::env::set_var("LMS_UNIFIEDHIFI_STARTED", "true");
+
     // Start mock LMS with a player
     let mock = MockLmsServer::start().await;
     mock.add_player("aa:bb:cc:dd:ee:ff", "Test Player").await;
@@ -153,6 +165,9 @@ async fn now_playing_includes_zones_sha() {
     );
 
     mock.stop().await;
+
+    // Clean up env var
+    std::env::remove_var("LMS_UNIFIEDHIFI_STARTED");
 }
 
 // Note: A test for "zones_sha changes when zones change" would require

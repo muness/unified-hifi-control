@@ -124,6 +124,22 @@ This includes:
 - Update `api_routes.txt` without explicit approval
 - Assume API changes are "minor" or "safe"
 
+## Engineering Philosophy
+
+**Do things the right way, even if "larger" or "harder".**
+
+- Correct architecture now prevents regressions later
+- Short-term hacks create long-term maintenance burden
+- When you see an architectural inconsistency, fix it - don't work around it
+- If a component exists for a purpose (e.g., aggregator as "single source of truth"), USE IT
+
+**Examples:**
+- Don't bypass the aggregator to query adapters directly
+- Don't cache computed values at the wrong layer
+- Don't add settings-filtering at query time if it belongs at the source
+
+---
+
 ## Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the event bus pattern and design principles.
