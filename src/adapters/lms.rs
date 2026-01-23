@@ -29,7 +29,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::adapters::lms_discovery::discover_lms_servers;
-use crate::bus::{BusEvent, PlaybackState, SharedBus, VolumeControl, Zone};
+use crate::bus::{BusEvent, PlaybackState, PrefixedZoneId, SharedBus, VolumeControl, Zone};
 use crate::config::{get_config_file_path, read_config_file};
 
 const LMS_CONFIG_FILE: &str = "lms-config.json";
@@ -1064,7 +1064,7 @@ async fn update_players_internal(
         for player_id in &removed {
             tracing::debug!("LMS player removed: {}", player_id);
             bus.publish(BusEvent::ZoneRemoved {
-                zone_id: format!("lms:{}", player_id),
+                zone_id: PrefixedZoneId::lms(player_id),
             });
         }
     }
@@ -1232,7 +1232,7 @@ async fn handle_cli_event(
             // Refresh player status on playlist changes
             match rpc.get_player_status(&player_id).await {
                 Ok(status) => {
-                    let zone_id = format!("lms:{}", player_id);
+                    let zone_id = PrefixedZoneId::lms(&player_id);
 
                     // Update cached state
                     {

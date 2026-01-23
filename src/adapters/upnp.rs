@@ -4,7 +4,9 @@
 //! Pure UPnP/DLNA has limited metadata support compared to OpenHome.
 //! Specifically, next/previous track are NOT supported by pure UPnP.
 
-use crate::bus::{BusEvent, PlaybackState, SharedBus, VolumeControl as BusVolumeControl, Zone};
+use crate::bus::{
+    BusEvent, PlaybackState, PrefixedZoneId, SharedBus, VolumeControl as BusVolumeControl, Zone,
+};
 use futures::StreamExt;
 use quick_xml::de::from_str as xml_from_str;
 use regex::Regex;
@@ -375,7 +377,7 @@ impl UPnPAdapter {
             tracing::info!("Removing stale UPnP renderer: {}", uuid);
             s.renderers.remove(&uuid);
             bus.publish(BusEvent::ZoneRemoved {
-                zone_id: format!("upnp:{}", uuid),
+                zone_id: PrefixedZoneId::upnp(&uuid),
             });
         }
     }
@@ -467,7 +469,7 @@ impl UPnPAdapter {
                         if renderer.state != new_state {
                             renderer.state = new_state.clone();
                             bus.publish(BusEvent::ZoneUpdated {
-                                zone_id: format!("upnp:{}", uuid),
+                                zone_id: PrefixedZoneId::upnp(uuid),
                                 display_name: renderer.name.clone(),
                                 state: new_state,
                             });

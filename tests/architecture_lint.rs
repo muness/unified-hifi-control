@@ -241,11 +241,12 @@ fn aggregator_exists_in_app_state() {
 }
 
 /// Adapter-to-prefix mapping for zone_id consistency check
-const ADAPTER_PREFIXES: &[(&str, &str)] = &[
-    ("roon.rs", "roon:"),
-    ("lms.rs", "lms:"),
-    ("openhome.rs", "openhome:"),
-    ("upnp.rs", "upnp:"),
+/// Format: (adapter_file, format_prefix, prefixed_zone_id_constructor)
+const ADAPTER_PREFIXES: &[(&str, &str, &str)] = &[
+    ("roon.rs", "roon:", "PrefixedZoneId::roon("),
+    ("lms.rs", "lms:", "PrefixedZoneId::lms("),
+    ("openhome.rs", "openhome:", "PrefixedZoneId::openhome("),
+    ("upnp.rs", "upnp:", "PrefixedZoneId::upnp("),
 ];
 
 /// Bus events that require prefixed zone_ids
@@ -270,7 +271,7 @@ fn bus_events_use_prefixed_zone_ids() {
 
     let mut violations = Vec::new();
 
-    for (adapter_file, expected_prefix) in ADAPTER_PREFIXES {
+    for (adapter_file, expected_prefix, expected_constructor) in ADAPTER_PREFIXES {
         let path = adapters_dir.join(adapter_file);
         if !path.exists() {
             continue;
@@ -293,16 +294,22 @@ fn bus_events_use_prefixed_zone_ids() {
                     let after_zone_id = &event_block[zone_id_pos..];
 
                     // Valid patterns (look in first 100 chars after zone_id:):
-                    // - format!("prefix:..." - direct prefix in format string
-                    // - prefixed_zone_id - variable that was set with format!
+                    // - PrefixedZoneId::xxx( - compile-time enforced prefix (preferred)
+                    // - format!("prefix:..." - direct prefix in format string (legacy)
+                    // - prefixed_zone_id - variable that was set with PrefixedZoneId or format!
                     // - zone.zone_id - from a Zone struct that already has prefix
                     let check_region = &after_zone_id[..after_zone_id.len().min(100)];
+                    let has_prefixed_zone_id_type = check_region.contains(expected_constructor);
                     let has_format_prefix =
                         check_region.contains("format!") && check_region.contains(expected_prefix);
                     let has_prefixed_var = check_region.contains("prefixed_zone_id");
                     let has_zone_struct = check_region.contains("zone.zone_id");
 
-                    if !has_format_prefix && !has_prefixed_var && !has_zone_struct {
+                    if !has_prefixed_zone_id_type
+                        && !has_format_prefix
+                        && !has_prefixed_var
+                        && !has_zone_struct
+                    {
                         // Find line number
                         let line_num = content[..absolute_pos].matches('\n').count() + 1;
                         violations.push((
@@ -339,8 +346,9 @@ fn bus_events_use_prefixed_zone_ids() {
             ));
         }
 
-        error_msg
-            .push_str("Fix: Use format!(\"prefix:{}\", raw_id) or a prefixed_zone_id variable.\n");
+        error_msg.push_str(
+            "Fix: Use PrefixedZoneId::xxx() constructor (preferred) or format!(\"prefix:{}\", raw_id).\n",
+        );
 
         panic!("{}", error_msg);
     }

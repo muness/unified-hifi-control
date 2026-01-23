@@ -4,7 +4,9 @@
 //! OpenHome is an extension of UPnP that provides richer metadata and more
 //! control actions (next/previous track, playlists, etc.)
 
-use crate::bus::{BusEvent, PlaybackState, SharedBus, VolumeControl as BusVolumeControl, Zone};
+use crate::bus::{
+    BusEvent, PlaybackState, PrefixedZoneId, SharedBus, VolumeControl as BusVolumeControl, Zone,
+};
 use futures::StreamExt;
 use quick_xml::de::from_str as xml_from_str;
 use reqwest::Client;
@@ -386,7 +388,7 @@ impl OpenHomeAdapter {
             tracing::info!("Removing stale OpenHome device: {}", uuid);
             s.devices.remove(&uuid);
             bus.publish(BusEvent::ZoneRemoved {
-                zone_id: format!("openhome:{}", uuid),
+                zone_id: PrefixedZoneId::openhome(&uuid),
             });
         }
     }
@@ -454,7 +456,7 @@ impl OpenHomeAdapter {
                     if device.state != new_state {
                         device.state = new_state.clone();
                         bus.publish(BusEvent::ZoneUpdated {
-                            zone_id: format!("openhome:{}", uuid),
+                            zone_id: PrefixedZoneId::openhome(uuid),
                             display_name: device.name.clone(),
                             state: new_state,
                         });
@@ -534,7 +536,7 @@ impl OpenHomeAdapter {
                             let image_key = track_info.album_art_uri.clone();
                             device.track_info = Some(track_info);
                             bus.publish(BusEvent::NowPlayingChanged {
-                                zone_id: format!("openhome:{}", uuid),
+                                zone_id: PrefixedZoneId::openhome(uuid),
                                 title,
                                 artist,
                                 album,

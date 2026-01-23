@@ -18,7 +18,7 @@ use tokio::sync::{oneshot, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use crate::bus::{
-    BusEvent, NowPlaying as BusNowPlaying, PlaybackState, SharedBus,
+    BusEvent, NowPlaying as BusNowPlaying, PlaybackState, PrefixedZoneId, SharedBus,
     VolumeControl as BusVolumeControl, Zone as BusZone,
 };
 use crate::config::get_config_file_path;
@@ -759,7 +759,7 @@ async fn run_roon_loop(
                             } else {
                                 // Existing zone - emit ZoneUpdated
                                 // Use prefixed zone_id to match ZoneDiscovered format
-                                let prefixed_zone_id = format!("roon:{}", converted.zone_id);
+                                let prefixed_zone_id = PrefixedZoneId::roon(&converted.zone_id);
                                 bus_for_events.publish(BusEvent::ZoneUpdated {
                                     zone_id: prefixed_zone_id.clone(),
                                     display_name: converted.display_name.clone(),
@@ -769,7 +769,7 @@ async fn run_roon_loop(
 
                             // Publish now playing changed if present
                             // Use prefixed zone_id to match aggregator's stored format
-                            let prefixed_zone_id = format!("roon:{}", converted.zone_id);
+                            let prefixed_zone_id = PrefixedZoneId::roon(&converted.zone_id);
                             if let Some(ref np) = converted.now_playing {
                                 bus_for_events.publish(BusEvent::NowPlayingChanged {
                                     zone_id: prefixed_zone_id.clone(),
@@ -821,7 +821,7 @@ async fn run_roon_loop(
                                     // Use prefixed zone_id to match aggregator's stored format
                                     if let Some(pos) = seek.seek_position {
                                         bus_for_events.publish(BusEvent::SeekPositionChanged {
-                                            zone_id: format!("roon:{}", seek.zone_id),
+                                            zone_id: PrefixedZoneId::roon(&seek.zone_id),
                                             position: pos,
                                         });
                                     }
@@ -838,7 +838,7 @@ async fn run_roon_loop(
                             // Publish zone removed event
                             // Use prefixed zone_id to match aggregator's stored format
                             bus_for_events.publish(BusEvent::ZoneRemoved {
-                                zone_id: format!("roon:{}", zone_id),
+                                zone_id: PrefixedZoneId::roon(&zone_id),
                             });
                         }
                     }

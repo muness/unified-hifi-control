@@ -47,7 +47,7 @@ impl ZoneAggregator {
                     state,
                 } => {
                     debug!("Zone updated: {}", zone_id);
-                    if let Some(zone) = self.zones.write().await.get_mut(&zone_id) {
+                    if let Some(zone) = self.zones.write().await.get_mut(zone_id.as_str()) {
                         zone.zone_name = display_name;
                         zone.state = state.as_str().into();
                     }
@@ -55,8 +55,8 @@ impl ZoneAggregator {
 
                 BusEvent::ZoneRemoved { zone_id } => {
                     debug!("Zone removed: {}", zone_id);
-                    self.zones.write().await.remove(&zone_id);
-                    self.now_playing.write().await.remove(&zone_id);
+                    self.zones.write().await.remove(zone_id.as_str());
+                    self.now_playing.write().await.remove(zone_id.as_str());
                 }
 
                 BusEvent::NowPlayingChanged {
@@ -76,7 +76,10 @@ impl ZoneAggregator {
                         duration: None,
                         metadata: None,
                     };
-                    self.now_playing.write().await.insert(zone_id, np);
+                    self.now_playing
+                        .write()
+                        .await
+                        .insert(zone_id.to_string(), np);
                 }
 
                 BusEvent::VolumeChanged {
@@ -115,7 +118,7 @@ impl ZoneAggregator {
 
                 BusEvent::SeekPositionChanged { zone_id, position } => {
                     debug!("Seek position changed: {} = {}", zone_id, position);
-                    if let Some(np) = self.now_playing.write().await.get_mut(&zone_id) {
+                    if let Some(np) = self.now_playing.write().await.get_mut(zone_id.as_str()) {
                         np.seek_position = Some(position as f64);
                     }
                 }

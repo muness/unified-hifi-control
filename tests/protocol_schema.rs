@@ -93,7 +93,7 @@ struct ErrorResponse {
 }
 
 // Use production BusEvent to keep schema in sync
-use unified_hifi_control::bus::BusEvent;
+use unified_hifi_control::bus::{BusEvent, PrefixedZoneId};
 
 // ============================================================================
 // Schema Validation Tests
@@ -427,14 +427,14 @@ mod bus_event_schema {
     #[test]
     fn validates_zone_updated() {
         let event = BusEvent::ZoneUpdated {
-            zone_id: "zone-1".to_string(),
+            zone_id: PrefixedZoneId::roon("zone-1"),
             display_name: "Living Room".to_string(),
             state: "playing".to_string(),
         };
 
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["type"], "ZoneUpdated");
-        assert_eq!(json["payload"]["zone_id"], "zone-1");
+        assert_eq!(json["payload"]["zone_id"], "roon:zone-1");
         assert_eq!(json["payload"]["display_name"], "Living Room");
         assert_eq!(json["payload"]["state"], "playing");
     }
@@ -442,7 +442,7 @@ mod bus_event_schema {
     #[test]
     fn validates_now_playing_changed() {
         let event = BusEvent::NowPlayingChanged {
-            zone_id: "zone-1".to_string(),
+            zone_id: PrefixedZoneId::roon("zone-1"),
             title: Some("Test Song".to_string()),
             artist: Some("Test Artist".to_string()),
             album: Some("Test Album".to_string()),
@@ -457,7 +457,7 @@ mod bus_event_schema {
     #[test]
     fn validates_now_playing_with_nulls() {
         let event = BusEvent::NowPlayingChanged {
-            zone_id: "zone-1".to_string(),
+            zone_id: PrefixedZoneId::roon("zone-1"),
             title: None,
             artist: None,
             album: None,
@@ -471,7 +471,7 @@ mod bus_event_schema {
     #[test]
     fn validates_seek_position_changed() {
         let event = BusEvent::SeekPositionChanged {
-            zone_id: "zone-1".to_string(),
+            zone_id: PrefixedZoneId::roon("zone-1"),
             position: 12345,
         };
 
@@ -851,7 +851,7 @@ mod contract_tests {
     #[test]
     fn sse_event_format() {
         let event = BusEvent::ZoneUpdated {
-            zone_id: "zone-1".to_string(),
+            zone_id: PrefixedZoneId::roon("zone-1"),
             display_name: "Test".to_string(),
             state: "playing".to_string(),
         };
