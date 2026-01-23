@@ -17,7 +17,7 @@ use tokio::time::timeout;
 use unified_hifi_control::adapters::hqplayer::HqpAdapter;
 use unified_hifi_control::adapters::lms::LmsAdapter;
 use unified_hifi_control::adapters::Startable;
-use unified_hifi_control::bus::{create_bus, BusEvent, SharedBus};
+use unified_hifi_control::bus::{create_bus, BusEvent, PrefixedZoneId, SharedBus};
 
 // =============================================================================
 // Test utilities
@@ -243,22 +243,22 @@ mod bus_integration {
             },
             BusEvent::RoonDisconnected,
             BusEvent::ZoneUpdated {
-                zone_id: "zone-1".to_string(),
+                zone_id: PrefixedZoneId::roon("zone-1"),
                 display_name: "Living Room".to_string(),
                 state: "playing".to_string(),
             },
             BusEvent::ZoneRemoved {
-                zone_id: "zone-1".to_string(),
+                zone_id: PrefixedZoneId::roon("zone-1"),
             },
             BusEvent::NowPlayingChanged {
-                zone_id: "zone-1".to_string(),
+                zone_id: PrefixedZoneId::roon("zone-1"),
                 title: Some("Track".to_string()),
                 artist: Some("Artist".to_string()),
                 album: Some("Album".to_string()),
                 image_key: None,
             },
             BusEvent::SeekPositionChanged {
-                zone_id: "zone-1".to_string(),
+                zone_id: PrefixedZoneId::roon("zone-1"),
                 position: 120,
             },
             BusEvent::VolumeChanged {

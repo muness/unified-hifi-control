@@ -22,7 +22,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
 
 use crate::bus::{
-    BusEvent, NowPlaying as BusNowPlaying, PlaybackState, SharedBus, TrackMetadata,
+    BusEvent, NowPlaying as BusNowPlaying, PlaybackState, PrefixedZoneId, SharedBus, TrackMetadata,
     VolumeControl as BusVolumeControl, VolumeScale, Zone as BusZone,
 };
 use crate::config::{get_config_file_path, read_config_file};
@@ -600,7 +600,7 @@ impl HqpAdapter {
 
         if let Some(ref h) = host {
             // Emit ZoneRemoved for this HQPlayer instance
-            let zone_id = format!("hqplayer:{}", instance_name.as_deref().unwrap_or(h));
+            let zone_id = PrefixedZoneId::hqplayer(instance_name.as_deref().unwrap_or(h));
             self.bus.publish(BusEvent::ZoneRemoved { zone_id });
 
             self.bus
@@ -638,7 +638,7 @@ impl HqpAdapter {
         if let Some(ref h) = host {
             tracing::warn!("HQPlayer connection lost to {}", h);
             // Emit ZoneRemoved for this HQPlayer instance
-            let zone_id = format!("hqplayer:{}", instance_name.as_deref().unwrap_or(h));
+            let zone_id = PrefixedZoneId::hqplayer(instance_name.as_deref().unwrap_or(h));
             self.bus.publish(BusEvent::ZoneRemoved { zone_id });
         }
     }

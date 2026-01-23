@@ -5,6 +5,98 @@
 //! zone-based model.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+// =============================================================================
+// PrefixedZoneId - Type-safe zone identifier with source prefix
+// =============================================================================
+
+/// A zone identifier that enforces the `source:raw_id` format at compile time.
+///
+/// This prevents bugs where adapters emit bus events with raw IDs instead of
+/// prefixed IDs, which would cause the aggregator to silently drop updates.
+///
+/// # Examples
+/// ```ignore
+/// let zone_id = PrefixedZoneId::roon("1601bb42ed14351b99c2926214f6cbb80724");
+/// assert_eq!(zone_id.as_str(), "roon:1601bb42ed14351b99c2926214f6cbb80724");
+/// assert_eq!(zone_id.source(), "roon");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PrefixedZoneId(String);
+
+impl PrefixedZoneId {
+    /// Create a Roon zone ID
+    pub fn roon(raw_id: impl AsRef<str>) -> Self {
+        Self(format!("roon:{}", raw_id.as_ref()))
+    }
+
+    /// Create an LMS zone ID
+    pub fn lms(raw_id: impl AsRef<str>) -> Self {
+        Self(format!("lms:{}", raw_id.as_ref()))
+    }
+
+    /// Create an OpenHome zone ID
+    pub fn openhome(raw_id: impl AsRef<str>) -> Self {
+        Self(format!("openhome:{}", raw_id.as_ref()))
+    }
+
+    /// Create a UPnP zone ID
+    pub fn upnp(raw_id: impl AsRef<str>) -> Self {
+        Self(format!("upnp:{}", raw_id.as_ref()))
+    }
+
+    /// Create a HQPlayer zone ID
+    pub fn hqplayer(raw_id: impl AsRef<str>) -> Self {
+        Self(format!("hqplayer:{}", raw_id.as_ref()))
+    }
+
+    /// Parse a prefixed zone ID from a string.
+    /// Returns None if the string doesn't contain a valid prefix.
+    pub fn parse(s: impl AsRef<str>) -> Option<Self> {
+        let s = s.as_ref();
+        let valid_prefixes = ["roon:", "lms:", "openhome:", "upnp:", "hqplayer:"];
+        if valid_prefixes.iter().any(|p| s.starts_with(p)) {
+            Some(Self(s.to_string()))
+        } else {
+            None
+        }
+    }
+
+    /// Get the full prefixed zone ID as a string slice
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Get the source prefix (e.g., "roon", "lms")
+    pub fn source(&self) -> &str {
+        self.0.split(':').next().unwrap_or("")
+    }
+
+    /// Get the raw ID without the prefix
+    pub fn raw_id(&self) -> &str {
+        self.0.split(':').nth(1).unwrap_or(&self.0)
+    }
+}
+
+impl fmt::Display for PrefixedZoneId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for PrefixedZoneId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<PrefixedZoneId> for String {
+    fn from(id: PrefixedZoneId) -> Self {
+        id.0
+    }
+}
 
 // =============================================================================
 // Core Data Structures
@@ -350,8 +442,8 @@ pub enum BusEvent {
 
     /// Zone information was updated
     ZoneUpdated {
-        /// Zone identifier
-        zone_id: String,
+        /// Zone identifier (must be prefixed, e.g., "roon:xxx")
+        zone_id: PrefixedZoneId,
         /// Display name
         display_name: String,
         /// Current state
@@ -360,8 +452,8 @@ pub enum BusEvent {
 
     /// A zone was removed (went offline, adapter disconnected, etc.)
     ZoneRemoved {
-        /// Zone identifier
-        zone_id: String,
+        /// Zone identifier (must be prefixed, e.g., "roon:xxx")
+        zone_id: PrefixedZoneId,
     },
 
     // =========================================================================
@@ -369,8 +461,8 @@ pub enum BusEvent {
     // =========================================================================
     /// Now playing information changed for a zone
     NowPlayingChanged {
-        /// Zone identifier
-        zone_id: String,
+        /// Zone identifier (must be prefixed, e.g., "roon:xxx")
+        zone_id: PrefixedZoneId,
         /// Track title
         title: Option<String>,
         /// Artist name
@@ -382,7 +474,11 @@ pub enum BusEvent {
     },
 
     /// Seek position changed (for progress updates)
-    SeekPositionChanged { zone_id: String, position: i64 },
+    SeekPositionChanged {
+        /// Zone identifier (must be prefixed, e.g., "roon:xxx")
+        zone_id: PrefixedZoneId,
+        position: i64,
+    },
 
     /// Volume changed
     VolumeChanged {
@@ -656,7 +752,7 @@ mod tests {
     #[test]
     fn test_bus_event_serialization() {
         let event = BusEvent::NowPlayingChanged {
-            zone_id: "roon:123".to_string(),
+            zone_id: PrefixedZoneId::roon("123"),
             title: Some("Test Song".to_string()),
             artist: Some("Test Artist".to_string()),
             album: Some("Test Album".to_string()),
@@ -664,5 +760,39 @@ mod tests {
         };
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("now_playing_changed") || json.contains("NowPlayingChanged"));
+    }
+
+    #[test]
+    fn test_prefixed_zone_id_constructors() {
+        let roon = PrefixedZoneId::roon("abc123");
+        assert_eq!(roon.as_str(), "roon:abc123");
+        assert_eq!(roon.source(), "roon");
+        assert_eq!(roon.raw_id(), "abc123");
+
+        let lms = PrefixedZoneId::lms("00:11:22:33:44:55");
+        assert_eq!(lms.as_str(), "lms:00:11:22:33:44:55");
+
+        let openhome = PrefixedZoneId::openhome("uuid-here");
+        assert_eq!(openhome.as_str(), "openhome:uuid-here");
+
+        let upnp = PrefixedZoneId::upnp("device-id");
+        assert_eq!(upnp.as_str(), "upnp:device-id");
+
+        let hqp = PrefixedZoneId::hqplayer("instance");
+        assert_eq!(hqp.as_str(), "hqplayer:instance");
+    }
+
+    #[test]
+    fn test_prefixed_zone_id_parse() {
+        // Valid prefixes
+        assert!(PrefixedZoneId::parse("roon:abc").is_some());
+        assert!(PrefixedZoneId::parse("lms:abc").is_some());
+        assert!(PrefixedZoneId::parse("openhome:abc").is_some());
+        assert!(PrefixedZoneId::parse("upnp:abc").is_some());
+        assert!(PrefixedZoneId::parse("hqplayer:abc").is_some());
+
+        // Invalid - no prefix
+        assert!(PrefixedZoneId::parse("abc123").is_none());
+        assert!(PrefixedZoneId::parse("unknown:abc").is_none());
     }
 }

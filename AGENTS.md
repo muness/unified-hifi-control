@@ -128,6 +128,15 @@ This includes:
 
 **Do things the right way, even if "larger" or "harder".**
 
+### Terminology: "Refactor"
+
+**Refactor means restructuring code WITHOUT changing behavior.**
+
+- A refactor is a behavior-preserving transformation
+- If you're adding a new type (e.g., `PrefixedZoneId`), wiring it through means updating ALL call sites to use it - not just adding the type definition
+- "Refactor to use X" = find every place that should use X and change it
+- Don't confuse "adding a type" with "refactoring to use a type"
+
 - Correct architecture now prevents regressions later
 - Short-term hacks create long-term maintenance burden
 - When you see an architectural inconsistency, fix it - don't work around it
