@@ -20,6 +20,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use sha2::{Digest, Sha256};
+
 use crate::api::AppState;
 use crate::knobs::image::placeholder_svg;
 use crate::knobs::store::{KnobConfigUpdate, KnobStatusUpdate};
@@ -86,7 +88,7 @@ pub struct DspInfo {
 }
 
 /// Zone info for knob response - matches Node.js bus adapter format
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct ZoneInfo {
     pub zone_id: String,
     pub zone_name: String,
@@ -241,11 +243,27 @@ pub struct NowPlayingResponse {
     pub is_previous_allowed: bool,
     pub zones: Vec<ZoneInfo>,
     pub config_sha: Option<String>,
+    pub zones_sha: Option<String>,
 }
 
 /// Helper to build zone info list for error responses
 async fn get_zone_infos(state: &AppState) -> Vec<ZoneInfo> {
     get_all_zones_internal(state).await
+}
+
+/// Compute SHA256 hash of zone list (first 8 hex chars)
+/// Changes when zones are added/removed, enabling clients to detect zone list updates
+fn compute_zones_sha(zones: &[ZoneInfo]) -> String {
+    let mut hasher = Sha256::new();
+    // Hash zone IDs and names - sorted for deterministic output
+    let mut zone_data: Vec<_> = zones
+        .iter()
+        .map(|z| format!("{}:{}", z.zone_id, z.zone_name))
+        .collect();
+    zone_data.sort();
+    hasher.update(zone_data.join(",").as_bytes());
+    let result = hasher.finalize();
+    hex::encode(&result[..4]) // First 8 hex chars
 }
 
 /// GET /knob/now_playing - Get current playback state (routes by zone_id prefix)
@@ -359,8 +377,9 @@ pub async fn knob_now_playing_handler(
             is_pause_allowed: is_playing,
             is_next_allowed: true,
             is_previous_allowed: true,
-            zones: zone_infos,
+            zones: zone_infos.clone(),
             config_sha,
+            zones_sha: Some(compute_zones_sha(&zone_infos)),
         }))
     } else if zone_id.starts_with("openhome:") {
         // OpenHome zone - zone_id is the UUID
@@ -422,8 +441,9 @@ pub async fn knob_now_playing_handler(
             is_pause_allowed: is_playing,
             is_next_allowed: true,
             is_previous_allowed: true,
-            zones: zone_infos,
+            zones: zone_infos.clone(),
             config_sha,
+            zones_sha: Some(compute_zones_sha(&zone_infos)),
         }))
     } else if zone_id.starts_with("upnp:") {
         // UPnP zone - zone_id_part is the zone_id from UPnPZone
@@ -486,8 +506,9 @@ pub async fn knob_now_playing_handler(
             is_pause_allowed: is_playing,
             is_next_allowed: true,
             is_previous_allowed: true,
-            zones: zone_infos,
+            zones: zone_infos.clone(),
             config_sha,
+            zones_sha: Some(compute_zones_sha(&zone_infos)),
         }))
     } else {
         // Roon zone (or legacy zone_id without prefix)
@@ -562,8 +583,9 @@ pub async fn knob_now_playing_handler(
             is_pause_allowed: zone.is_pause_allowed,
             is_next_allowed: zone.is_next_allowed,
             is_previous_allowed: zone.is_previous_allowed,
-            zones: zone_infos,
+            zones: zone_infos.clone(),
             config_sha,
+            zones_sha: Some(compute_zones_sha(&zone_infos)),
         }))
     }
 }
