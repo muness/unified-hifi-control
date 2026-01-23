@@ -564,6 +564,10 @@ fn roon_zone_to_bus_zone(zone: &Zone) -> BusZone {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64,
+        is_play_allowed: zone.is_play_allowed,
+        is_pause_allowed: zone.is_pause_allowed,
+        is_next_allowed: zone.is_next_allowed,
+        is_previous_allowed: zone.is_previous_allowed,
     }
 }
 

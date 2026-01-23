@@ -42,6 +42,18 @@ pub struct Zone {
 
     /// Last update timestamp (milliseconds since epoch)
     pub last_updated: u64,
+
+    /// Whether play command is currently allowed
+    pub is_play_allowed: bool,
+
+    /// Whether pause command is currently allowed
+    pub is_pause_allowed: bool,
+
+    /// Whether next track command is allowed
+    pub is_next_allowed: bool,
+
+    /// Whether previous track command is allowed
+    pub is_previous_allowed: bool,
 }
 
 /// Playback state enumeration
@@ -609,6 +621,10 @@ mod tests {
                 is_controllable: true,
                 is_seekable: true,
                 last_updated: 0,
+                is_play_allowed: true,
+                is_pause_allowed: false,
+                is_next_allowed: true,
+                is_previous_allowed: true,
             },
         };
         assert_eq!(event.event_type(), "zone_discovered");

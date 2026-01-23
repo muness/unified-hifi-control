@@ -996,6 +996,11 @@ fn lms_player_to_zone(player: &LmsPlayer) -> Zone {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64,
+        // LMS always allows playback controls when powered and connected
+        is_play_allowed: player.state != "playing",
+        is_pause_allowed: player.state == "playing",
+        is_next_allowed: true,
+        is_previous_allowed: true,
     }
 }
 

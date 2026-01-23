@@ -892,6 +892,10 @@ fn upnp_renderer_to_zone(renderer: &UPnPRenderer) -> Zone {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64,
+        is_play_allowed: renderer.state != "playing",
+        is_pause_allowed: renderer.state == "playing",
+        is_next_allowed: true,
+        is_previous_allowed: true,
     }
 }
 

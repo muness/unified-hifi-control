@@ -932,6 +932,10 @@ fn openhome_device_to_zone(device: &OpenHomeDevice) -> Zone {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64,
+        is_play_allowed: device.state != "playing",
+        is_pause_allowed: device.state == "playing",
+        is_next_allowed: true,
+        is_previous_allowed: true,
     }
 }
 

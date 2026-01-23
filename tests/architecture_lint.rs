@@ -143,8 +143,10 @@ fn analyze_file(path: &Path) -> Vec<(String, String, String)> {
         }
     }
 
-    // Only check api/ directory
-    if !path_str.contains("/api/") && !path_str.contains("\\api\\") {
+    // Only check api/ and knobs/ directories
+    let is_api = path_str.contains("/api/") || path_str.contains("\\api\\");
+    let is_knobs = path_str.contains("/knobs/") || path_str.contains("\\knobs\\");
+    if !is_api && !is_knobs {
         return vec![];
     }
 

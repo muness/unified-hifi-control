@@ -1830,6 +1830,10 @@ impl HqpAdapter {
             is_controllable: true,
             is_seekable: true,
             last_updated,
+            is_play_allowed: state != PlaybackState::Playing,
+            is_pause_allowed: state == PlaybackState::Playing,
+            is_next_allowed: true,
+            is_previous_allowed: true,
         }
     }
 }
