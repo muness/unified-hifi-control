@@ -142,12 +142,14 @@ impl UPnPAdapter {
 
     /// Start SSDP discovery (internal - use Startable trait)
     async fn start_internal(&self) -> anyhow::Result<()> {
-        // Check if already running (read lock only)
+        // Use write lock to atomically check and set running flag
+        // This prevents race conditions where multiple starts could pass the check
         {
-            let state = self.state.read().await;
+            let mut state = self.state.write().await;
             if state.running {
                 return Ok(());
             }
+            state.running = true;
         }
 
         // Create fresh cancellation token for this run (previous token may be cancelled)
