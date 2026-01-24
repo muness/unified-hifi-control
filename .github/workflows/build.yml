@@ -313,14 +313,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Tailwind CLI
-        id: cache-tailwind
+      - name: Cache generated CSS
+        id: cache-css
         uses: actions/cache@v4
         with:
-          path: ./tailwindcss
-          key: tailwind-cli-v4.1.18-linux-x64
+          path: public/tailwind.css
+          key: css-v4.1.18-${{ hashFiles('src/input.css') }}
 
       - name: Build Tailwind CSS
+        if: steps.cache-css.outputs.cache-hit != 'true'
         run: make css
 
       - name: Setup Rust
@@ -348,14 +349,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Tailwind CLI
-        id: cache-tailwind
+      - name: Cache generated CSS
+        id: cache-css
         uses: actions/cache@v4
         with:
-          path: ./tailwindcss
-          key: tailwind-cli-v4.1.18-linux-x64
+          path: public/tailwind.css
+          key: css-v4.1.18-${{ hashFiles('src/input.css') }}
 
       - name: Build Tailwind CSS
+        if: steps.cache-css.outputs.cache-hit != 'true'
         run: make css
 
       - name: Setup Rust
@@ -395,9 +397,9 @@ jobs:
           # Version is baked in at compile time, but we accept stale version display
           # for PRs in exchange for cache efficiency. Releases change Cargo.toml anyway.
           # Note: Tailwind version pinned in Makefile - update cache key when upgrading
-          key: wasm-tw4.1.18-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'Dioxus.toml', 'src/**/*.rs', 'assets/**', 'src/input.css', 'public/dx-components-theme.css') }}
+          key: wasm-v2-tw4.1.18-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'Dioxus.toml', 'src/**/*.rs', 'assets/**', 'src/input.css', 'public/dx-components-theme.css') }}
           restore-keys: |
-            wasm-
+            wasm-v2-
 
       - name: Setup Rust
         if: steps.cache-wasm.outputs.cache-hit != 'true'
@@ -426,13 +428,13 @@ jobs:
         if: steps.cache-wasm.outputs.cache-hit != 'true' && steps.cache-dx.outputs.cache-hit != 'true'
         run: cargo install dioxus-cli@0.7.3 --locked
 
-      - name: Cache Tailwind CLI
+      - name: Cache generated CSS
         if: steps.cache-wasm.outputs.cache-hit != 'true'
-        id: cache-tailwind
+        id: cache-css
         uses: actions/cache@v4
         with:
-          path: ./tailwindcss
-          key: tailwind-cli-v4.1.18-linux-x64
+          path: public/tailwind.css
+          key: css-v4.1.18-${{ hashFiles('src/input.css') }}
 
       - name: Build Tailwind CSS
         if: steps.cache-wasm.outputs.cache-hit != 'true'
@@ -488,9 +490,9 @@ jobs:
             target/dx/
             target/wasm32-unknown-unknown/
           # Same cache key as build-wasm job - shares cached artifacts
-          key: wasm-tw4.1.18-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'Dioxus.toml', 'src/**/*.rs', 'assets/**', 'src/input.css', 'public/dx-components-theme.css') }}
+          key: wasm-v2-tw4.1.18-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'Dioxus.toml', 'src/**/*.rs', 'assets/**', 'src/input.css', 'public/dx-components-theme.css') }}
           restore-keys: |
-            wasm-
+            wasm-v2-
 
       - name: Setup Rust
         if: steps.cache-wasm.outputs.cache-hit != 'true'
@@ -517,13 +519,13 @@ jobs:
         if: steps.cache-wasm.outputs.cache-hit != 'true' && steps.cache-dx.outputs.cache-hit != 'true'
         run: cargo install dioxus-cli@0.7.3 --locked
 
-      - name: Cache Tailwind CLI
+      - name: Cache generated CSS
         if: steps.cache-wasm.outputs.cache-hit != 'true'
-        id: cache-tailwind
+        id: cache-css
         uses: actions/cache@v4
         with:
-          path: ./tailwindcss
-          key: tailwind-cli-v4.1.18-linux-x64
+          path: public/tailwind.css
+          key: css-v4.1.18-${{ hashFiles('src/input.css') }}
 
       - name: Build Tailwind CSS
         if: steps.cache-wasm.outputs.cache-hit != 'true'
@@ -593,6 +595,17 @@ jobs:
         with:
           name: wasm-assets
           path: target/dx/
+
+      - name: Cache generated CSS
+        id: cache-css
+        uses: actions/cache@v4
+        with:
+          path: public/tailwind.css
+          key: css-v4.1.18-${{ hashFiles('src/input.css') }}
+
+      - name: Build Tailwind CSS
+        if: steps.cache-css.outputs.cache-hit != 'true'
+        run: make css
 
       - name: Build with zigbuild (embeds WASM)
         env:
@@ -809,6 +822,17 @@ jobs:
           name: wasm-assets
           path: target/dx/
 
+      - name: Cache generated CSS
+        id: cache-css
+        uses: actions/cache@v4
+        with:
+          path: public/tailwind.css
+          key: css-v4.1.18-${{ hashFiles('src/input.css') }}
+
+      - name: Build Tailwind CSS
+        if: steps.cache-css.outputs.cache-hit != 'true'
+        run: make css
+
       - name: Build with zigbuild (embeds WASM)
         env:
           UHC_VERSION: ${{ needs.plan.outputs.version }}
@@ -864,6 +888,17 @@ jobs:
           name: wasm-assets
           path: target/dx/
 
+      - name: Cache generated CSS
+        id: cache-css
+        uses: actions/cache@v4
+        with:
+          path: public/tailwind.css
+          key: css-v4.1.18-${{ hashFiles('src/input.css') }}
+
+      - name: Build Tailwind CSS
+        if: steps.cache-css.outputs.cache-hit != 'true'
+        run: make css
+
       - name: Build x86_64 (embeds WASM)
         env:
           SCCACHE_GHA_ENABLED: "true"
@@ -909,6 +944,17 @@ jobs:
         with:
           name: wasm-assets
           path: target/dx/
+
+      - name: Cache generated CSS
+        id: cache-css
+        uses: actions/cache@v4
+        with:
+          path: public/tailwind.css
+          key: css-v4.1.18-${{ hashFiles('src/input.css') }}
+
+      - name: Build Tailwind CSS
+        if: steps.cache-css.outputs.cache-hit != 'true'
+        run: make css
 
       - name: Build aarch64 (embeds WASM)
         env:
@@ -990,6 +1036,21 @@ jobs:
         with:
           name: wasm-assets
           path: target/dx/
+
+      - name: Cache generated CSS
+        id: cache-css
+        uses: actions/cache@v4
+        with:
+          path: public/tailwind.css
+          key: css-v4.1.18-${{ hashFiles('src/input.css') }}
+
+      - name: Build Tailwind CSS
+        if: steps.cache-css.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.18/tailwindcss-windows-x64.exe
+          chmod +x tailwindcss-windows-x64.exe
+          ./tailwindcss-windows-x64.exe -i src/input.css -o public/tailwind.css
 
       - name: Build (embeds WASM)
         env:
