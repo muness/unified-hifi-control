@@ -564,8 +564,11 @@ async fn control_roon(
                     Json(serde_json::json!({"error": "no outputs in zone"})),
                 )
             })?;
-            // Use as_f64() which handles both JSON integers and floats
-            let step = value.and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+            // Use provided value, or look up zone's actual step from aggregator
+            let step = match value.and_then(|v| v.as_f64()) {
+                Some(v) => v as f32,
+                None => get_zone_step(state, &format!("roon:{}", zone_id)).await,
+            };
             state
                 .roon
                 .change_volume(&output, step, true)
@@ -585,8 +588,11 @@ async fn control_roon(
                     Json(serde_json::json!({"error": "no outputs in zone"})),
                 )
             })?;
-            // Use as_f64() which handles both JSON integers and floats
-            let step = value.and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+            // Use provided value, or look up zone's actual step from aggregator
+            let step = match value.and_then(|v| v.as_f64()) {
+                Some(v) => v as f32,
+                None => get_zone_step(state, &format!("roon:{}", zone_id)).await,
+            };
             state
                 .roon
                 .change_volume(&output, -step, true)
@@ -655,8 +661,11 @@ async fn control_lms(
         "previous" | "prev" => "prev",
         "stop" => "stop",
         "vol_up" | "volume_up" => {
-            // Use as_f64() which handles both JSON integers and floats
-            let step = value.and_then(|v| v.as_f64()).unwrap_or(2.5) as f32;
+            // Use provided value, or look up zone's actual step from aggregator
+            let step = match value.and_then(|v| v.as_f64()) {
+                Some(v) => v as f32,
+                None => get_zone_step(state, &format!("lms:{}", player_id)).await,
+            };
             state
                 .lms
                 .change_volume(player_id, step, true)
@@ -670,8 +679,11 @@ async fn control_lms(
             return Ok(Json(serde_json::json!({"ok": true})));
         }
         "vol_down" | "volume_down" => {
-            // Use as_f64() which handles both JSON integers and floats
-            let step = value.and_then(|v| v.as_f64()).unwrap_or(2.5) as f32;
+            // Use provided value, or look up zone's actual step from aggregator
+            let step = match value.and_then(|v| v.as_f64()) {
+                Some(v) => v as f32,
+                None => get_zone_step(state, &format!("lms:{}", player_id)).await,
+            };
             state
                 .lms
                 .change_volume(player_id, -step, true)
@@ -780,6 +792,17 @@ async fn control_upnp(
 async fn get_first_output_id(state: &AppState, zone_id: &str) -> Option<String> {
     let zone = state.roon.get_zone(zone_id).await?;
     zone.outputs.first().map(|o| o.output_id.clone())
+}
+
+/// Helper to get zone's volume step from aggregator (returns 1.0 if not found)
+async fn get_zone_step(state: &AppState, zone_id: &str) -> f32 {
+    state
+        .aggregator
+        .get_zone(zone_id)
+        .await
+        .and_then(|z| z.volume_control)
+        .map(|vc| vc.step)
+        .unwrap_or(1.0)
 }
 
 /// GET /knob/config - Get knob configuration
