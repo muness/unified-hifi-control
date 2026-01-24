@@ -750,9 +750,10 @@ async fn run_roon_loop(
                         let mut s = state_for_events.write().await;
                         for zone in zones {
                             tracing::debug!(
-                                "Zone update: {} ({})",
+                                "Zone update: {} ({}) - now_playing: {:?}",
                                 zone.display_name,
-                                zone.zone_id
+                                zone.zone_id,
+                                zone.now_playing.as_ref().map(|np| &np.three_line.line1)
                             );
                             let converted = convert_zone(&zone);
                             let is_new = !s.zones.contains_key(&zone.zone_id);
