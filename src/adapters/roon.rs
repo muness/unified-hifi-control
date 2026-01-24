@@ -386,9 +386,9 @@ impl RoonAdapter {
             }
         };
 
-        // Roon transport API takes i32, round at the last moment to preserve precision
+        // Roon transport API now takes f64 to support fractional dB steps
         transport
-            .change_volume(output_id, &mode, final_value.round() as i32)
+            .change_volume(output_id, &mode, final_value as f64)
             .await;
         Ok(())
     }
@@ -661,7 +661,7 @@ async fn run_roon_loop(
             };
 
             match event {
-                CoreEvent::Found(mut core) => {
+                CoreEvent::Registered(mut core, _token) => {
                     let core_name = core.display_name.clone();
                     let core_version = core.display_version.clone();
 
