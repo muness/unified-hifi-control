@@ -495,11 +495,16 @@ pub struct LmsStatus {
     pub cli_subscription_active: bool,
 }
 
+/// Summary information about an LMS player for status reporting
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LmsPlayerInfo {
+    /// Player MAC address identifier
     pub playerid: String,
+    /// Display name of the player
     pub name: String,
+    /// Current playback state (playing, paused, stopped)
     pub state: String,
+    /// Whether the player is connected to LMS
     pub connected: bool,
 }
 
@@ -1619,6 +1624,8 @@ pub struct LmsCliAdapter {
     bus: SharedBus,
     /// Shutdown token (separate from LmsAdapter's)
     shutdown: Arc<RwLock<CancellationToken>>,
+    /// Guard against duplicate start() calls
+    running: Arc<RwLock<bool>>,
 }
 
 impl LmsCliAdapter {
@@ -1630,6 +1637,7 @@ impl LmsCliAdapter {
             rpc,
             bus,
             shutdown: Arc::new(RwLock::new(CancellationToken::new())),
+            running: Arc::new(RwLock::new(false)),
         }
     }
 
@@ -1695,6 +1703,16 @@ impl Startable for LmsCliAdapter {
             return Err(anyhow!("LMS CLI adapter not configured"));
         }
 
+        // Guard against duplicate start() calls
+        {
+            let mut running = self.running.write().await;
+            if *running {
+                debug!("[CLI] LMS CLI adapter already running, skipping start");
+                return Ok(());
+            }
+            *running = true;
+        }
+
         // Create fresh cancellation token
         let shutdown = {
             let mut token = self.shutdown.write().await;
@@ -1705,9 +1723,14 @@ impl Startable for LmsCliAdapter {
         // Create AdapterHandle and spawn with retry
         let adapter = self.clone();
         let bus = self.bus.clone();
+        let running_flag = self.running.clone();
         let handle = AdapterHandle::new(adapter, bus, shutdown);
 
-        tokio::spawn(async move { handle.run_with_retry(RetryConfig::default()).await });
+        tokio::spawn(async move {
+            let _ = handle.run_with_retry(RetryConfig::default()).await;
+            // Reset running flag when task completes
+            *running_flag.write().await = false;
+        });
 
         Ok(())
     }
