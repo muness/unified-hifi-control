@@ -186,8 +186,9 @@ mod server {
             tracing::info!("HQPlayer: {} zone link(s) active", link_count);
         }
 
-        // LMS adapter
-        let lms = Arc::new(adapters::lms::LmsAdapter::new(bus.clone()));
+        // LMS adapters (polling + CLI subscription with shared state)
+        // Issue #165: Split into two adapters with independent retry
+        let (lms, lms_cli) = adapters::lms::create_lms_adapters(bus.clone());
         if let Some(ref lms_config) = config.lms {
             lms.configure(
                 lms_config.host.clone(),
@@ -209,8 +210,14 @@ mod server {
         // =========================================================================
 
         // Build list of startable adapters
-        let startable_adapters: Vec<Arc<dyn adapters::Startable>> =
-            vec![roon.clone(), lms.clone(), openhome.clone(), upnp.clone()];
+        // Note: lms_cli shares config with lms - both start when LMS is configured
+        let startable_adapters: Vec<Arc<dyn adapters::Startable>> = vec![
+            roon.clone(),
+            lms.clone(),
+            lms_cli.clone(),
+            openhome.clone(),
+            upnp.clone(),
+        ];
 
         // Single loop to start all enabled adapters
         coord.start_all_enabled(&startable_adapters).await;

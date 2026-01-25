@@ -27,9 +27,12 @@
 //! CLI reconnects  → flag = true  → Polling slows again
 //! ```
 //!
-//! Currently both run within a single adapter. Future refactor (Issue #165) will
-//! split into two independent adapters, each with AdapterHandle retry, sharing
-//! only the `cli_subscription_active` flag.
+//! As of Issue #165, these are split into two independent adapters:
+//! - `LmsAdapter`: Polling only
+//! - `LmsCliAdapter`: CLI subscription only
+//!
+//! Each has its own AdapterHandle with independent retry. Use `create_lms_adapters()`
+//! factory function to create both with shared state.
 //!
 //! ## Configuration
 //!
@@ -57,6 +60,7 @@ use crate::adapters::lms_discovery::discover_lms_servers;
 use crate::adapters::traits::{
     AdapterCommand, AdapterCommandResponse, AdapterContext, AdapterLogic,
 };
+use crate::adapters::Startable;
 use crate::bus::{BusEvent, PlaybackState, PrefixedZoneId, SharedBus, VolumeControl, Zone};
 use crate::config::{get_config_file_path, read_config_file};
 
@@ -530,8 +534,10 @@ impl Default for LmsState {
 /// LMS Adapter
 #[derive(Clone)]
 pub struct LmsAdapter {
-    state: Arc<RwLock<LmsState>>,
-    rpc: LmsRpc,
+    /// Shared state - pub(crate) for LmsCliAdapter factory
+    pub(crate) state: Arc<RwLock<LmsState>>,
+    /// RPC client - pub(crate) for LmsCliAdapter factory
+    pub(crate) rpc: LmsRpc,
     bus: SharedBus,
     /// Wrapped in RwLock to allow creating fresh token on restart
     shutdown: Arc<RwLock<CancellationToken>>,
@@ -1525,85 +1531,24 @@ impl AdapterLogic for LmsAdapter {
         ctx.bus
             .publish(BusEvent::LmsConnected { host: host.clone() });
 
-        // Spawn polling task - starts at FAST interval (2s) since CLI not yet active
-        // Will switch to SLOW interval (30s) when CLI connects successfully
-        let polling_state = self.state.clone();
-        let polling_bus = ctx.bus.clone();
-        let polling_rpc = self.rpc.clone();
-        let polling_shutdown = ctx.shutdown.clone();
-        let polling_task = tokio::spawn(async move {
-            run_polling_loop(polling_state, polling_bus, polling_rpc, polling_shutdown).await
-        });
-
-        // Attempt CLI subscription - failure is NON-FATAL, polling continues
-        // CLI provides real-time events; if unavailable, polling handles everything
-        //
-        // DESIGN CHOICE: CLI does NOT retry independently within this adapter run.
-        // Rationale (see PR #164 for full discussion):
-        // - Polling is the primary mechanism and always works
-        // - CLI is an optimization, not a requirement
-        // - If CLI fails, polling switches to fast interval (2s) and handles updates
-        // - CLI gets a fresh attempt on next adapter restart (via AdapterHandle retry)
-        // - This avoids duplicate retry logic (AdapterHandle already handles retries)
-        // - Simpler code, single source of retry policy
-        let cli_task = {
-            let cli_state = self.state.clone();
-            let cli_bus = ctx.bus.clone();
-            let cli_rpc = self.rpc.clone();
-            let cli_shutdown = ctx.shutdown.clone();
-            let cli_host = host.clone();
-            tokio::spawn(async move {
-                match run_cli_subscription_once(
-                    &cli_host,
-                    &cli_state,
-                    &cli_bus,
-                    &cli_rpc,
-                    &cli_shutdown,
-                )
-                .await
-                {
-                    Ok(()) => {
-                        info!("CLI subscription ended cleanly");
-                    }
-                    Err(e) => {
-                        warn!(
-                            "CLI subscription failed: {}. Continuing with polling only.",
-                            e
-                        );
-                    }
-                }
-                // Always reset cli_subscription_active so polling switches to fast interval
-                let mut state = cli_state.write().await;
-                state.cli_subscription_active = false;
-            })
-        };
-
-        // Wait for polling to complete (or fail) - CLI runs independently
-        // Only polling failure triggers adapter restart
-        let result = tokio::select! {
-            _ = ctx.shutdown.cancelled() => {
-                info!("LMS adapter received shutdown signal");
-                Ok(())
-            }
-            result = polling_task => {
-                // Polling completed or failed
-                match result {
-                    Ok(r) => r,
-                    Err(e) => Err(anyhow!("Polling task panicked: {}", e)),
-                }
-            }
-        };
-
-        // Clean up CLI task
-        cli_task.abort();
-        let _ = cli_task.await;
+        // Run polling loop directly
+        // CLI subscription is now handled by separate LmsCliAdapter (Issue #165)
+        // Polling reads cli_subscription_active flag to adjust interval:
+        // - CLI active (flag=true): slow interval (30s)
+        // - CLI inactive (flag=false): fast interval (2s)
+        let result = run_polling_loop(
+            self.state.clone(),
+            ctx.bus.clone(),
+            self.rpc.clone(),
+            ctx.shutdown.clone(),
+        )
+        .await;
 
         // Clean up state on exit
         {
             let mut state = self.state.write().await;
             state.connected = false;
             state.running = false;
-            state.cli_subscription_active = false;
         }
 
         // Publish LmsDisconnected
@@ -1653,6 +1598,146 @@ impl AdapterLogic for LmsAdapter {
 
 // Startable trait implementation via macro
 crate::impl_startable!(LmsAdapter, "lms", is_configured);
+
+// =============================================================================
+// LMS CLI Adapter - Handles real-time event subscription (Issue #165)
+// =============================================================================
+
+/// LMS CLI Adapter - subscribes to real-time events on port 9090
+///
+/// This adapter runs independently of the main LmsAdapter (polling) with its
+/// own AdapterHandle retry logic. The only coordination is via the shared
+/// `cli_subscription_active` flag in LmsState.
+///
+/// When CLI connects: flag = true → polling slows down
+/// When CLI fails: flag = false → polling speeds up
+#[derive(Clone)]
+pub struct LmsCliAdapter {
+    /// Shared state with LmsAdapter
+    state: Arc<RwLock<LmsState>>,
+    /// Shared RPC client for fetching player status after events
+    rpc: LmsRpc,
+    /// Event bus for publishing updates
+    bus: SharedBus,
+    /// Shutdown token (separate from LmsAdapter's)
+    shutdown: Arc<RwLock<CancellationToken>>,
+}
+
+impl LmsCliAdapter {
+    /// Create CLI adapter with shared state from LmsAdapter
+    pub fn new(state: Arc<RwLock<LmsState>>, rpc: LmsRpc, bus: SharedBus) -> Self {
+        Self {
+            state,
+            rpc,
+            bus,
+            shutdown: Arc::new(RwLock::new(CancellationToken::new())),
+        }
+    }
+
+    /// Check if host is configured (CLI needs host to connect)
+    pub async fn is_configured(&self) -> bool {
+        self.state.read().await.host.is_some()
+    }
+}
+
+#[async_trait]
+impl AdapterLogic for LmsCliAdapter {
+    fn prefix(&self) -> &'static str {
+        "lms" // Same prefix as main adapter - they share zones
+    }
+
+    async fn run(&self, ctx: AdapterContext) -> Result<()> {
+        let host = {
+            let state = self.state.read().await;
+            state.host.clone()
+        };
+
+        let Some(host) = host else {
+            return Err(anyhow!("LMS CLI: No host configured"));
+        };
+
+        info!("LMS CLI adapter starting for {}", host);
+
+        // Run CLI subscription - this will retry via AdapterHandle on failure
+        let result =
+            run_cli_subscription_once(&host, &self.state, &ctx.bus, &self.rpc, &ctx.shutdown)
+                .await;
+
+        // Always reset flag on exit so polling switches to fast interval
+        {
+            let mut state = self.state.write().await;
+            state.cli_subscription_active = false;
+        }
+
+        result
+    }
+
+    async fn handle_command(
+        &self,
+        _zone_id: &str,
+        _command: AdapterCommand,
+    ) -> Result<AdapterCommandResponse> {
+        // CLI adapter doesn't handle commands - main LmsAdapter does
+        Ok(AdapterCommandResponse {
+            success: false,
+            error: Some("CLI adapter does not handle commands".to_string()),
+        })
+    }
+}
+
+#[async_trait]
+impl Startable for LmsCliAdapter {
+    fn name(&self) -> &'static str {
+        "lms-cli"
+    }
+
+    async fn start(&self) -> Result<()> {
+        if !self.is_configured().await {
+            return Err(anyhow!("LMS CLI adapter not configured"));
+        }
+
+        // Create fresh cancellation token
+        let shutdown = {
+            let mut token = self.shutdown.write().await;
+            *token = CancellationToken::new();
+            token.clone()
+        };
+
+        // Create AdapterHandle and spawn with retry
+        let adapter = self.clone();
+        let bus = self.bus.clone();
+        let handle = AdapterHandle::new(adapter, bus, shutdown);
+
+        tokio::spawn(async move { handle.run_with_retry(RetryConfig::default()).await });
+
+        Ok(())
+    }
+
+    async fn stop(&self) {
+        self.shutdown.read().await.cancel();
+    }
+
+    async fn can_start(&self) -> bool {
+        self.is_configured().await
+    }
+}
+
+/// Factory function to create both LMS adapters with shared state
+///
+/// Returns (LmsAdapter, LmsCliAdapter) that share state and can be
+/// registered independently with the coordinator.
+pub fn create_lms_adapters(bus: SharedBus) -> (Arc<LmsAdapter>, Arc<LmsCliAdapter>) {
+    let lms = Arc::new(LmsAdapter::new(bus.clone()));
+
+    // Create CLI adapter with shared state
+    let cli = Arc::new(LmsCliAdapter::new(
+        lms.state.clone(),
+        lms.rpc.clone(),
+        bus,
+    ));
+
+    (lms, cli)
+}
 
 // =============================================================================
 // Tests
