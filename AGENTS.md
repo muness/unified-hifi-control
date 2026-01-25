@@ -201,3 +201,41 @@ dx build --release --platform web
 **For development:** Use `dx serve` which handles both builds and hot reload.
 
 **Verify build:** Use `dx build --release --platform web --features web` to verify both server and WASM compile. Do NOT use `cargo check --target wasm32-unknown-unknown` - it lacks correct feature flags. See [README.md Development section](README.md#verify-build-wasm--server) for details.
+
+---
+
+## Private Experimentation Repo (SaaS)
+
+A private repo exists for experimental features (AI DJ, SaaS integrations, etc.):
+
+**Repo:** `open-horizon-labs/unified-hifi-control-saas` (private)
+**Remote:** `saas`
+
+### Keeping Saas in Sync
+
+Use **merge** to pull public changes into saas (preserves experiment history):
+
+```bash
+git fetch origin
+git checkout main           # or your saas branch
+git merge origin/v3
+git push saas
+```
+
+### Bringing Features Back to Public
+
+Cherry-pick proven features from saas to public:
+
+```bash
+git checkout v3
+git cherry-pick <commit-sha>
+git push origin v3
+```
+
+Or create a feature branch with cherry-picked commits and PR to public.
+
+### Guidelines
+
+- **Saas is for experiments** - break things, try ideas, diverge freely
+- **Public is stable** - only merge back features that are proven and clean
+- **Don't force-push saas/main** - others may be experimenting there too
