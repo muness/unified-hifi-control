@@ -406,10 +406,15 @@ const ADAPTER_SPECIFIC_EVENTS: &[&str] = &[
 
 /// Patterns that indicate playback state changes that should also emit ZoneUpdated
 /// If you see these patterns, ZoneUpdated should be emitted nearby (within ~50 lines)
-const STATE_CHANGE_PATTERNS: &[(&str, &str)] = &[(
-    "LmsPlayerStateChanged",
-    "When emitting LmsPlayerStateChanged, also emit ZoneUpdated to update aggregator",
-)];
+///
+/// Note: LmsPlayerStateChanged has been removed - we now only emit ZoneUpdated which
+/// SSE uses directly (checking for "lms:" prefix in zone_id). The lint heuristic
+/// looks for zone_id = PrefixedZoneId:: in the preceding 2000 chars, which could have
+/// false negatives if the variable is named differently or passed through a function.
+const STATE_CHANGE_PATTERNS: &[(&str, &str)] = &[
+    // Add adapter-specific state events here if they need to also emit ZoneUpdated
+    // Currently empty - all state changes go through ZoneUpdated directly
+];
 
 #[test]
 fn bus_event_schema_documented() {

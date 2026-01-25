@@ -493,6 +493,8 @@ pub struct LmsStatus {
     pub players: Vec<LmsPlayerInfo>,
     /// Whether CLI subscription is active (real-time events vs polling)
     pub cli_subscription_active: bool,
+    /// Effective poll interval in seconds (2s base, 30s when CLI active)
+    pub poll_interval_secs: u64,
 }
 
 /// Summary information about an LMS player for status reporting
@@ -700,6 +702,12 @@ impl LmsAdapter {
     /// Get connection status
     pub async fn get_status(&self) -> LmsStatus {
         let state = self.state.read().await;
+        let base_interval = get_poll_interval();
+        let effective_interval = if state.cli_subscription_active {
+            get_poll_interval_with_subscription()
+        } else {
+            base_interval
+        };
         LmsStatus {
             connected: state.connected,
             host: state.host.clone(),
@@ -716,6 +724,7 @@ impl LmsAdapter {
                 })
                 .collect(),
             cli_subscription_active: state.cli_subscription_active,
+            poll_interval_secs: effective_interval.as_secs(),
         }
     }
 
@@ -1074,14 +1083,12 @@ async fn update_players_internal(
     // Emit state change events (play/pause/stop)
     for (player_id, player_name, state) in state_updates {
         debug!("Polling detected state change for {}: {}", player_id, state);
-        // Publish ZoneUpdated so aggregator updates state
+        // Publish ZoneUpdated so aggregator updates state (SSE uses zone_id prefix to refresh LMS page)
         bus.publish(BusEvent::ZoneUpdated {
             zone_id: PrefixedZoneId::lms(&player_id),
             display_name: player_name,
-            state: state.clone(),
+            state,
         });
-        // Also publish LmsPlayerStateChanged for SSE/UI
-        bus.publish(BusEvent::LmsPlayerStateChanged { player_id, state });
     }
 
     // Emit VolumeChanged events for volume changes
@@ -1321,16 +1328,10 @@ async fn handle_cli_event(
                         }
                     };
 
-                    // Publish ZoneUpdated so aggregator updates state
+                    // Publish ZoneUpdated so aggregator updates state (SSE uses zone_id prefix to refresh LMS page)
                     bus.publish(BusEvent::ZoneUpdated {
                         zone_id: zone_id.clone(),
                         display_name: player_name,
-                        state: status.state.clone(),
-                    });
-
-                    // Also publish LmsPlayerStateChanged for SSE/UI
-                    bus.publish(BusEvent::LmsPlayerStateChanged {
-                        player_id: player_id.clone(),
                         state: status.state.clone(),
                     });
 
@@ -1424,14 +1425,10 @@ async fn handle_cli_event(
             if !power_state {
                 let zone_id = PrefixedZoneId::lms(&player_id);
                 // Publish ZoneUpdated so aggregator updates state
+                // Publish ZoneUpdated so aggregator updates state (SSE uses zone_id prefix to refresh LMS page)
                 bus.publish(BusEvent::ZoneUpdated {
                     zone_id,
                     display_name: player_name,
-                    state: "stopped".to_string(),
-                });
-                // Also publish LmsPlayerStateChanged for SSE/UI
-                bus.publish(BusEvent::LmsPlayerStateChanged {
-                    player_id,
                     state: "stopped".to_string(),
                 });
             }
