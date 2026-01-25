@@ -3,15 +3,38 @@
 //! Implements the JSON-RPC protocol over HTTP and CLI event subscription over TCP.
 //! Documentation: http://HOST:9000/html/docs/cli-api.html
 //!
-//! ## Event-Driven Updates
+//! ## Architecture (Issue #165)
 //!
-//! This adapter supports real-time event notifications via the LMS CLI telnet protocol.
-//! When enabled, the adapter maintains a persistent TCP connection to LMS port 9090 and
-//! subscribes to `playlist,mixer,power,client` events. This dramatically reduces CPU usage
-//! compared to polling, especially with many players (22+).
+//! This module contains two logically separate concerns that share state:
 //!
-//! The polling fallback runs at reduced frequency (15x base interval) when subscription is active.
-//! The base poll interval can be configured via `LMS_POLL_INTERVAL` env var (default: 2 seconds).
+//! 1. **Polling** (HTTP JSON-RPC on port 9000)
+//!    - Discovers LMS server and players
+//!    - Polls player status at configurable interval
+//!    - Primary mechanism - always works
+//!
+//! 2. **CLI Subscription** (TCP telnet on port 9090)
+//!    - Subscribes to real-time events: playlist, mixer, power, client
+//!    - Enhancement for faster updates and lower CPU
+//!    - Optional - polling continues if CLI unavailable
+//!
+//! ## Interaction Model
+//!
+//! The two paths coordinate via a single shared flag: `cli_subscription_active`
+//!
+//! ```text
+//! CLI connects    → flag = true  → Polling slows to 30s interval
+//! CLI fails/exits → flag = false → Polling speeds to 2s interval (immediate)
+//! CLI reconnects  → flag = true  → Polling slows again
+//! ```
+//!
+//! Currently both run within a single adapter. Future refactor (Issue #165) will
+//! split into two independent adapters, each with AdapterHandle retry, sharing
+//! only the `cli_subscription_active` flag.
+//!
+//! ## Configuration
+//!
+//! - `LMS_POLL_INTERVAL`: Base poll interval in seconds (default: 2)
+//! - When CLI active, polling runs at 15x base interval (default: 30s)
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
