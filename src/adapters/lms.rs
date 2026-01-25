@@ -534,10 +534,8 @@ impl Default for LmsState {
 /// LMS Adapter
 #[derive(Clone)]
 pub struct LmsAdapter {
-    /// Shared state - pub(crate) for LmsCliAdapter factory
-    pub(crate) state: Arc<RwLock<LmsState>>,
-    /// RPC client - pub(crate) for LmsCliAdapter factory
-    pub(crate) rpc: LmsRpc,
+    state: Arc<RwLock<LmsState>>,
+    rpc: LmsRpc,
     bus: SharedBus,
     /// Wrapped in RwLock to allow creating fresh token on restart
     shutdown: Arc<RwLock<CancellationToken>>,
@@ -1196,7 +1194,7 @@ async fn run_cli_subscription_once(
     rpc: &LmsRpc,
     shutdown: &CancellationToken,
 ) -> Result<()> {
-    info!("Connecting to LMS CLI at {}:{}", host, CLI_PORT);
+    info!("[CLI] Connecting to LMS CLI at {}:{}", host, CLI_PORT);
     connect_and_subscribe(host, state, bus, rpc, shutdown).await
 }
 
@@ -1211,7 +1209,7 @@ async fn connect_and_subscribe(
     let addr = format!("{}:{}", host, CLI_PORT);
     let stream = TcpStream::connect(&addr).await?;
 
-    info!("Connected to LMS CLI at {}", addr);
+    info!("[CLI] Connected to LMS CLI at {}", addr);
 
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -1222,7 +1220,7 @@ async fn connect_and_subscribe(
     writer.write_all(subscribe_cmd.as_bytes()).await?;
     writer.flush().await?;
 
-    info!("Subscribed to LMS CLI events");
+    info!("[CLI] Subscribed to LMS CLI events");
 
     // Mark subscription as active
     {
@@ -1238,7 +1236,7 @@ async fn connect_and_subscribe(
 
         tokio::select! {
             _ = shutdown.cancelled() => {
-                info!("CLI subscription received shutdown signal");
+                info!("[CLI] Received shutdown signal");
                 return Ok(());
             }
             result = tokio::time::timeout(CLI_READ_TIMEOUT, reader.read_line(&mut line)) => {
@@ -1625,7 +1623,8 @@ pub struct LmsCliAdapter {
 
 impl LmsCliAdapter {
     /// Create CLI adapter with shared state from LmsAdapter
-    pub fn new(state: Arc<RwLock<LmsState>>, rpc: LmsRpc, bus: SharedBus) -> Self {
+    /// Use `create_lms_adapters()` factory function instead of calling directly.
+    fn new(state: Arc<RwLock<LmsState>>, rpc: LmsRpc, bus: SharedBus) -> Self {
         Self {
             state,
             rpc,
@@ -1656,7 +1655,7 @@ impl AdapterLogic for LmsCliAdapter {
             return Err(anyhow!("LMS CLI: No host configured"));
         };
 
-        info!("LMS CLI adapter starting for {}", host);
+        info!("[CLI] LMS CLI adapter starting for {}", host);
 
         // Run CLI subscription - this will retry via AdapterHandle on failure
         let result =
