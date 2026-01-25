@@ -30,6 +30,14 @@ fn test_bus() -> (SharedBus, broadcast::Receiver<BusEvent>) {
     (bus, rx)
 }
 
+/// Clear LMS config file to ensure tests start with unconfigured state.
+/// Needed because `configure()` saves config to disk, which persists across test runs.
+fn clear_lms_config() {
+    use unified_hifi_control::config::get_config_file_path;
+    let path = get_config_file_path("lms-config.json");
+    let _ = std::fs::remove_file(path);
+}
+
 /// Wait for a specific event type with timeout
 async fn expect_event<F>(
     rx: &mut broadcast::Receiver<BusEvent>,
@@ -158,6 +166,7 @@ mod lms_integration {
 
     #[tokio::test]
     async fn cached_players_empty_when_not_connected() {
+        clear_lms_config(); // Ensure no config from parallel tests
         let (bus, _rx) = test_bus();
         let adapter = LmsAdapter::new(bus);
 
@@ -167,6 +176,7 @@ mod lms_integration {
 
     #[tokio::test]
     async fn control_fails_when_disconnected() {
+        clear_lms_config(); // Ensure no config from parallel tests
         let (bus, _rx) = test_bus();
         let adapter = LmsAdapter::new(bus);
 
@@ -176,6 +186,7 @@ mod lms_integration {
 
     #[tokio::test]
     async fn volume_control_fails_when_disconnected() {
+        clear_lms_config(); // Ensure no config from parallel tests
         let (bus, _rx) = test_bus();
         let adapter = LmsAdapter::new(bus);
 
