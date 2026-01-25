@@ -934,8 +934,9 @@ impl LmsAdapter {
 
 /// Convert an LMS player to a unified Zone representation
 fn lms_player_to_zone(player: &LmsPlayer) -> Zone {
+    let zone_id = PrefixedZoneId::lms(&player.playerid).to_string();
     Zone {
-        zone_id: format!("lms:{}", player.playerid),
+        zone_id: zone_id.clone(),
         zone_name: player.name.clone(),
         state: PlaybackState::from(player.state.as_str()),
         volume_control: Some(VolumeControl {
@@ -947,7 +948,8 @@ fn lms_player_to_zone(player: &LmsPlayer) -> Zone {
             step: 2.5,
             is_muted: false, // LMS doesn't expose mute via JSON-RPC status
             scale: crate::bus::VolumeScale::Percentage,
-            output_id: Some(player.playerid.clone()),
+            // Use prefixed zone_id as output_id for consistent aggregator matching
+            output_id: Some(zone_id),
         }),
         now_playing: if !player.title.is_empty() {
             Some(crate::bus::NowPlaying {
@@ -1107,7 +1109,7 @@ async fn update_players_internal(
             player_id, volume
         );
         bus.publish(BusEvent::VolumeChanged {
-            output_id: format!("lms:{}", player_id),
+            output_id: PrefixedZoneId::lms(&player_id).to_string(),
             value: volume as f32,
             is_muted: false, // LMS doesn't expose mute via JSON-RPC
         });
@@ -1408,9 +1410,9 @@ async fn handle_cli_event(
                     }
                 }
 
-                // Publish volume changed event
+                // Publish volume changed event with prefixed output_id
                 bus.publish(BusEvent::VolumeChanged {
-                    output_id: player_id,
+                    output_id: PrefixedZoneId::lms(&player_id).to_string(),
                     value: absolute_volume,
                     is_muted: false,
                 });
@@ -1424,9 +1426,9 @@ async fn handle_cli_event(
                     s.players.get(&player_id).map(|p| p.volume).unwrap_or(0)
                 };
 
-                // Publish volume changed event with mute state
+                // Publish volume changed event with mute state and prefixed output_id
                 bus.publish(BusEvent::VolumeChanged {
-                    output_id: player_id,
+                    output_id: PrefixedZoneId::lms(&player_id).to_string(),
                     value: current_volume as f32,
                     is_muted,
                 });

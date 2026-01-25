@@ -576,6 +576,7 @@ fn convert_zone(roon_zone: &RoonZone) -> Zone {
 /// Convert local Zone to bus Zone for ZoneDiscovered event
 fn roon_zone_to_bus_zone(zone: &Zone) -> BusZone {
     // Get volume from first output (if available)
+    // Use prefixed output_id for consistent aggregator matching
     let volume_control = zone.outputs.first().and_then(|o| {
         o.volume.as_ref().map(|v| BusVolumeControl {
             value: v.value.unwrap_or(50.0),
@@ -584,7 +585,7 @@ fn roon_zone_to_bus_zone(zone: &Zone) -> BusZone {
             step: v.step.unwrap_or(1.0),
             is_muted: v.is_muted.unwrap_or(false),
             scale: crate::bus::VolumeScale::Decibel,
-            output_id: Some(o.output_id.clone()),
+            output_id: Some(format!("roon:{}", o.output_id)),
         })
     });
 
@@ -858,7 +859,7 @@ async fn run_roon_loop(
 
                                     if vol_changed {
                                         bus_for_events.publish(BusEvent::VolumeChanged {
-                                            output_id: output.output_id.clone(),
+                                            output_id: format!("roon:{}", output.output_id),
                                             value: vol.value.unwrap_or(0.0),
                                             is_muted: vol.is_muted.unwrap_or(false),
                                         });

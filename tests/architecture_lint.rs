@@ -257,6 +257,12 @@ const ZONE_ID_BUS_EVENTS: &[&str] = &[
     "BusEvent::SeekPositionChanged",
 ];
 
+/// Bus events that require prefixed output_ids (for volume control matching)
+const OUTPUT_ID_BUS_EVENTS: &[&str] = &["BusEvent::VolumeChanged"];
+
+/// Patterns that indicate VolumeControl struct creation (output_id must be prefixed)
+const VOLUME_CONTROL_PATTERNS: &[&str] = &["VolumeControl {", "VolumeControl{"];
+
 #[test]
 fn bus_events_use_prefixed_zone_ids() {
     // Issue: Roon adapter was emitting bus events with raw zone_ids (e.g., "1601bb42...")
@@ -369,6 +375,191 @@ fn bus_events_use_prefixed_zone_ids() {
 
         error_msg.push_str(
             "Fix: Use PrefixedZoneId::xxx() constructor (preferred) or format!(\"prefix:{}\", raw_id).\n",
+        );
+
+        panic!("{}", error_msg);
+    }
+}
+
+#[test]
+fn bus_events_use_prefixed_output_ids() {
+    // VolumeChanged events use output_id to match zones.
+    // The aggregator matches by comparing zone.volume_control.output_id with event.output_id.
+    // Both must use the same format - prefixed IDs (e.g., "lms:xx:xx:xx").
+    //
+    // Without this, volume updates silently fail to match zones.
+
+    let adapters_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("adapters");
+
+    let mut violations = Vec::new();
+
+    for (adapter_file, expected_prefix, expected_constructor) in ADAPTER_PREFIXES {
+        let path = adapters_dir.join(adapter_file);
+        if !path.exists() {
+            continue;
+        }
+
+        let content = fs::read_to_string(&path).expect("Failed to read adapter file");
+
+        for event_type in OUTPUT_ID_BUS_EVENTS {
+            // Find all occurrences of this event type
+            let mut search_from = 0;
+            while let Some(event_pos) = content[search_from..].find(event_type) {
+                let absolute_pos = search_from + event_pos;
+
+                // Look for output_id field within the next ~200 chars (the event struct)
+                let event_end = (absolute_pos + 300).min(content.len());
+                let event_block = &content[absolute_pos..event_end];
+
+                // Check if this block contains an output_id field
+                if let Some(output_id_pos) = event_block.find("output_id:") {
+                    let after_output_id = &event_block[output_id_pos..];
+
+                    // Valid patterns:
+                    // - PrefixedZoneId::xxx( - compile-time enforced prefix (preferred)
+                    // - format!("prefix:..." - direct prefix in format string
+                    let check_region = &after_output_id[..after_output_id.len().min(100)];
+                    let has_prefixed_zone_id_type = check_region.contains(expected_constructor);
+                    let has_format_prefix =
+                        check_region.contains("format!") && check_region.contains(expected_prefix);
+
+                    if !has_prefixed_zone_id_type && !has_format_prefix {
+                        // Find line number
+                        let line_num = content[..absolute_pos].matches('\n').count() + 1;
+                        violations.push((
+                            adapter_file.to_string(),
+                            line_num,
+                            event_type.to_string(),
+                            expected_prefix.to_string(),
+                        ));
+                    }
+                }
+
+                search_from = absolute_pos + event_type.len();
+            }
+        }
+    }
+
+    if !violations.is_empty() {
+        let mut error_msg = String::from(
+            "\n\n\
+            ╔══════════════════════════════════════════════════════════════════════════════╗\n\
+            ║  ARCHITECTURE VIOLATION: VolumeChanged must use prefixed output_ids          ║\n\
+            ╚══════════════════════════════════════════════════════════════════════════════╝\n\n\
+            The ZoneAggregator matches VolumeChanged events by comparing:\n\
+              event.output_id == zone.volume_control.output_id\n\n\
+            Both must use the same prefixed format (e.g., 'lms:xx:xx:xx').\n\
+            Without this, volume updates silently fail to match zones.\n\n\
+            Violations found:\n\n",
+        );
+
+        for (file, line, event, prefix) in &violations {
+            error_msg.push_str(&format!("  {}:{}\n", file, line));
+            error_msg.push_str(&format!("    Event: {}\n", event));
+            error_msg.push_str(&format!(
+                "    Expected: output_id with '{}' prefix\n\n",
+                prefix
+            ));
+        }
+
+        error_msg.push_str(
+            "Fix: Use PrefixedZoneId::xxx() for output_id in VolumeChanged events.\n\
+             Also ensure zone.volume_control.output_id uses the same prefixed format.\n",
+        );
+
+        panic!("{}", error_msg);
+    }
+}
+
+#[test]
+fn volume_control_uses_prefixed_output_ids() {
+    // VolumeControl.output_id must match the format used in VolumeChanged events.
+    // Both must use prefixed IDs (e.g., "lms:xx:xx:xx", "roon:output-id").
+    //
+    // Without this, volume updates silently fail to match zones.
+
+    let adapters_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("adapters");
+
+    let mut violations = Vec::new();
+
+    for (adapter_file, expected_prefix, expected_constructor) in ADAPTER_PREFIXES {
+        let path = adapters_dir.join(adapter_file);
+        if !path.exists() {
+            continue;
+        }
+
+        let content = fs::read_to_string(&path).expect("Failed to read adapter file");
+
+        for pattern in VOLUME_CONTROL_PATTERNS {
+            // Find all occurrences of VolumeControl struct creation
+            let mut search_from = 0;
+            while let Some(vc_pos) = content[search_from..].find(pattern) {
+                let absolute_pos = search_from + vc_pos;
+
+                // Look for output_id field within the next ~500 chars (the struct)
+                let struct_end = (absolute_pos + 500).min(content.len());
+                let struct_block = &content[absolute_pos..struct_end];
+
+                // Find the closing brace to limit our search
+                let brace_end = struct_block.find('}').unwrap_or(struct_block.len());
+                let struct_block = &struct_block[..brace_end];
+
+                // Check if this block contains an output_id field
+                if let Some(output_id_pos) = struct_block.find("output_id:") {
+                    let after_output_id = &struct_block[output_id_pos..];
+
+                    // Valid patterns:
+                    // - PrefixedZoneId::xxx( - compile-time enforced prefix
+                    // - format!("prefix:..." - direct prefix in format string
+                    // - zone_id (variable) - if previously constructed with PrefixedZoneId
+                    let check_region = &after_output_id[..after_output_id.len().min(100)];
+                    let has_prefixed_zone_id_type = check_region.contains("PrefixedZoneId::");
+                    let has_format_prefix =
+                        check_region.contains("format!") && check_region.contains(expected_prefix);
+                    // Check if using a zone_id variable (which should already be prefixed)
+                    let has_zone_id_var = check_region.contains("zone_id");
+
+                    if !has_prefixed_zone_id_type && !has_format_prefix && !has_zone_id_var {
+                        // Find line number
+                        let line_num = content[..absolute_pos].matches('\n').count() + 1;
+                        violations.push((
+                            adapter_file.to_string(),
+                            line_num,
+                            expected_prefix.to_string(),
+                        ));
+                    }
+                }
+
+                search_from = absolute_pos + pattern.len();
+            }
+        }
+    }
+
+    if !violations.is_empty() {
+        let mut error_msg = String::from(
+            "\n\n\
+            ╔══════════════════════════════════════════════════════════════════════════════╗\n\
+            ║  ARCHITECTURE VIOLATION: VolumeControl must use prefixed output_ids          ║\n\
+            ╚══════════════════════════════════════════════════════════════════════════════╝\n\n\
+            VolumeControl.output_id must match the format used in VolumeChanged events.\n\
+            Both must use prefixed IDs (e.g., 'lms:xx:xx:xx', 'roon:output-id').\n\n\
+            Violations found:\n\n",
+        );
+
+        for (file, line, prefix) in &violations {
+            error_msg.push_str(&format!("  {}:{}\n", file, line));
+            error_msg.push_str(&format!(
+                "    Expected: output_id with '{}' prefix\n\n",
+                prefix
+            ));
+        }
+
+        error_msg.push_str(
+            "Fix: Use PrefixedZoneId::xxx().to_string() or format!(\"prefix:{}\", id) for output_id.\n",
         );
 
         panic!("{}", error_msg);
