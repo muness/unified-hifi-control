@@ -1667,8 +1667,7 @@ impl AdapterLogic for LmsCliAdapter {
 
         // Run CLI subscription - this will retry via AdapterHandle on failure
         let result =
-            run_cli_subscription_once(&host, &self.state, &ctx.bus, &self.rpc, &ctx.shutdown)
-                .await;
+            run_cli_subscription_once(&host, &self.state, &ctx.bus, &self.rpc, &ctx.shutdown).await;
 
         // Always reset flag on exit so polling switches to fast interval
         {
@@ -1752,11 +1751,7 @@ pub fn create_lms_adapters(bus: SharedBus) -> (Arc<LmsAdapter>, Arc<LmsCliAdapte
     let lms = Arc::new(LmsAdapter::new(bus.clone()));
 
     // Create CLI adapter with shared state
-    let cli = Arc::new(LmsCliAdapter::new(
-        lms.state.clone(),
-        lms.rpc.clone(),
-        bus,
-    ));
+    let cli = Arc::new(LmsCliAdapter::new(lms.state.clone(), lms.rpc.clone(), bus));
 
     (lms, cli)
 }
