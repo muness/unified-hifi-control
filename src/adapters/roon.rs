@@ -537,6 +537,18 @@ fn convert_zone(roon_zone: &RoonZone) -> Zone {
         length: np.length,
     });
 
+    // Log output volume info for debugging
+    for o in &roon_zone.outputs {
+        tracing::debug!(
+            "Zone '{}' output '{}': volume={:?}",
+            roon_zone.display_name,
+            o.display_name,
+            o.volume
+                .as_ref()
+                .map(|v| format!("value={:?} min={:?} max={:?}", v.value, v.min, v.max))
+        );
+    }
+
     let outputs = roon_zone
         .outputs
         .iter()
@@ -578,14 +590,28 @@ fn roon_zone_to_bus_zone(zone: &Zone) -> BusZone {
     // Get volume from first output (if available)
     // Use prefixed output_id for consistent aggregator matching
     let volume_control = zone.outputs.first().and_then(|o| {
-        o.volume.as_ref().map(|v| BusVolumeControl {
-            value: v.value.unwrap_or(50.0),
-            min: v.min.unwrap_or(-64.0),
-            max: v.max.unwrap_or(0.0),
-            step: v.step.unwrap_or(1.0),
-            is_muted: v.is_muted.unwrap_or(false),
-            scale: crate::bus::VolumeScale::Decibel,
-            output_id: Some(format!("roon:{}", o.output_id)),
+        o.volume.as_ref().map(|v| {
+            // Use get_volume_range for consistent defaults with change_volume
+            let (default_min, default_max) = get_volume_range(Some(o));
+            let min = v.min.unwrap_or(default_min);
+            let max = v.max.unwrap_or(default_max);
+            // Default to min (safest - for dB zones 0=max, for percent zones 0=min)
+            let value = v.value.unwrap_or(min);
+            // Infer scale from range: if max <= 0, it's dB; otherwise percentage
+            let scale = if max <= 0.0 {
+                crate::bus::VolumeScale::Decibel
+            } else {
+                crate::bus::VolumeScale::Percentage
+            };
+            BusVolumeControl {
+                value,
+                min,
+                max,
+                step: v.step.unwrap_or(1.0),
+                is_muted: v.is_muted.unwrap_or(false),
+                scale,
+                output_id: Some(format!("roon:{}", o.output_id)),
+            }
         })
     });
 
@@ -857,12 +883,22 @@ async fn run_roon_loop(
                                         })
                                         .unwrap_or(true);
 
+                                    // Handle VolumeChanged emission safely:
+                                    // - vol.value can be None transiently
+                                    // - Using unwrap_or(0.0) would set dB zones to max volume, risking damage
+                                    // - But we still want to emit mute changes using last known value
                                     if vol_changed {
-                                        bus_for_events.publish(BusEvent::VolumeChanged {
-                                            output_id: format!("roon:{}", output.output_id),
-                                            value: vol.value.unwrap_or(0.0),
-                                            is_muted: vol.is_muted.unwrap_or(false),
-                                        });
+                                        // Try current value, then last known value from old_vol
+                                        let value_to_use =
+                                            vol.value.or_else(|| old_vol.and_then(|ov| ov.value));
+
+                                        if let Some(value) = value_to_use {
+                                            bus_for_events.publish(BusEvent::VolumeChanged {
+                                                output_id: format!("roon:{}", output.output_id),
+                                                value,
+                                                is_muted: vol.is_muted.unwrap_or(false),
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -994,3 +1030,109 @@ async fn run_roon_loop(
 
 // Startable trait implementation via macro
 crate::impl_startable!(RoonAdapter, "roon", is_configured);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Create a test zone with specified volume parameters
+    fn make_test_zone(
+        output_id: &str,
+        volume_value: Option<f32>,
+        volume_min: Option<f32>,
+        volume_max: Option<f32>,
+    ) -> Zone {
+        Zone {
+            zone_id: "test-zone".to_string(),
+            display_name: "Test Zone".to_string(),
+            state: "stopped".to_string(),
+            is_next_allowed: true,
+            is_previous_allowed: true,
+            is_pause_allowed: false,
+            is_play_allowed: true,
+            now_playing: None,
+            outputs: vec![Output {
+                output_id: output_id.to_string(),
+                display_name: "Test Output".to_string(),
+                volume: Some(VolumeInfo {
+                    value: volume_value,
+                    min: volume_min,
+                    max: volume_max,
+                    is_muted: None,
+                    step: None,
+                }),
+            }],
+        }
+    }
+
+    #[test]
+    fn roon_zone_to_bus_zone_db_scale_value_none_defaults_to_min() {
+        // dB zone: max <= 0 means dB scale
+        let zone = make_test_zone("output-1", None, Some(-80.0), Some(0.0));
+        let bus_zone = roon_zone_to_bus_zone(&zone);
+
+        let vc = bus_zone.volume_control.expect("should have volume_control");
+        assert_eq!(vc.value, -80.0, "value should default to min for dB zones");
+        assert_eq!(vc.min, -80.0);
+        assert_eq!(vc.max, 0.0);
+        assert_eq!(vc.scale, crate::bus::VolumeScale::Decibel);
+        assert_eq!(vc.step, 1.0, "step should default to 1.0");
+        assert!(!vc.is_muted, "is_muted should default to false");
+        assert_eq!(vc.output_id, Some("roon:output-1".to_string()));
+    }
+
+    #[test]
+    fn roon_zone_to_bus_zone_percent_scale_value_none_defaults_to_min() {
+        // Percentage zone: max > 0 means percentage scale
+        let zone = make_test_zone("output-2", None, Some(0.0), Some(100.0));
+        let bus_zone = roon_zone_to_bus_zone(&zone);
+
+        let vc = bus_zone.volume_control.expect("should have volume_control");
+        assert_eq!(
+            vc.value, 0.0,
+            "value should default to min for percentage zones"
+        );
+        assert_eq!(vc.min, 0.0);
+        assert_eq!(vc.max, 100.0);
+        assert_eq!(vc.scale, crate::bus::VolumeScale::Percentage);
+        assert_eq!(vc.step, 1.0, "step should default to 1.0");
+        assert!(!vc.is_muted, "is_muted should default to false");
+        assert_eq!(vc.output_id, Some("roon:output-2".to_string()));
+    }
+
+    #[test]
+    fn roon_zone_to_bus_zone_preserves_actual_value() {
+        // When value is Some, it should be preserved
+        let zone = make_test_zone("output-3", Some(-30.0), Some(-80.0), Some(0.0));
+        let bus_zone = roon_zone_to_bus_zone(&zone);
+
+        let vc = bus_zone.volume_control.expect("should have volume_control");
+        assert_eq!(vc.value, -30.0, "actual value should be preserved");
+    }
+
+    #[test]
+    fn roon_zone_to_bus_zone_no_volume_returns_none() {
+        // Zone with output but no volume should have volume_control = None
+        let zone = Zone {
+            zone_id: "test-zone".to_string(),
+            display_name: "Test Zone".to_string(),
+            state: "stopped".to_string(),
+            is_next_allowed: true,
+            is_previous_allowed: true,
+            is_pause_allowed: false,
+            is_play_allowed: true,
+            now_playing: None,
+            outputs: vec![Output {
+                output_id: "output-no-vol".to_string(),
+                display_name: "No Volume Output".to_string(),
+                volume: None,
+            }],
+        };
+        let bus_zone = roon_zone_to_bus_zone(&zone);
+
+        assert!(
+            bus_zone.volume_control.is_none(),
+            "should be None when output has no volume"
+        );
+    }
+}

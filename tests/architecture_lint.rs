@@ -705,3 +705,88 @@ fn state_changes_emit_zone_updated() {
         panic!("{}", error_msg);
     }
 }
+
+// =============================================================================
+// Volume Safety Lint
+// =============================================================================
+
+/// SAFETY CRITICAL: These patterns indicate unsafe volume defaults.
+/// For dB-based zones (where 0 = max volume), using unwrap_or(0.0) or similar
+/// could snap volume to maximum, risking equipment damage.
+///
+/// Safe patterns:
+///   - `if let Some(value) = vol.value { ... }` - only use valid values
+///   - `v.value.unwrap_or(min)` - default to minimum (safest)
+///
+/// Unsafe patterns (flagged):
+///   - `vol.value.unwrap_or(0.0)` - 0 = max for dB zones!
+///   - `vol.value.unwrap_or(50.0)` - arbitrary default, may be out of range
+const UNSAFE_VOLUME_PATTERNS: &[(&str, &str)] = &[
+    (
+        ".value.unwrap_or(0.0)",
+        "DANGEROUS: 0.0 = max volume for dB zones. Use `if let Some(value)` or default to min.",
+    ),
+    (
+        ".value.unwrap_or(50.0)",
+        "Unsafe: 50.0 may be out of range for dB zones. Use zone's min value as default.",
+    ),
+];
+
+#[test]
+fn volume_values_use_safe_defaults() {
+    // SAFETY CRITICAL: Volume values must not use unsafe defaults.
+    //
+    // The Roon API can return vol.value = None transiently. Using unwrap_or(0.0)
+    // would set dB zones to max volume (0 dB = maximum), risking equipment damage.
+    //
+    // This test flags unsafe patterns in adapter code.
+
+    let adapters_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("adapters");
+
+    let mut violations = Vec::new();
+
+    for entry in WalkDir::new(&adapters_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|s| s == "rs").unwrap_or(false))
+    {
+        let path = entry.path();
+        let content = fs::read_to_string(path).expect("Failed to read file");
+        let filename = path.file_name().unwrap().to_string_lossy();
+
+        for (pattern, explanation) in UNSAFE_VOLUME_PATTERNS {
+            for (line_idx, line) in content.lines().enumerate() {
+                if line.contains(pattern) {
+                    violations.push((filename.to_string(), line_idx + 1, explanation.to_string()));
+                }
+            }
+        }
+    }
+
+    if !violations.is_empty() {
+        let mut error_msg = String::from(
+            "\n\n\
+            ╔══════════════════════════════════════════════════════════════════════════════╗\n\
+            ║  SAFETY VIOLATION: Unsafe volume default detected                            ║\n\
+            ╚══════════════════════════════════════════════════════════════════════════════╝\n\n\
+            Volume values can be None transiently. Using unwrap_or(0.0) or unwrap_or(50.0)\n\
+            is DANGEROUS for dB-based zones where 0 dB = MAXIMUM VOLUME.\n\n\
+            This could cause volume to snap to max, risking equipment damage.\n\n\
+            Violations found:\n\n",
+        );
+
+        for (file, line, explanation) in &violations {
+            error_msg.push_str(&format!("  {}:{}\n", file, line));
+            error_msg.push_str(&format!("    {}\n\n", explanation));
+        }
+
+        error_msg.push_str(
+            "Fix: Use `if let Some(value) = vol.value { ... }` to only process valid values,\n\
+             or default to the zone's min volume: `v.value.unwrap_or(min)`.\n",
+        );
+
+        panic!("{}", error_msg);
+    }
+}
