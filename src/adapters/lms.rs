@@ -973,8 +973,8 @@ async fn update_players_internal(
 
     // Collect updates to emit after releasing the lock
     let mut now_playing_updates: Vec<NowPlayingUpdate> = Vec::new();
-    // LmsPlayerStateChanged: (player_id, state)
-    let mut state_updates: Vec<(String, String)> = Vec::new();
+    // State updates: (player_id, player_name, state)
+    let mut state_updates: Vec<(String, String, String)> = Vec::new();
     // VolumeChanged: (player_id, volume)
     let mut volume_updates: Vec<(String, i32)> = Vec::new();
 
@@ -1040,7 +1040,11 @@ async fn update_players_internal(
         }
 
         if state_changed {
-            state_updates.push((player.playerid.clone(), player.state.clone()));
+            state_updates.push((
+                player.playerid.clone(),
+                player.name.clone(),
+                player.state.clone(),
+            ));
         }
 
         if volume_changed {
@@ -1067,9 +1071,16 @@ async fn update_players_internal(
         });
     }
 
-    // Emit LmsPlayerStateChanged events for state changes (play/pause/stop)
-    for (player_id, state) in state_updates {
+    // Emit state change events (play/pause/stop)
+    for (player_id, player_name, state) in state_updates {
         debug!("Polling detected state change for {}: {}", player_id, state);
+        // Publish ZoneUpdated so aggregator updates state
+        bus.publish(BusEvent::ZoneUpdated {
+            zone_id: PrefixedZoneId::lms(&player_id),
+            display_name: player_name,
+            state: state.clone(),
+        });
+        // Also publish LmsPlayerStateChanged for SSE/UI
         bus.publish(BusEvent::LmsPlayerStateChanged { player_id, state });
     }
 
@@ -1290,8 +1301,8 @@ async fn handle_cli_event(
                 Ok(status) => {
                     let zone_id = PrefixedZoneId::lms(&player_id);
 
-                    // Update cached state
-                    {
+                    // Update cached state and get player name for ZoneUpdated
+                    let player_name = {
                         let mut s = state.write().await;
                         if let Some(player) = s.players.get_mut(&player_id) {
                             player.state = status.state.clone();
@@ -1304,10 +1315,20 @@ async fn handle_cli_event(
                             player.album = status.album.clone();
                             player.artwork_url = status.artwork_url.clone();
                             player.coverid = status.coverid.clone();
+                            player.name.clone()
+                        } else {
+                            player_id.clone() // Fallback to player_id if not in cache
                         }
-                    }
+                    };
 
-                    // Publish bus events
+                    // Publish ZoneUpdated so aggregator updates state
+                    bus.publish(BusEvent::ZoneUpdated {
+                        zone_id: zone_id.clone(),
+                        display_name: player_name,
+                        state: status.state.clone(),
+                    });
+
+                    // Also publish LmsPlayerStateChanged for SSE/UI
                     bus.publish(BusEvent::LmsPlayerStateChanged {
                         player_id: player_id.clone(),
                         state: status.state.clone(),
