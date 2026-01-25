@@ -1407,18 +1407,29 @@ async fn handle_cli_event(
         } => {
             debug!("Power change for {}: {}", player_id, power_state);
 
-            // Update cached state
-            {
+            // Update cached state and get player name for ZoneUpdated
+            let player_name = {
                 let mut s = state.write().await;
                 if let Some(player) = s.players.get_mut(&player_id) {
                     player.power = power_state;
+                    player.name.clone()
+                } else {
+                    player_id.clone()
                 }
-            }
+            };
 
             // Publish state change
             // When power turns on, we don't know the actual playback state yet
             // When power turns off, playback is effectively stopped
             if !power_state {
+                let zone_id = PrefixedZoneId::lms(&player_id);
+                // Publish ZoneUpdated so aggregator updates state
+                bus.publish(BusEvent::ZoneUpdated {
+                    zone_id,
+                    display_name: player_name,
+                    state: "stopped".to_string(),
+                });
+                // Also publish LmsPlayerStateChanged for SSE/UI
                 bus.publish(BusEvent::LmsPlayerStateChanged {
                     player_id,
                     state: "stopped".to_string(),

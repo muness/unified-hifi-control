@@ -298,6 +298,7 @@ fn bus_events_use_prefixed_zone_ids() {
                     // - format!("prefix:..." - direct prefix in format string (legacy)
                     // - prefixed_zone_id - variable that was set with PrefixedZoneId or format!
                     // - zone.zone_id - from a Zone struct that already has prefix
+                    // - zone_id - variable (check if PrefixedZoneId::xxx was used earlier in block)
                     let check_region = &after_zone_id[..after_zone_id.len().min(100)];
                     let has_prefixed_zone_id_type = check_region.contains(expected_constructor);
                     let has_format_prefix =
@@ -305,10 +306,30 @@ fn bus_events_use_prefixed_zone_ids() {
                     let has_prefixed_var = check_region.contains("prefixed_zone_id");
                     let has_zone_struct = check_region.contains("zone.zone_id");
 
+                    // Check if zone_id variable was constructed with PrefixedZoneId earlier
+                    // Look backwards up to 2000 chars (~25 lines) for "zone_id = PrefixedZoneId::"
+                    let lookback_start = absolute_pos.saturating_sub(2000);
+                    let lookback_region = &content[lookback_start..absolute_pos];
+                    let has_zone_id_from_prefixed =
+                        lookback_region.contains("zone_id = PrefixedZoneId::");
+
+                    // Check if the value after "zone_id:" is a variable named zone_id
+                    // (e.g., "zone_id: zone_id.clone()" or "zone_id: zone_id,")
+                    // Skip past "zone_id:" to get the value
+                    let value_part = after_zone_id
+                        .strip_prefix("zone_id:")
+                        .map(|s| s.trim_start())
+                        .unwrap_or("");
+                    let uses_zone_id_var = (value_part.starts_with("zone_id,")
+                        || value_part.starts_with("zone_id.")
+                        || value_part.starts_with("zone_id\n"))
+                        && has_zone_id_from_prefixed;
+
                     if !has_prefixed_zone_id_type
                         && !has_format_prefix
                         && !has_prefixed_var
                         && !has_zone_struct
+                        && !uses_zone_id_var
                     {
                         // Find line number
                         let line_num = content[..absolute_pos].matches('\n').count() + 1;
@@ -348,6 +369,141 @@ fn bus_events_use_prefixed_zone_ids() {
 
         error_msg.push_str(
             "Fix: Use PrefixedZoneId::xxx() constructor (preferred) or format!(\"prefix:{}\", raw_id).\n",
+        );
+
+        panic!("{}", error_msg);
+    }
+}
+
+// =============================================================================
+// Bus Event Schema Enforcement
+// =============================================================================
+
+/// Events that the ZoneAggregator handles (updates zone state)
+/// If you want to update aggregator state, you MUST use one of these events.
+const AGGREGATOR_HANDLED_EVENTS: &[&str] = &[
+    "BusEvent::ZoneDiscovered",      // Adds a new zone
+    "BusEvent::ZoneUpdated",         // Updates zone name/state
+    "BusEvent::ZoneRemoved",         // Removes a zone
+    "BusEvent::NowPlayingChanged",   // Updates now_playing metadata
+    "BusEvent::VolumeChanged",       // Updates volume
+    "BusEvent::SeekPositionChanged", // Updates seek position
+    "BusEvent::AdapterStopping",     // Triggers zone cleanup
+    "BusEvent::ShuttingDown",        // Triggers shutdown
+];
+
+/// Events that are adapter-specific and NOT handled by aggregator
+/// These are for SSE/UI updates ONLY - they do NOT update aggregator state.
+/// WARNING: Publishing these will NOT update /zones endpoint or aggregator state!
+#[allow(dead_code)]
+const ADAPTER_SPECIFIC_EVENTS: &[&str] = &[
+    "BusEvent::LmsPlayerStateChanged", // LMS-specific, SSE only
+    "BusEvent::LmsConnected",          // LMS-specific, SSE only
+    "BusEvent::LmsDisconnected",       // LMS-specific, SSE only
+    "BusEvent::RoonConnected",         // Roon-specific, SSE only
+    "BusEvent::RoonDisconnected",      // Roon-specific, SSE only
+];
+
+/// Patterns that indicate playback state changes that should also emit ZoneUpdated
+/// If you see these patterns, ZoneUpdated should be emitted nearby (within ~50 lines)
+const STATE_CHANGE_PATTERNS: &[(&str, &str)] = &[(
+    "LmsPlayerStateChanged",
+    "When emitting LmsPlayerStateChanged, also emit ZoneUpdated to update aggregator",
+)];
+
+#[test]
+fn bus_event_schema_documented() {
+    // This test documents the bus event schema and serves as a reference.
+    // It will always pass - it exists to make the schema visible in test output.
+    println!("\n");
+    println!("╔══════════════════════════════════════════════════════════════════════════════╗");
+    println!("║                         BUS EVENT SCHEMA                                     ║");
+    println!("╚══════════════════════════════════════════════════════════════════════════════╝");
+    println!();
+    println!("Events handled by ZoneAggregator (updates /zones endpoint):");
+    for event in AGGREGATOR_HANDLED_EVENTS {
+        println!("  ✓ {}", event);
+    }
+    println!();
+    println!("Adapter-specific events (SSE/UI only, NOT aggregator):");
+    for event in ADAPTER_SPECIFIC_EVENTS {
+        println!("  ⚠ {} (does NOT update aggregator)", event);
+    }
+    println!();
+    println!("RULE: To update zone state visible in /zones, you MUST emit an");
+    println!("      AGGREGATOR_HANDLED_EVENT. Adapter-specific events are for UI only.");
+    println!();
+}
+
+#[test]
+fn state_changes_emit_zone_updated() {
+    // Ensures that when adapters emit state change events (like LmsPlayerStateChanged),
+    // they ALSO emit ZoneUpdated so the aggregator gets the state change.
+    //
+    // This prevents the bug where CLI events updated the adapter's internal cache
+    // but didn't propagate to the aggregator (visible via /zones endpoint).
+
+    let adapters_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("adapters");
+
+    let mut violations = Vec::new();
+
+    for entry in WalkDir::new(&adapters_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|s| s == "rs").unwrap_or(false))
+    {
+        let path = entry.path();
+        let content = fs::read_to_string(path).expect("Failed to read file");
+        let filename = path.file_name().unwrap().to_string_lossy();
+
+        for (pattern, explanation) in STATE_CHANGE_PATTERNS {
+            // Find all occurrences of the pattern
+            let mut search_from = 0;
+            while let Some(pos) = content[search_from..].find(pattern) {
+                let absolute_pos = search_from + pos;
+
+                // Look for ZoneUpdated within a reasonable range (50 lines ~ 2500 chars)
+                // Either before (within 1000 chars) or after (within 2500 chars)
+                let check_start = absolute_pos.saturating_sub(1000);
+                let check_end = (absolute_pos + 2500).min(content.len());
+                let check_region = &content[check_start..check_end];
+
+                // Also check if this is in a context where ZoneUpdated is emitted nearby
+                let has_zone_updated = check_region.contains("BusEvent::ZoneUpdated");
+
+                // Skip if ZoneUpdated is emitted nearby
+                if !has_zone_updated {
+                    let line_num = content[..absolute_pos].matches('\n').count() + 1;
+                    violations.push((filename.to_string(), line_num, explanation.to_string()));
+                }
+
+                search_from = absolute_pos + pattern.len();
+            }
+        }
+    }
+
+    if !violations.is_empty() {
+        let mut error_msg = String::from(
+            "\n\n\
+            ╔══════════════════════════════════════════════════════════════════════════════╗\n\
+            ║  BUS EVENT SCHEMA VIOLATION: State changes must update aggregator            ║\n\
+            ╚══════════════════════════════════════════════════════════════════════════════╝\n\n\
+            The ZoneAggregator is the single source of truth for zone state.\n\
+            Adapter-specific events (e.g., LmsPlayerStateChanged) do NOT update the aggregator.\n\
+            You MUST also emit ZoneUpdated to propagate state changes.\n\n\
+            Violations found:\n\n",
+        );
+
+        for (file, line, explanation) in &violations {
+            error_msg.push_str(&format!("  {}:{}\n", file, line));
+            error_msg.push_str(&format!("    {}\n\n", explanation));
+        }
+
+        error_msg.push_str(
+            "Fix: When emitting adapter-specific events, also emit the corresponding\n\
+             aggregator-handled event (e.g., ZoneUpdated for state changes).\n",
         );
 
         panic!("{}", error_msg);
