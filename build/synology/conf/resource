@@ -1,11 +1,1 @@
-{
-    "port-config": {
-        "port-forward": {
-            "rules": [{
-                "port": 8088,
-                "protocol": "tcp",
-                "name": "Web UI"
-            }]
-        }
-    }
-}
+{}
