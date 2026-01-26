@@ -79,12 +79,6 @@
     border-color: var(--border-default);
   }
 
-  /* Zone grid layout */
-  .zone-grid {
-    @apply grid gap-6;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  }
-
   /* Zone card styling */
   .zone-card {
     @apply p-5 rounded-lg;
