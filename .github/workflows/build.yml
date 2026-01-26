@@ -81,8 +81,10 @@ jobs:
       - name: Compute version
         id: version
         run: |
-          # Version: from git tag on release, else include PR number for traceability
+          # Version: from git tag on release or tag push, else include PR number for traceability
           if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          elif [[ "${{ github.event_name }}" == "push" && "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             VERSION="0.0.0-pr${{ github.event.pull_request.number }}"
@@ -246,25 +248,36 @@ jobs:
           HAS_OPTIONAL="false"
           TABLE_ROWS=""
 
+          # Helper: is this a release trigger (either release event or tag push)?
+          IS_RELEASE_TRIGGER="false"
+          RELEASE_TRIGGER_NAME="release"
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            IS_RELEASE_TRIGGER="true"
+            RELEASE_TRIGGER_NAME="release"
+          elif [[ "$EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/v* ]]; then
+            IS_RELEASE_TRIGGER="true"
+            RELEASE_TRIGGER_NAME="tag"
+          fi
+
           add_row() {
             TABLE_ROWS="${TABLE_ROWS}| $1 | $2 |"$'\n'
             HAS_OPTIONAL="true"
           }
 
           if [[ "$BUILD_LMS" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then add_row "lms" "release"
+            if [[ "$IS_RELEASE_TRIGGER" == "true" ]]; then add_row "lms" "$RELEASE_TRIGGER_NAME"
             elif [[ "$HAS_LABEL_LMS_MACOS" == "true" ]]; then add_row "lms" "build:lms-macos"
             elif [[ "$HAS_LABEL_LMS" == "true" ]]; then add_row "lms" "build:lms"
             fi
           fi
           if [[ "$BUILD_MACOS" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then add_row "macos" "release"
+            if [[ "$IS_RELEASE_TRIGGER" == "true" ]]; then add_row "macos" "$RELEASE_TRIGGER_NAME"
             elif [[ "$HAS_LABEL_LMS_MACOS" == "true" ]]; then add_row "macos" "build:lms-macos"
             elif [[ "$HAS_LABEL_MACOS" == "true" ]]; then add_row "macos" "build:macos"
             fi
           fi
           if [[ "$BUILD_LINUX_ARM" == "true" ]]; then
-            TRIGGER="release"
+            TRIGGER="$RELEASE_TRIGGER_NAME"
             [[ "$HAS_LABEL_LINUX_ARM" == "true" ]] && TRIGGER="build:linux-arm"
             [[ "$HAS_LABEL_SYNOLOGY" == "true" ]] && TRIGGER="build:synology (implicit)"
             [[ "$HAS_LABEL_QNAP_ARM" == "true" ]] && TRIGGER="build:qnap-arm (implicit)"
@@ -272,32 +285,32 @@ jobs:
             add_row "linux-arm" "$TRIGGER"
           fi
           if [[ "$BUILD_WINDOWS" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then add_row "windows" "release"
+            if [[ "$IS_RELEASE_TRIGGER" == "true" ]]; then add_row "windows" "$RELEASE_TRIGGER_NAME"
             elif [[ "$HAS_LABEL_WINDOWS" == "true" ]]; then add_row "windows" "build:windows"
             fi
           fi
           if [[ "$BUILD_SYNOLOGY" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then add_row "synology" "release"
+            if [[ "$IS_RELEASE_TRIGGER" == "true" ]]; then add_row "synology" "$RELEASE_TRIGGER_NAME"
             elif [[ "$HAS_LABEL_SYNOLOGY" == "true" ]]; then add_row "synology" "build:synology"
             fi
           fi
           if [[ "$BUILD_QNAP" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then add_row "qnap" "release"
+            if [[ "$IS_RELEASE_TRIGGER" == "true" ]]; then add_row "qnap" "$RELEASE_TRIGGER_NAME"
             elif [[ "$HAS_LABEL_QNAP" == "true" ]]; then add_row "qnap" "build:qnap"
             fi
           fi
           if [[ "$BUILD_QNAP_ARM" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then add_row "qnap-arm" "release"
+            if [[ "$IS_RELEASE_TRIGGER" == "true" ]]; then add_row "qnap-arm" "$RELEASE_TRIGGER_NAME"
             elif [[ "$HAS_LABEL_QNAP_ARM" == "true" ]]; then add_row "qnap-arm" "build:qnap-arm"
             fi
           fi
           if [[ "$BUILD_DOCKER" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then add_row "docker" "release"
+            if [[ "$IS_RELEASE_TRIGGER" == "true" ]]; then add_row "docker" "$RELEASE_TRIGGER_NAME"
             elif [[ "$HAS_LABEL_DOCKER" == "true" ]]; then add_row "docker" "build:docker"
             fi
           fi
           if [[ "$BUILD_LINUX_PACKAGES" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then add_row "linux-packages" "release"
+            if [[ "$IS_RELEASE_TRIGGER" == "true" ]]; then add_row "linux-packages" "$RELEASE_TRIGGER_NAME"
             elif [[ "$HAS_LABEL_LINUX_PACKAGES" == "true" ]]; then add_row "linux-packages" "build:linux-packages"
             fi
           fi
