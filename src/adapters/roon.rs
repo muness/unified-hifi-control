@@ -1029,6 +1029,9 @@ async fn run_roon_loop(
                             }
                         }
                     }
+                    Parsed::Error(err) => {
+                        tracing::warn!("Roon API error: {:?}", err);
+                    }
                     _ => {}
                 }
             }

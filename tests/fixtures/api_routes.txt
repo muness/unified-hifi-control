@@ -47,7 +47,9 @@ GET /now_playing
 GET /now_playing/image
 GET /openhome/status
 GET /openhome/zones
+GET /roon/browse/status
 GET /roon/image
+GET /roon/search
 GET /roon/status
 GET /roon/zone/{zone_id}
 GET /roon/zones
@@ -74,6 +76,7 @@ POST /lms/configure
 POST /lms/control
 POST /lms/volume
 POST /openhome/control
+POST /roon/browse
 POST /roon/control
 POST /roon/volume
 POST /upnp/control

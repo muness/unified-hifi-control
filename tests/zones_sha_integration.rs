@@ -24,6 +24,7 @@ use unified_hifi_control::adapters::hqplayer::{HqpInstanceManager, HqpZoneLinkSe
 use unified_hifi_control::adapters::lms::LmsAdapter;
 use unified_hifi_control::adapters::openhome::OpenHomeAdapter;
 use unified_hifi_control::adapters::roon::RoonAdapter;
+use unified_hifi_control::adapters::roon_browse::RoonBrowseAdapter;
 use unified_hifi_control::adapters::upnp::UPnPAdapter;
 use unified_hifi_control::adapters::Startable;
 use unified_hifi_control::aggregator::ZoneAggregator;
@@ -67,6 +68,7 @@ async fn create_test_app_with_lms(mock_addr: std::net::SocketAddr) -> Router {
     let lms = Arc::new(LmsAdapter::new(bus.clone()));
     let openhome = Arc::new(OpenHomeAdapter::new(bus.clone()));
     let upnp = Arc::new(UPnPAdapter::new(bus.clone()));
+    let roon_browse = Arc::new(RoonBrowseAdapter::new(bus.clone()));
     let knob_store = KnobStore::new();
 
     // Configure and start LMS adapter with mock server
@@ -87,6 +89,7 @@ async fn create_test_app_with_lms(mock_addr: std::net::SocketAddr) -> Router {
 
     let state = AppState::new(
         roon,
+        roon_browse,
         hqplayer,
         hqp_instances,
         hqp_zone_links,

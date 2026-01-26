@@ -212,6 +212,9 @@ mod server {
         // UPnP adapter
         let upnp = Arc::new(adapters::upnp::UPnPAdapter::new(bus.clone()));
 
+        // Roon Browse adapter (AI DJ Phase 1 - separate from RoonAdapter)
+        let roon_browse = Arc::new(adapters::roon_browse::RoonBrowseAdapter::new(bus.clone()));
+
         // =========================================================================
         // Start enabled adapters (single codepath using coordinator)
         // =========================================================================
@@ -220,6 +223,7 @@ mod server {
         // Note: lms_cli shares config with lms - both start when LMS is configured
         let startable_adapters: Vec<Arc<dyn adapters::Startable>> = vec![
             roon.clone(),
+            roon_browse.clone(),
             lms.clone(),
             lms_cli.clone(),
             openhome.clone(),
@@ -237,8 +241,14 @@ mod server {
         });
         tracing::info!("ZoneAggregator started");
 
-        // Clone Roon adapter for shutdown access (cheap - just Arc clones)
+        // Initialize Knob device store
+        // Issue #76: Uses config subdirectory for knobs.json
+        let knob_store = knobs::KnobStore::new();
+        tracing::info!("Knob store initialized");
+
+        // Clone adapters for shutdown access (cheap - just Arc clones)
         let roon_for_shutdown = roon.clone();
+        let roon_browse_for_shutdown = roon_browse.clone();
 
         // Create shutdown token for graceful SSE termination (fixes #73)
         let shutdown_token = CancellationToken::new();
@@ -246,6 +256,7 @@ mod server {
         // Build application state (clone Arcs so we can access adapters for shutdown)
         let state = api::AppState::new(
             roon,
+            roon_browse,
             hqplayer,
             hqp_instances,
             hqp_zone_links,
@@ -275,6 +286,11 @@ mod server {
             .route("/roon/control", post(api::roon_control_handler))
             .route("/roon/volume", post(api::roon_volume_handler))
             .route("/roon/image", get(api::roon_image_handler))
+            // Roon Browse routes (AI DJ Phase 1)
+            .route("/roon/search", get(api::roon_search_handler))
+            .route("/roon/play", post(api::roon_play_handler))
+            .route("/roon/browse", post(api::roon_browse_handler))
+            .route("/roon/browse/status", get(api::roon_browse_status_handler))
             // HQPlayer routes
             .route("/hqplayer/status", get(api::hqp_status_handler))
             .route("/hqplayer/pipeline", get(api::hqp_pipeline_handler))
@@ -541,6 +557,7 @@ mod server {
 
         // Stop adapters
         roon_for_shutdown.stop().await;
+        roon_browse_for_shutdown.stop().await;
         if let Some(ref fw) = firmware_service {
             fw.stop();
         }

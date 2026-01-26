@@ -2,10 +2,10 @@ name: Build
 
 on:
   pull_request:
-    branches: [master, v3]
+    branches: [main, master, v3]
     types: [opened, synchronize, reopened, labeled]
   push:
-    branches: [v3, 'feature/**']
+    branches: [main, v3, 'feature/**']
   release:
     types: [published]
   workflow_dispatch:
@@ -38,10 +38,6 @@ on:
         description: 'Build Windows'
         type: boolean
         default: false
-      build_docker:
-        description: 'Build Docker (x64)'
-        type: boolean
-        default: false
       build_linux_packages:
         description: 'Build deb/rpm packages'
         type: boolean
@@ -71,7 +67,6 @@ jobs:
       build_synology: ${{ steps.decide.outputs.build_synology }}
       build_qnap: ${{ steps.decide.outputs.build_qnap }}
       build_qnap_arm: ${{ steps.decide.outputs.build_qnap_arm }}
-      build_docker: ${{ steps.decide.outputs.build_docker }}
       build_linux_packages: ${{ steps.decide.outputs.build_linux_packages }}
       version: ${{ steps.version.outputs.version }}
       git_sha: ${{ steps.version.outputs.git_sha }}
@@ -112,7 +107,6 @@ jobs:
           HAS_LABEL_SYNOLOGY: ${{ contains(github.event.pull_request.labels.*.name, 'build:synology') }}
           HAS_LABEL_QNAP: ${{ contains(github.event.pull_request.labels.*.name, 'build:qnap') }}
           HAS_LABEL_QNAP_ARM: ${{ contains(github.event.pull_request.labels.*.name, 'build:qnap-arm') }}
-          HAS_LABEL_DOCKER: ${{ contains(github.event.pull_request.labels.*.name, 'build:docker') }}
           HAS_LABEL_LINUX_PACKAGES: ${{ contains(github.event.pull_request.labels.*.name, 'build:linux-packages') }}
           # Inputs (only present on workflow_dispatch)
           INPUT_LINUX_ARM: ${{ inputs.build_linux_arm }}
@@ -122,7 +116,6 @@ jobs:
           INPUT_SYNOLOGY: ${{ inputs.build_synology }}
           INPUT_QNAP: ${{ inputs.build_qnap }}
           INPUT_QNAP_ARM: ${{ inputs.build_qnap_arm }}
-          INPUT_DOCKER: ${{ inputs.build_docker }}
           INPUT_LINUX_PACKAGES: ${{ inputs.build_linux_packages }}
         run: |
           # Skip if triggered by a non-build label (e.g., arch, coderabbit)
@@ -140,7 +133,6 @@ jobs:
             echo "build_synology=false" >> $GITHUB_OUTPUT
             echo "build_qnap=false" >> $GITHUB_OUTPUT
             echo "build_qnap_arm=false" >> $GITHUB_OUTPUT
-            echo "build_docker=false" >> $GITHUB_OUTPUT
             echo "build_linux_packages=false" >> $GITHUB_OUTPUT
             echo "lms_matrix=[]" >> $GITHUB_OUTPUT
             exit 0
@@ -214,13 +206,6 @@ jobs:
           if [[ "$INPUT_QNAP_ARM" == "true" ]]; then BUILD_QNAP_ARM="true"; fi
           echo "build_qnap_arm=$BUILD_QNAP_ARM" >> $GITHUB_OUTPUT
 
-          # Docker x64
-          BUILD_DOCKER="false"
-          if should_build; then BUILD_DOCKER="true"; fi
-          if [[ "$HAS_LABEL_DOCKER" == "true" ]]; then BUILD_DOCKER="true"; fi
-          if [[ "$INPUT_DOCKER" == "true" ]]; then BUILD_DOCKER="true"; fi
-          echo "build_docker=$BUILD_DOCKER" >> $GITHUB_OUTPUT
-
           # Linux packages (deb/rpm)
           BUILD_LINUX_PACKAGES="false"
           if should_build; then BUILD_LINUX_PACKAGES="true"; fi
@@ -281,11 +266,6 @@ jobs:
           if [[ "$BUILD_QNAP_ARM" == "true" ]]; then
             if [[ "$EVENT_NAME" == "release" ]]; then add_row "qnap-arm" "release"
             elif [[ "$HAS_LABEL_QNAP_ARM" == "true" ]]; then add_row "qnap-arm" "build:qnap-arm"
-            fi
-          fi
-          if [[ "$BUILD_DOCKER" == "true" ]]; then
-            if [[ "$EVENT_NAME" == "release" ]]; then add_row "docker" "release"
-            elif [[ "$HAS_LABEL_DOCKER" == "true" ]]; then add_row "docker" "build:docker"
             fi
           fi
           if [[ "$BUILD_LINUX_PACKAGES" == "true" ]]; then
@@ -1374,178 +1354,6 @@ jobs:
           retention-days: 5
 
   # Note: Web assets are embedded in the binary (ADR 002)
-  build-docker-x64:
-    name: Build Docker (x64)
-    needs: [plan, build-linux-x64]
-    # Only for PRs/branches - releases use build-docker-release
-    if: needs.plan.outputs.build_docker == 'true' && needs.plan.outputs.is_release != 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download Linux binary
-        uses: actions/download-artifact@v4
-        with:
-          name: binary-x86_64-unknown-linux-musl
-          path: binaries/
-
-      - name: Prepare binary
-        run: |
-          mv binaries/unified-hifi-linux-x64 binaries/unified-hifi-linux-amd64
-          chmod +x binaries/*
-          ls -la binaries/
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: muness/unified-hifi-control
-          tags: |
-            type=ref,event=pr
-            type=ref,event=branch
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.ci
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
-  # =============================================================================
-  # RELEASE ONLY: Multi-arch Docker
-  # =============================================================================
-
-  # Note: Web assets are embedded in the binary (ADR 002)
-  build-docker-release:
-    name: Build Docker (${{ matrix.arch }})
-    needs: [plan, build-linux-x64, build-linux-arm]
-    if: needs.plan.outputs.is_release == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - platform: linux/amd64
-            target: x86_64-unknown-linux-musl
-            binary: unified-hifi-linux-x64
-            arch: amd64
-          - platform: linux/arm64
-            target: aarch64-unknown-linux-musl
-            binary: unified-hifi-linux-arm64
-            arch: arm64
-          - platform: linux/arm/v7
-            target: armv7-unknown-linux-musleabihf
-            binary: unified-hifi-linux-armv7
-            arch: armv7
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download Linux binary
-        uses: actions/download-artifact@v4
-        with:
-          name: binary-${{ matrix.target }}
-          path: dist/
-
-      - name: Prepare binary
-        run: |
-          mv dist/${{ matrix.binary }} dist/unified-hifi-control
-          chmod +x dist/unified-hifi-control
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push by digest
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.release
-          platforms: ${{ matrix.platform }}
-          outputs: type=image,name=muness/unified-hifi-control,push-by-digest=true,name-canonical=true,push=true
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-digest-${{ matrix.target }}
-          path: /tmp/digests/*
-          retention-days: 1
-
-  docker-manifest:
-    name: Create Docker Manifest
-    needs: [plan, build-docker-release]
-    if: needs.plan.outputs.is_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@v4
-        with:
-          pattern: docker-digest-*
-          path: /tmp/digests
-          merge-multiple: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            muness/unified-hifi-control
-            muness/roon-extension-knob
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
-
-      - name: Create manifest list and push
-        working-directory: /tmp/digests
-        run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'muness/unified-hifi-control@sha256:%s ' *)
-
-      - name: Create manifest for legacy image name
-        working-directory: /tmp/digests
-        run: |
-          TAGS=$(jq -cr '.tags | map(select(contains("roon-extension-knob"))) | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          if [ -n "$TAGS" ]; then
-            docker buildx imagetools create $TAGS \
-              $(printf 'muness/unified-hifi-control@sha256:%s ' *)
-          fi
-
-  # Note: Web assets are embedded in the binary (ADR 002)
   build-linux-packages:
     name: Build Linux Packages (deb/rpm)
     needs: [plan, build-linux-x64, build-linux-arm]
@@ -1830,8 +1638,6 @@ jobs:
       - build-synology
       - build-qnap-x64
       - build-qnap-arm
-      - build-docker-x64
-      - build-docker-release
       - build-linux-packages
     if: always()
     runs-on: ubuntu-latest

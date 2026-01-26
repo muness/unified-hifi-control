@@ -38,6 +38,11 @@ and HQPlayer Embedded audio processing. Use these tools when the user wants to:
 - **hifi_hqplayer_load_profile**: Switch to a different profile (restarts HQPlayer).
 - **hifi_hqplayer_set_pipeline**: Change individual settings (filter, shaper, dither, etc).
 
+### Library Search (AI DJ Phase 1)
+- **hifi_search**: Search the Roon library for tracks, albums, or artists.
+- **hifi_browse**: Navigate the Roon library hierarchy.
+- **hifi_browse_status**: Check if the browse service is connected.
+
 ### System Status
 - **hifi_status**: Get overall bridge status (Roon connection state, HQPlayer config).
 
@@ -151,6 +156,54 @@ const TOOLS = [
     description: 'Get overall bridge status (Roon connection, HQPlayer config)',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
+  // AI DJ Phase 1 - Library Search & Playback
+  {
+    name: 'hifi_search',
+    description: 'Search for tracks, albums, or artists in Library, TIDAL, or Qobuz',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query (e.g., "Hotel California", "Eagles", "Greatest Hits")' },
+        zone_id: { type: 'string', description: 'Optional zone ID for context-aware results' },
+        source: { type: 'string', description: 'Where to search: "library" (default), "tidal", or "qobuz"' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'hifi_play',
+    description: 'Search and play music - the AI DJ command. Searches and immediately plays the first matching result.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What to play (e.g., "early Michael Jackson", "Dark Side of the Moon", "jazz piano")' },
+        zone_id: { type: 'string', description: 'Zone ID to play on (get from hifi_zones)' },
+        source: { type: 'string', description: 'Where to search: "library" (default), "tidal", or "qobuz"' },
+        action: { type: 'string', description: 'What to do: "play" (default, play now), "queue" (add to queue), or "radio" (start radio)' },
+      },
+      required: ['query', 'zone_id'],
+    },
+  },
+  {
+    name: 'hifi_browse',
+    description: 'Navigate the Roon library hierarchy (artists, albums, genres, etc). Returns items at the current level. Use session_key from previous response to maintain navigation state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        item_key: { type: 'string', description: 'Key of item to browse into (from previous browse or search)' },
+        zone_id: { type: 'string', description: 'Optional zone ID for context' },
+        pop_all: { type: 'boolean', description: 'Reset to root level' },
+        input: { type: 'string', description: 'Search input for this browse level' },
+        session_key: { type: 'string', description: 'Session key from previous browse to maintain navigation state' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'hifi_browse_status',
+    description: 'Check if the Roon Browse service is connected',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
 ];
 
 // Tool handlers
@@ -237,6 +290,42 @@ async function handleTool(name, args) {
 
       case 'hifi_status': {
         const data = await apiFetch('/api/status');
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+      }
+
+      // AI DJ Phase 1 - Library Search & Playback
+      case 'hifi_search': {
+        const { query, zone_id, source } = args;
+        let url = `/roon/search?q=${encodeURIComponent(query)}`;
+        if (zone_id) url += `&zone_id=${encodeURIComponent(zone_id)}`;
+        if (source) url += `&source=${encodeURIComponent(source)}`;
+        const data = await apiFetch(url);
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+      }
+
+      case 'hifi_play': {
+        const { query, zone_id, source, action } = args;
+        const body = { query, zone_id };
+        if (source) body.source = source;
+        if (action) body.action = action;
+        const data = await apiFetch('/roon/play', { method: 'POST', body: JSON.stringify(body) });
+        return { content: [{ type: 'text', text: data.message || JSON.stringify(data, null, 2) }] };
+      }
+
+      case 'hifi_browse': {
+        const { item_key, zone_id, pop_all, input, session_key } = args;
+        const body = {};
+        if (item_key) body.item_key = item_key;
+        if (zone_id) body.zone_id = zone_id;
+        if (pop_all) body.pop_all = pop_all;
+        if (input) body.input = input;
+        if (session_key) body.session_key = session_key;
+        const data = await apiFetch('/roon/browse', { method: 'POST', body: JSON.stringify(body) });
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+      }
+
+      case 'hifi_browse_status': {
+        const data = await apiFetch('/roon/browse/status');
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
       }
 
