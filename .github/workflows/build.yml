@@ -279,6 +279,7 @@ jobs:
           if [[ "$BUILD_LINUX_ARM" == "true" ]]; then
             TRIGGER=""
             [[ "$IS_RELEASE_TRIGGER" == "true" ]] && TRIGGER="$RELEASE_TRIGGER_NAME"
+            [[ "$HAS_LABEL_ALL" == "true" ]] && TRIGGER="build:all"
             [[ "$HAS_LABEL_LINUX_ARM" == "true" ]] && TRIGGER="build:linux-arm"
             [[ "$HAS_LABEL_SYNOLOGY" == "true" ]] && TRIGGER="build:synology (implicit)"
             [[ "$HAS_LABEL_QNAP_ARM" == "true" ]] && TRIGGER="build:qnap-arm (implicit)"
