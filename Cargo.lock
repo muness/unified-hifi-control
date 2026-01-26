@@ -1483,7 +1483,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2996,7 +2996,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3216,7 +3216,7 @@ dependencies = [
 [[package]]
 name = "roon-api"
 version = "0.3.1"
-source = "git+https://github.com/open-horizon-labs/rust-roon-api.git?branch=fix%2Ffractional-volume#f9727e29c88023bca62e96983eb4ef15807f7d10"
+source = "git+https://github.com/open-horizon-labs/rust-roon-api.git?branch=fix%2Ffractional-volume#01713b0fdc5ca265a30e4a7ae53daa674903d070"
 dependencies = [
  "futures-util",
  "if-addrs 0.13.4",
@@ -3339,7 +3339,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3947,7 +3947,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4903,7 +4903,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
