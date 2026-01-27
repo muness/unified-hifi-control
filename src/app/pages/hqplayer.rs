@@ -901,6 +901,19 @@ fn ZoneLinkTable(
     let mut selected_instance =
         use_signal(|| linked_instance.clone().unwrap_or(default_instance.clone()));
 
+    // Sync selected_instance when instances prop loads (signal init may have missed it)
+    {
+        let default_inst = default_instance.clone();
+        let linked_inst = linked_instance.clone();
+        use_effect(move || {
+            let current = selected_instance();
+            // Only update if currently empty and we now have a default
+            if current.is_empty() && !default_inst.is_empty() {
+                selected_instance.set(linked_inst.clone().unwrap_or(default_inst.clone()));
+            }
+        });
+    }
+
     // Clone for onclick closure
     let first_zone_for_click = first_zone_id.clone();
 
