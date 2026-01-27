@@ -43,7 +43,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Crypto/hashing (shared - pure Rust)
-md5 = "0.7"
+md5 = "0.8"
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
