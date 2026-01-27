@@ -1442,7 +1442,7 @@ jobs:
             type=ref,event=branch
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.ci
@@ -1501,7 +1501,7 @@ jobs:
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.release
