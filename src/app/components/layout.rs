@@ -51,6 +51,11 @@ pub fn Layout(props: LayoutProps) -> Element {
     rsx! {
         // Head elements - Dioxus hoists these to the real <head>
         document::Title { "{full_title}" }
+        // Viewport meta for mobile responsive design
+        document::Meta {
+            name: "viewport",
+            content: "width=device-width, initial-scale=1"
+        }
         // DioxusLabs components theme (CSS variables for dark/light mode) - embedded
         document::Style { {DX_THEME_CSS} }
         // Tailwind CSS utilities - embedded
