@@ -884,7 +884,7 @@ fn ZoneLinkTable(
 
     // Find currently linked zone (if any)
     let linked_zone = links.first().cloned();
-    let linked_zone_id = linked_zone.as_ref().map(|l| l.zone_id.clone());
+    let _linked_zone_id = linked_zone.as_ref().map(|l| l.zone_id.clone());
     let linked_instance = linked_zone.as_ref().map(|l| l.instance.clone());
 
     // Default instance for new links (empty string if none configured)
@@ -893,12 +893,27 @@ fn ZoneLinkTable(
         .map(|i| i.name.clone())
         .unwrap_or_default();
 
-    // Selected zone signal - default to first zone or linked zone
-    let initial_zone = linked_zone_id
-        .clone()
-        .unwrap_or_else(|| zones.first().map(|z| z.zone_id.clone()).unwrap_or_default());
-    let mut selected_zone = use_signal(|| initial_zone);
-    let mut selected_instance = use_signal(|| linked_instance.unwrap_or(default_instance));
+    // First zone ID - memoized for effect tracking
+    let zones_for_memo = zones.clone();
+    let first_zone_id = use_memo(move || {
+        zones_for_memo
+            .first()
+            .map(|z| z.zone_id.clone())
+            .unwrap_or_default()
+    });
+
+    // Selected zone signal - synced when zones load
+    let mut selected_zone = use_signal(String::new);
+    let mut selected_instance =
+        use_signal(|| linked_instance.clone().unwrap_or(default_instance.clone()));
+
+    // Sync selected_zone when zones load (signal only captures initial value at mount)
+    use_effect(move || {
+        let first = first_zone_id();
+        if selected_zone().is_empty() && !first.is_empty() {
+            selected_zone.set(first);
+        }
+    });
 
     let has_multiple_instances = instances.len() > 1;
 
@@ -936,10 +951,12 @@ fn ZoneLinkTable(
                 select {
                     class: "input",
                     "aria-label": "Select zone to link",
+                    value: "{selected_zone}",
                     onchange: move |evt| selected_zone.set(evt.value()),
                     for zone in zones.iter() {
                         option {
                             value: "{zone.zone_id}",
+                            selected: zone.zone_id == selected_zone(),
                             "{zone.zone_name}"
                         }
                     }
@@ -948,15 +965,33 @@ fn ZoneLinkTable(
                     select {
                         class: "input",
                         "aria-label": "Select HQPlayer instance",
+                        value: "{selected_instance}",
                         onchange: move |evt| selected_instance.set(evt.value()),
                         for inst in instances.iter() {
-                            option { value: "{inst.name}", "{inst.name}" }
+                            option {
+                                value: "{inst.name}",
+                                selected: inst.name == selected_instance(),
+                                "{inst.name}"
+                            }
                         }
                     }
                 }
                 button {
                     class: "btn btn-primary",
-                    onclick: move |_| on_link.call((selected_zone(), selected_instance())),
+                    onclick: move |_| {
+                        // Use selected zone, or fall back to first zone if signal wasn't synced
+                        let zone_id = {
+                            let sel = selected_zone();
+                            if sel.is_empty() {
+                                first_zone_id()
+                            } else {
+                                sel
+                            }
+                        };
+                        if !zone_id.is_empty() {
+                            on_link.call((zone_id, selected_instance()));
+                        }
+                    },
                     "Link Zone"
                 }
             }

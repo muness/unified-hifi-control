@@ -399,16 +399,16 @@ fn ZoneCard(
     rsx! {
         article { class: "zone-card",
             // Main content with album art and info (same layout as zone detail)
-            div { class: "flex gap-5 items-start",
-                // Album art (96px)
+            div { class: "flex gap-3 sm:gap-5 items-start overflow-hidden",
+                // Album art (smaller on mobile, 96px on larger screens)
                 if has_image {
                     img {
                         src: "{image_url}",
                         alt: "Album art",
-                        class: "w-24 h-24 object-cover rounded-lg bg-elevated flex-shrink-0"
+                        class: "w-16 h-16 sm:w-24 sm:h-24 object-cover rounded-lg bg-elevated flex-shrink-0"
                     }
                 } else {
-                    div { class: "w-24 h-24 rounded-lg bg-elevated flex items-center justify-center text-muted text-3xl flex-shrink-0",
+                    div { class: "w-16 h-16 sm:w-24 sm:h-24 rounded-lg bg-elevated flex items-center justify-center text-muted text-2xl sm:text-3xl flex-shrink-0",
                         "♪"
                     }
                 }
@@ -445,7 +445,7 @@ fn ZoneCard(
             }
 
             // Transport controls
-            div { class: "flex items-center gap-2 mt-4",
+            div { class: "flex flex-wrap items-center gap-2 mt-4",
                 button {
                     class: "btn btn-ghost",
                     "aria-label": "Previous track",
