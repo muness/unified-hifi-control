@@ -81,7 +81,7 @@
 
   /* Zone card styling */
   .zone-card {
-    @apply p-5 rounded-lg;
+    @apply p-5 rounded-lg overflow-hidden;
     background: var(--surface-elevated);
     border: 1px solid var(--border-default);
   }
