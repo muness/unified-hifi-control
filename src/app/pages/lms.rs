@@ -280,7 +280,7 @@ pub fn Lms() -> Element {
                         p { class: "text-muted", "No players found. Make sure your Squeezebox server is configured and reachable." }
                     }
                 } else {
-                    div { class: "grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
+                    div { class: "grid gap-4 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3",
                         for player in players_list {
                             PlayerCard {
                                 player: player.clone(),
