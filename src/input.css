@@ -86,23 +86,6 @@
     border: 1px solid var(--border-default);
   }
 
-  /* Zone grid - explicit single column on mobile */
-  .zone-grid {
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: 1fr;
-  }
-  @media (min-width: 768px) {
-    .zone-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-  @media (min-width: 1024px) {
-    .zone-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
   /* Control button group */
   .controls {
     @apply flex gap-2 mt-2;
