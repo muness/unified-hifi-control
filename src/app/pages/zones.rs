@@ -283,7 +283,7 @@ pub fn Zones() -> Element {
             for (source, group_zones) in grouped_zones {
                 div { class: "mb-8",
                     h3 { class: "text-lg font-semibold mb-4 text-muted", "{source}" }
-                    div { class: "grid gap-4 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3",
+                    div { class: "grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
                         for zone in group_zones {
                             ZoneCard {
                                 key: "{zone.zone_id}",
