@@ -88,9 +88,8 @@ pub fn HqPlayer() -> Element {
     let mut hqp_loading = use_signal(|| false);
     let mut hqp_error = use_signal(|| None::<String>);
 
-    // Now playing for linked zones (with request token to prevent stale updates)
+    // Now playing for linked zones
     let mut now_playing_map = use_signal(std::collections::HashMap::<String, NowPlaying>::new);
-    let mut now_playing_req = use_signal(|| 0u64);
 
     // Load config resource
     let config =
@@ -165,11 +164,9 @@ pub fn HqPlayer() -> Element {
             .unwrap_or_default()
     });
 
-    // Fetch now playing for linked zones (with stale request guard)
+    // Fetch now playing for linked zones
     use_effect(move || {
         let links = links_signal();
-        let req_id = now_playing_req() + 1;
-        now_playing_req.set(req_id);
         if links.is_empty() {
             now_playing_map.set(std::collections::HashMap::new());
             return;
@@ -185,10 +182,7 @@ pub fn HqPlayer() -> Element {
                     np_map.insert(link.zone_id, np);
                 }
             }
-            // Only update if this is still the latest request
-            if now_playing_req() == req_id {
-                now_playing_map.set(np_map);
-            }
+            now_playing_map.set(np_map);
         });
     });
 
@@ -203,30 +197,7 @@ pub fn HqPlayer() -> Element {
         if sse.should_refresh_zones() {
             zones.restart();
             zone_links.restart();
-            // Refresh now playing for linked zones (with stale request guard)
-            let links = links_signal();
-            let req_id = now_playing_req() + 1;
-            now_playing_req.set(req_id);
-            if !links.is_empty() {
-                spawn(async move {
-                    let mut np_map = std::collections::HashMap::new();
-                    for link in links {
-                        let url = format!(
-                            "/now_playing?zone_id={}",
-                            urlencoding::encode(&link.zone_id)
-                        );
-                        if let Ok(np) = api::fetch_json::<NowPlaying>(&url).await {
-                            np_map.insert(link.zone_id, np);
-                        }
-                    }
-                    // Only update if this is still the latest request
-                    if now_playing_req() == req_id {
-                        now_playing_map.set(np_map);
-                    }
-                });
-            } else {
-                now_playing_map.set(std::collections::HashMap::new());
-            }
+            // Note: now_playing refresh happens automatically via links_signal effect
         }
     });
 
