@@ -881,7 +881,7 @@ fn HqpSelect(
     }
 }
 
-/// Zone link table component
+/// Zone link selector component - simplified single dropdown
 #[component]
 fn ZoneLinkTable(
     zones: Vec<Zone>,
@@ -896,161 +896,83 @@ fn ZoneLinkTable(
         };
     }
 
-    let link_map: std::collections::HashMap<_, _> = links
-        .iter()
-        .map(|l| (l.zone_id.clone(), l.instance.clone()))
-        .collect();
+    // Find currently linked zone (if any)
+    let linked_zone = links.first().cloned();
+    let linked_zone_id = linked_zone.as_ref().map(|l| l.zone_id.clone());
+    let linked_instance = linked_zone.as_ref().map(|l| l.instance.clone());
 
-    // Default instance name for new links
+    // Default instance for new links
     let default_instance = if instances.is_empty() {
         "default".to_string()
     } else {
         instances[0].name.clone()
     };
 
-    rsx! {
-        // Mobile: cards layout
-        div { class: "sm:hidden space-y-3",
-            for zone in zones.iter() {
-                ZoneLinkMobileCard {
-                    zone: zone.clone(),
-                    linked: link_map.get(&zone.zone_id).cloned(),
-                    instances: instances.clone(),
-                    default_instance: default_instance.clone(),
-                    on_link: on_link,
-                    on_unlink: on_unlink,
-                }
-            }
-        }
+    // Selected zone signal - default to first zone or linked zone
+    let initial_zone = linked_zone_id
+        .clone()
+        .unwrap_or_else(|| zones.first().map(|z| z.zone_id.clone()).unwrap_or_default());
+    let mut selected_zone = use_signal(|| initial_zone);
+    let mut selected_instance = use_signal(|| linked_instance.unwrap_or(default_instance));
 
-        // Desktop: table layout
-        table { class: "hidden sm:table w-full",
-            thead {
-                tr { class: "border-b border-default",
-                    th { class: "text-left py-2 px-3", "Zone" }
-                    th { class: "text-left py-2 px-3", "Instance" }
-                    th { class: "text-left py-2 px-3", "Action" }
-                }
-            }
-            tbody {
-                for zone in zones.iter() {
-                    ZoneLinkRow {
-                        zone: zone.clone(),
-                        linked: link_map.get(&zone.zone_id).cloned(),
-                        instances: instances.clone(),
-                        default_instance: default_instance.clone(),
-                        on_link: on_link,
-                        on_unlink: on_unlink,
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Mobile card for zone linking
-#[component]
-fn ZoneLinkMobileCard(
-    zone: Zone,
-    linked: Option<String>,
-    instances: Vec<HqpInstance>,
-    default_instance: String,
-    on_link: EventHandler<(String, String)>,
-    on_unlink: EventHandler<String>,
-) -> Element {
-    let mut selected_instance = use_signal(|| default_instance.clone());
-    let zone_id = zone.zone_id.clone();
-    let zone_id_link = zone_id.clone();
-    let zone_id_unlink = zone_id.clone();
+    let has_multiple_instances = instances.len() > 1;
 
     rsx! {
-        div { class: "p-3 bg-elevated rounded-lg",
-            div { class: "flex items-center justify-between",
-                div { class: "min-w-0 flex-1",
-                    p { class: "font-medium truncate", "{zone.zone_name}" }
-                    if let Some(ref inst) = linked {
-                        p { class: "text-sm text-muted", "→ {inst}" }
-                    }
-                }
-                if linked.is_some() {
-                    button {
-                        class: "btn btn-outline btn-sm ml-2",
-                        onclick: move |_| on_unlink.call(zone_id_unlink.clone()),
-                        "Unlink"
-                    }
-                } else {
-                    div { class: "flex items-center gap-2 ml-2",
-                        select {
-                            class: "input py-1 text-sm",
-                            onchange: move |evt| selected_instance.set(evt.value()),
-                            if instances.is_empty() {
-                                option { value: "default", "default" }
-                            } else {
-                                for inst in instances.iter() {
-                                    option { value: "{inst.name}", "{inst.name}" }
-                                }
+        if let Some(ref link) = linked_zone {
+            // Currently linked - show linked zone with unlink option
+            {
+                let zone_name = zones
+                    .iter()
+                    .find(|z| z.zone_id == link.zone_id)
+                    .map(|z| z.zone_name.clone())
+                    .unwrap_or_else(|| link.zone_id.clone());
+                let zone_id = link.zone_id.clone();
+                rsx! {
+                    div { class: "flex items-center gap-4 flex-wrap",
+                        div { class: "flex items-center gap-2",
+                            span { class: "text-muted", "Linked to" }
+                            span { class: "font-semibold", "{zone_name}" }
+                            if has_multiple_instances {
+                                span { class: "text-muted", "on" }
+                                span { class: "font-semibold", "{link.instance}" }
                             }
                         }
                         button {
-                            class: "btn btn-primary btn-sm",
-                            onclick: move |_| on_link.call((zone_id_link.clone(), selected_instance())),
-                            "Link"
+                            class: "btn btn-outline btn-sm",
+                            onclick: move |_| on_unlink.call(zone_id.clone()),
+                            "Unlink"
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-/// Desktop table row for zone linking
-#[component]
-fn ZoneLinkRow(
-    zone: Zone,
-    linked: Option<String>,
-    instances: Vec<HqpInstance>,
-    default_instance: String,
-    on_link: EventHandler<(String, String)>,
-    on_unlink: EventHandler<String>,
-) -> Element {
-    let mut selected_instance = use_signal(|| default_instance.clone());
-    let zone_id = zone.zone_id.clone();
-    let zone_id_link = zone_id.clone();
-    let zone_id_unlink = zone_id.clone();
-
-    rsx! {
-        tr { class: "border-b border-default",
-            td { class: "py-2 px-3", "{zone.zone_name}" }
-            td { class: "py-2 px-3",
-                if let Some(ref inst) = linked {
-                    span { class: "font-semibold", "{inst}" }
-                } else {
+        } else {
+            // Not linked - show zone dropdown and link button
+            div { class: "flex items-center gap-3 flex-wrap",
+                select {
+                    class: "input",
+                    "aria-label": "Select zone to link",
+                    onchange: move |evt| selected_zone.set(evt.value()),
+                    for zone in zones.iter() {
+                        option {
+                            value: "{zone.zone_id}",
+                            "{zone.zone_name}"
+                        }
+                    }
+                }
+                if has_multiple_instances {
                     select {
                         class: "input",
+                        "aria-label": "Select HQPlayer instance",
                         onchange: move |evt| selected_instance.set(evt.value()),
-                        if instances.is_empty() {
-                            option { value: "default", "default" }
-                        } else {
-                            for inst in instances.iter() {
-                                option { value: "{inst.name}", "{inst.name}" }
-                            }
+                        for inst in instances.iter() {
+                            option { value: "{inst.name}", "{inst.name}" }
                         }
                     }
                 }
-            }
-            td { class: "py-2 px-3",
-                if linked.is_some() {
-                    button {
-                        class: "btn btn-outline btn-sm",
-                        onclick: move |_| on_unlink.call(zone_id_unlink.clone()),
-                        "Unlink"
-                    }
-                } else {
-                    button {
-                        class: "btn btn-primary btn-sm",
-                        onclick: move |_| on_link.call((zone_id_link.clone(), selected_instance())),
-                        "Link"
-                    }
+                button {
+                    class: "btn btn-primary",
+                    onclick: move |_| on_link.call((selected_zone(), selected_instance())),
+                    "Link Zone"
                 }
             }
         }
