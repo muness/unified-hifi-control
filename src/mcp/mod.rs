@@ -179,7 +179,7 @@ impl HifiMcpServer {
     }
 
     /// List all available playback zones
-    #[tool(description = "List all available Roon zones for playback control")]
+    #[tool(description = "List all available playback zones (Roon, LMS, OpenHome, UPnP)")]
     async fn hifi_zones(&self) -> Result<CallToolResult, McpError> {
         let zones = self.state.aggregator.get_zones().await;
         let mcp_zones: Vec<McpZone> = zones
