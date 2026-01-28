@@ -265,6 +265,9 @@ mod server {
         // Clone state for shutdown diagnostics
         let state_for_shutdown = state.clone();
 
+        // Clone state for MCP server (runs on separate port)
+        let mcp_state = state.clone();
+
         // Build API routes
         let router = Router::new()
             // Health check
@@ -437,8 +440,6 @@ mod server {
                     ))
                 }),
             )
-            // MCP server for AI assistant integration
-            .nest_service("/mcp", mcp::create_mcp_service(state.clone()))
             // Middleware
             .layer(CorsLayer::permissive())
             .layer(CompressionLayer::new())
@@ -506,6 +507,14 @@ mod server {
             tracing::info!("Firmware auto-update disabled");
             None
         };
+
+        // Start MCP server on separate port (supports both Streamable HTTP and legacy SSE)
+        let mcp_port = 8089u16;
+        tokio::spawn(async move {
+            if let Err(e) = mcp::start_mcp_server(mcp_state, mcp_port).await {
+                tracing::error!("MCP server error: {}", e);
+            }
+        });
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
 

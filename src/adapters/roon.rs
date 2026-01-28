@@ -401,6 +401,9 @@ impl RoonAdapter {
     /// Naively clamping to 0-100 would send -12 dB → 0 (MAX VOLUME), risking
     /// equipment damage. See tests/volume_safety.rs for regression protection.
     pub async fn change_volume(&self, output_id: &str, value: f32, relative: bool) -> Result<()> {
+        // Strip "roon:" prefix if present (MCP/aggregator uses prefixed IDs)
+        let output_id = output_id.strip_prefix("roon:").unwrap_or(output_id);
+
         // Clone transport and gather volume info while holding lock, then release before await
         let (transport, mode, final_value) = {
             let state = self.state.read().await;
@@ -453,6 +456,9 @@ impl RoonAdapter {
 
     /// Mute/unmute
     pub async fn mute(&self, output_id: &str, mute: bool) -> Result<()> {
+        // Strip "roon:" prefix if present (MCP/aggregator uses prefixed IDs)
+        let output_id = output_id.strip_prefix("roon:").unwrap_or(output_id);
+
         // Clone transport while holding lock, then release before await
         let transport = {
             let state = self.state.read().await;
