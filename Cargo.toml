@@ -19,6 +19,8 @@ server = [
     "dep:roon-api",
     "dep:reqwest",
     "dep:rumqttc",
+    "dep:rmcp",
+    "dep:schemars",
     "dep:tracing-subscriber",
     "dep:config",
     "dep:image",
@@ -96,6 +98,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "coo
 
 # MQTT (server only)
 rumqttc = { version = "0.24", optional = true }
+
+# MCP (Model Context Protocol) for AI assistant integration (server only)
+rmcp = { version = "0.13", features = ["server", "transport-streamable-http-server", "macros"], optional = true }
+schemars = { version = "0.8", optional = true }
 
 # Logging subscriber (server only - needs tokio)
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }

@@ -6,7 +6,8 @@
 #[cfg(feature = "server")]
 mod server {
     use unified_hifi_control::{
-        adapters, aggregator, api, app, bus, config, coordinator, embedded, firmware, knobs, mdns,
+        adapters, aggregator, api, app, bus, config, coordinator, embedded, firmware, knobs, mcp,
+        mdns,
     };
 
     // Import Startable trait for adapter lifecycle methods
@@ -447,6 +448,8 @@ mod server {
                     ))
                 }),
             )
+            // MCP (Model Context Protocol) for AI assistant integration
+            .nest_service("/mcp", mcp::create_mcp_service(state.clone()))
             // Middleware
             .layer(CorsLayer::permissive())
             .layer(CompressionLayer::new())
