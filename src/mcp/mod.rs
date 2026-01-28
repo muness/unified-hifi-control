@@ -179,7 +179,10 @@ impl HifiMcpServer {
     }
 
     /// List all available playback zones
-    #[tool(description = "List all available playback zones (Roon, LMS, OpenHome, UPnP)")]
+    #[tool(
+        description = "List all available playback zones (Roon, LMS, OpenHome, UPnP)",
+        annotations(read_only_hint = true)
+    )]
     async fn hifi_zones(&self) -> Result<CallToolResult, McpError> {
         let zones = self.state.aggregator.get_zones().await;
         let mcp_zones: Vec<McpZone> = zones
@@ -199,7 +202,8 @@ impl HifiMcpServer {
 
     /// Get current playback state for a zone
     #[tool(
-        description = "Get current playback state for a zone (track, artist, album, play state, volume)"
+        description = "Get current playback state for a zone (track, artist, album, play state, volume)",
+        annotations(read_only_hint = true)
     )]
     async fn hifi_now_playing(
         &self,
@@ -317,7 +321,10 @@ impl HifiMcpServer {
     }
 
     /// Search for tracks, albums, or artists
-    #[tool(description = "Search for tracks, albums, or artists in Library, TIDAL, or Qobuz")]
+    #[tool(
+        description = "Search for tracks, albums, or artists in Library, TIDAL, or Qobuz",
+        annotations(read_only_hint = true)
+    )]
     async fn hifi_search(
         &self,
         Parameters(args): Parameters<SearchArgs>,
@@ -417,7 +424,8 @@ impl HifiMcpServer {
 
     /// Navigate the Roon library hierarchy
     #[tool(
-        description = "Navigate the Roon library hierarchy (artists, albums, genres, etc). Returns items at the current level. Use session_key from previous response to maintain navigation state."
+        description = "Navigate the Roon library hierarchy (artists, albums, genres, etc). Returns items at the current level. Use session_key from previous response to maintain navigation state.",
+        annotations(read_only_hint = true)
     )]
     async fn hifi_browse(
         &self,
@@ -490,7 +498,10 @@ impl HifiMcpServer {
     }
 
     /// Check if the Roon Browse service is connected
-    #[tool(description = "Check if the Roon Browse service is connected")]
+    #[tool(
+        description = "Check if the Roon Browse service is connected",
+        annotations(read_only_hint = true)
+    )]
     async fn hifi_browse_status(&self) -> Result<CallToolResult, McpError> {
         let connected = self.state.roon.is_browse_connected().await;
         let json = serde_json::json!({
@@ -503,7 +514,10 @@ impl HifiMcpServer {
     }
 
     /// Get overall bridge status
-    #[tool(description = "Get overall bridge status (Roon connection, HQPlayer config)")]
+    #[tool(
+        description = "Get overall bridge status (Roon connection, HQPlayer config)",
+        annotations(read_only_hint = true)
+    )]
     async fn hifi_status(&self) -> Result<CallToolResult, McpError> {
         let roon_status = self.state.roon.get_status().await;
         let hqp_status = self.state.hqplayer.get_status().await;
@@ -525,7 +539,10 @@ impl HifiMcpServer {
     }
 
     /// Get HQPlayer Embedded status and current pipeline settings
-    #[tool(description = "Get HQPlayer Embedded status and current pipeline settings")]
+    #[tool(
+        description = "Get HQPlayer Embedded status and current pipeline settings",
+        annotations(read_only_hint = true)
+    )]
     async fn hifi_hqplayer_status(&self) -> Result<CallToolResult, McpError> {
         let status = self.state.hqplayer.get_status().await;
         let pipeline = self.state.hqplayer.get_pipeline_status().await.ok();
@@ -546,7 +563,10 @@ impl HifiMcpServer {
     }
 
     /// List available HQPlayer Embedded configurations
-    #[tool(description = "List available HQPlayer Embedded configurations")]
+    #[tool(
+        description = "List available HQPlayer Embedded configurations",
+        annotations(read_only_hint = true)
+    )]
     async fn hifi_hqplayer_profiles(&self) -> Result<CallToolResult, McpError> {
         let profiles = self.state.hqplayer.get_cached_profiles().await;
         let profile_names: Vec<String> = profiles.into_iter().map(|p| p.title).collect();
@@ -556,7 +576,10 @@ impl HifiMcpServer {
     }
 
     /// Load an HQPlayer Embedded configuration
-    #[tool(description = "Load an HQPlayer Embedded configuration (will restart HQPlayer)")]
+    #[tool(
+        description = "Load an HQPlayer Embedded configuration (will restart HQPlayer)",
+        annotations(destructive_hint = true)
+    )]
     async fn hifi_hqplayer_load_profile(
         &self,
         Parameters(args): Parameters<HqpLoadProfileArgs>,
