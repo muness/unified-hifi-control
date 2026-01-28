@@ -237,7 +237,9 @@ impl HifiMcpServer {
     ) -> Result<CallToolResult, McpError> {
         // Map MCP actions to backend actions
         let backend_action = match args.action.as_str() {
-            "play" | "pause" | "playpause" => "play_pause",
+            "play" => "play",
+            "pause" => "pause",
+            "playpause" => "play_pause",
             "next" => "next",
             "previous" | "prev" => "previous",
             "volume_set" => {
@@ -577,9 +579,13 @@ impl HifiMcpServer {
         &self,
         Parameters(args): Parameters<HqpSetPipelineArgs>,
     ) -> Result<CallToolResult, McpError> {
+        // Parse as i64 to allow negative values (e.g., -1 for PCM mode), then cast to u32
+        // This matches the HTTP /hqp/pipeline handler behavior
+        let parse_value = |v: &str| v.parse::<i64>().ok().map(|n| n as u32);
+
         let result = match args.setting.as_str() {
             "filter1x" | "filter_1x" => {
-                if let Ok(v) = args.value.parse::<u32>() {
+                if let Some(v) = parse_value(&args.value) {
                     self.state.hqplayer.set_filter_1x(v).await
                 } else {
                     return Ok(CallToolResult::error(vec![Content::text(
@@ -588,7 +594,7 @@ impl HifiMcpServer {
                 }
             }
             "filterNx" | "filter_nx" | "filternx" => {
-                if let Ok(v) = args.value.parse::<u32>() {
+                if let Some(v) = parse_value(&args.value) {
                     self.state.hqplayer.set_filter_nx(v).await
                 } else {
                     return Ok(CallToolResult::error(vec![Content::text(
@@ -597,7 +603,7 @@ impl HifiMcpServer {
                 }
             }
             "shaper" => {
-                if let Ok(v) = args.value.parse::<u32>() {
+                if let Some(v) = parse_value(&args.value) {
                     self.state.hqplayer.set_shaper(v).await
                 } else {
                     return Ok(CallToolResult::error(vec![Content::text(
@@ -606,7 +612,7 @@ impl HifiMcpServer {
                 }
             }
             "rate" | "samplerate" => {
-                if let Ok(v) = args.value.parse::<u32>() {
+                if let Some(v) = parse_value(&args.value) {
                     self.state.hqplayer.set_rate(v).await
                 } else {
                     return Ok(CallToolResult::error(vec![Content::text(
@@ -615,7 +621,7 @@ impl HifiMcpServer {
                 }
             }
             "mode" => {
-                if let Ok(v) = args.value.parse::<u32>() {
+                if let Some(v) = parse_value(&args.value) {
                     self.state.hqplayer.set_mode(v).await
                 } else {
                     return Ok(CallToolResult::error(vec![Content::text(
