@@ -6,7 +6,8 @@
 #[cfg(feature = "server")]
 mod server {
     use unified_hifi_control::{
-        adapters, aggregator, api, app, bus, config, coordinator, embedded, firmware, knobs, mdns,
+        adapters, aggregator, api, app, bus, config, coordinator, embedded, firmware, knobs, mcp,
+        mdns,
     };
 
     // Import Startable trait for adapter lifecycle methods
@@ -275,6 +276,12 @@ mod server {
             .route("/roon/control", post(api::roon_control_handler))
             .route("/roon/volume", post(api::roon_volume_handler))
             .route("/roon/image", get(api::roon_image_handler))
+            // Roon Browse routes (AI DJ Phase 1)
+            .route("/roon/search", get(api::roon_search_handler))
+            .route("/roon/play", post(api::roon_play_handler))
+            .route("/roon/play_item", post(api::roon_play_item_handler))
+            .route("/roon/browse", post(api::roon_browse_handler))
+            .route("/roon/browse/status", get(api::roon_browse_status_handler))
             // HQPlayer routes
             .route("/hqplayer/status", get(api::hqp_status_handler))
             .route("/hqplayer/pipeline", get(api::hqp_pipeline_handler))
@@ -430,6 +437,8 @@ mod server {
                     ))
                 }),
             )
+            // MCP server for AI assistant integration
+            .nest_service("/mcp", mcp::create_mcp_service(state.clone()))
             // Middleware
             .layer(CorsLayer::permissive())
             .layer(CompressionLayer::new())
