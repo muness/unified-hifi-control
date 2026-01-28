@@ -139,7 +139,7 @@ pub struct McpBrowseResult {
 /// Arguments for hifi_hqplayer_set_pipeline
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct HqpSetPipelineArgs {
-    /// Setting to change: mode, samplerate, filter1x, filterNx, shaper
+    /// Setting to change: mode, samplerate, filter1x, filterNx, shaper, dither
     pub setting: String,
     /// New value for the setting
     pub value: String,
@@ -575,7 +575,7 @@ impl HifiMcpServer {
 
     /// Change an HQPlayer pipeline setting
     #[tool(
-        description = "Change an HQPlayer pipeline setting (mode, samplerate, filter1x, filterNx, shaper)"
+        description = "Change an HQPlayer pipeline setting (mode, samplerate, filter1x, filterNx, shaper, dither)"
     )]
     async fn hifi_hqplayer_set_pipeline(
         &self,
@@ -604,12 +604,13 @@ impl HifiMcpServer {
                     )]));
                 }
             }
-            "shaper" => {
+            "shaper" | "dither" => {
+                // shaper (DSD) and dither (PCM) use the same HQPlayer API
                 if let Some(v) = parse_value(&args.value) {
                     self.state.hqplayer.set_shaper(v).await
                 } else {
                     return Ok(CallToolResult::error(vec![Content::text(
-                        "Invalid shaper value (expected integer)",
+                        "Invalid shaper/dither value (expected integer)",
                     )]));
                 }
             }
@@ -633,7 +634,7 @@ impl HifiMcpServer {
             }
             _ => {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
-                    "Unknown setting: {}. Valid settings: mode, samplerate, filter1x, filterNx, shaper",
+                    "Unknown setting: {}. Valid settings: mode, samplerate, filter1x, filterNx, shaper, dither",
                     args.setting
                 ))]));
             }
