@@ -13,6 +13,7 @@
 # multi-line closures that the route extractor doesn't detect, and they may change
 # with build configuration.
 
+DELETE /mcp
 GET /admin
 GET /api/settings
 GET /assets/{*path}
@@ -43,6 +44,7 @@ GET /lms/player/{player_id}
 GET /lms/players
 GET /lms/status
 GET /manifest-s3.json
+GET /mcp
 GET /now_playing
 GET /now_playing/image
 GET /openhome/status
@@ -75,6 +77,7 @@ POST /knob/control
 POST /lms/configure
 POST /lms/control
 POST /lms/volume
+POST /mcp
 POST /openhome/control
 POST /roon/browse
 POST /roon/control
