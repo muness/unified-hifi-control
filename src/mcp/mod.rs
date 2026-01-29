@@ -201,7 +201,6 @@ struct McpNowPlaying {
 struct McpSearchResult {
     title: String,
     subtitle: Option<String>,
-    item_key: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -442,7 +441,6 @@ impl ServerHandler for HifiMcpHandler {
                             .map(|item| McpSearchResult {
                                 title: item.title,
                                 subtitle: item.subtitle,
-                                item_key: item.item_key,
                             })
                             .collect();
                         Ok(Self::json_result(&mcp_results))
