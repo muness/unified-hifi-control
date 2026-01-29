@@ -105,6 +105,12 @@ fn is_category(item: &BrowseItem) -> bool {
     CATEGORY_NAMES.contains(&item.title.as_str())
 }
 
+/// Strip "roon:" prefix from zone/output IDs.
+/// MCP and aggregator use prefixed IDs (e.g., "roon:zone_123"), but Roon API expects bare IDs.
+fn strip_roon_prefix(id: &str) -> &str {
+    id.strip_prefix("roon:").unwrap_or(id)
+}
+
 /// Pending image request - stores the oneshot sender to deliver the result
 type ImageRequest = oneshot::Sender<Option<ImageData>>;
 
@@ -371,8 +377,7 @@ impl RoonAdapter {
 
     /// Control playback
     pub async fn control(&self, zone_id: &str, action: &str) -> Result<()> {
-        // Strip "roon:" prefix if present (MCP/aggregator uses prefixed IDs)
-        let zone_id = zone_id.strip_prefix("roon:").unwrap_or(zone_id);
+        let zone_id = strip_roon_prefix(zone_id);
 
         // Clone transport while holding lock, then release before await
         let transport = {
@@ -404,8 +409,7 @@ impl RoonAdapter {
     /// Naively clamping to 0-100 would send -12 dB → 0 (MAX VOLUME), risking
     /// equipment damage. See tests/volume_safety.rs for regression protection.
     pub async fn change_volume(&self, output_id: &str, value: f32, relative: bool) -> Result<()> {
-        // Strip "roon:" prefix if present (MCP/aggregator uses prefixed IDs)
-        let output_id = output_id.strip_prefix("roon:").unwrap_or(output_id);
+        let output_id = strip_roon_prefix(output_id);
 
         // Clone transport and gather volume info while holding lock, then release before await
         let (transport, mode, final_value) = {
@@ -459,8 +463,7 @@ impl RoonAdapter {
 
     /// Mute/unmute
     pub async fn mute(&self, output_id: &str, mute: bool) -> Result<()> {
-        // Strip "roon:" prefix if present (MCP/aggregator uses prefixed IDs)
-        let output_id = output_id.strip_prefix("roon:").unwrap_or(output_id);
+        let output_id = strip_roon_prefix(output_id);
 
         // Clone transport while holding lock, then release before await
         let transport = {
@@ -551,11 +554,8 @@ impl RoonAdapter {
 
     /// Browse the Roon library hierarchy
     pub async fn browse(&self, mut opts: BrowseOpts) -> Result<BrowseResult> {
-        // Strip "roon:" prefix from zone IDs so callers can pass API-returned IDs directly
         if let Some(zone) = opts.zone_or_output_id.as_deref() {
-            if let Some(stripped) = zone.strip_prefix("roon:") {
-                opts.zone_or_output_id = Some(stripped.to_string());
-            }
+            opts.zone_or_output_id = Some(strip_roon_prefix(zone).to_string());
         }
         let (tx, rx) = oneshot::channel();
         let session_key = opts.multi_session_key.clone();
@@ -759,7 +759,7 @@ impl RoonAdapter {
             SearchSource::Qobuz => "Qobuz",
         };
 
-        let bare_zone_id = zone_id.strip_prefix("roon:").unwrap_or(zone_id);
+        let bare_zone_id = strip_roon_prefix(zone_id);
 
         // Navigate to root
         self.browse(BrowseOpts {
@@ -1074,7 +1074,7 @@ impl RoonAdapter {
                 .as_nanos()
         );
 
-        let bare_zone_id = zone_id.strip_prefix("roon:").unwrap_or(zone_id);
+        let bare_zone_id = strip_roon_prefix(zone_id);
 
         self.browse(BrowseOpts {
             multi_session_key: Some(session_key.clone()),
@@ -1272,8 +1272,7 @@ impl AdapterLogic for RoonAdapter {
         zone_id: &str,
         command: AdapterCommand,
     ) -> Result<AdapterCommandResponse> {
-        // Strip "roon:" prefix if present (bus/aggregator uses prefixed IDs)
-        let zone_id = zone_id.strip_prefix("roon:").unwrap_or(zone_id);
+        let zone_id = strip_roon_prefix(zone_id);
 
         let result = match command {
             AdapterCommand::Play => self.control(zone_id, "play").await,
