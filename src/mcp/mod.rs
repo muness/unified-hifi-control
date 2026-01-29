@@ -3,7 +3,7 @@
 //! Provides HTTP endpoints for MCP clients with both Streamable HTTP and SSE transports.
 //! Routes are integrated into the main Axum app on port 8088 at /mcp endpoint.
 
-use crate::api::AppState;
+use crate::api::{load_app_settings, AppState};
 use async_trait::async_trait;
 use axum::http::{HeaderMap, Method, Uri};
 use axum::{body::Body, extract::Extension, response::IntoResponse};
@@ -345,8 +345,9 @@ impl ServerHandler for HifiMcpHandler {
     ) -> Result<ListToolsResult, RpcError> {
         let mut tools = HifiTools::tools();
 
-        // Filter out HQPlayer tools if not configured
-        if !self.state.hqplayer.is_configured().await {
+        // Filter out HQPlayer tools if adapter is disabled in settings
+        let settings = load_app_settings();
+        if !settings.adapters.hqplayer {
             tools.retain(|t| !t.name.starts_with("hifi_hqplayer"));
         }
 
