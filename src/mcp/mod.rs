@@ -22,6 +22,9 @@ use rust_mcp_sdk::{
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 
+/// MCP session header name
+const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";
+
 // ============================================================================
 // Tool Definitions
 // ============================================================================
@@ -778,6 +781,12 @@ pub async fn handle_mcp_post(
     Extension(ext): Extension<McpExtState>,
     payload: String,
 ) -> impl IntoResponse {
+    // Check for stale session and auto-recover
+    let headers = match auto_recover_session(&headers, &uri, &ext, &payload).await {
+        Some(new_headers) => new_headers,
+        None => headers,
+    };
+
     let request = McpHttpHandler::create_request(Method::POST, uri, headers, Some(&payload));
     match ext
         .http_handler
@@ -795,6 +804,67 @@ pub async fn handle_mcp_post(
             .body(Body::from(format!("MCP error: {}", e)))
             .unwrap(),
     }
+}
+
+/// Check if client has a stale session and auto-initialize a new one.
+/// Returns new headers with fresh session ID, or None if no recovery needed.
+async fn auto_recover_session(
+    headers: &HeaderMap,
+    uri: &Uri,
+    ext: &McpExtState,
+    _payload: &str,
+) -> Option<HeaderMap> {
+    // Get session ID from header
+    let session_id = headers
+        .get(MCP_SESSION_ID_HEADER)
+        .and_then(|v| v.to_str().ok())?;
+
+    // Check if session exists
+    if ext
+        .mcp_state
+        .session_store
+        .has(&session_id.to_string())
+        .await
+    {
+        return None; // Session is valid, no recovery needed
+    }
+
+    tracing::info!(
+        "MCP session '{}' not found, auto-initializing new session",
+        session_id
+    );
+
+    // Create initialize request to get a new session
+    let init_payload = r#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"auto-recovery","version":"1.0"}}}"#;
+
+    // Create headers without the stale session ID (so SDK creates new session)
+    let mut init_headers = headers.clone();
+    init_headers.remove(MCP_SESSION_ID_HEADER);
+
+    let init_request =
+        McpHttpHandler::create_request(Method::POST, uri.clone(), init_headers, Some(init_payload));
+
+    // Process initialize request
+    let init_response = ext
+        .http_handler
+        .handle_streamable_http(init_request, ext.mcp_state.clone())
+        .await
+        .ok()?;
+
+    // Extract new session ID from response headers
+    let new_session_id = init_response
+        .headers()
+        .get(MCP_SESSION_ID_HEADER)
+        .and_then(|v| v.to_str().ok())?;
+
+    tracing::info!("Auto-initialized new MCP session: {}", new_session_id);
+
+    // Create new headers with the fresh session ID
+    let mut new_headers = headers.clone();
+    new_headers.remove(MCP_SESSION_ID_HEADER);
+    new_headers.insert(MCP_SESSION_ID_HEADER, new_session_id.parse().ok()?);
+
+    Some(new_headers)
 }
 
 pub async fn handle_mcp_delete(
