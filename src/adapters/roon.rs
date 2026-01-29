@@ -554,11 +554,16 @@ impl RoonAdapter {
 
     /// Browse the Roon library hierarchy
     pub async fn browse(&self, mut opts: BrowseOpts) -> Result<BrowseResult> {
+        // Require session key to avoid concurrent request collisions
+        let session_key = opts
+            .multi_session_key
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("multi_session_key is required for browse requests"))?;
+
         if let Some(zone) = opts.zone_or_output_id.as_deref() {
             opts.zone_or_output_id = Some(strip_roon_prefix(zone).to_string());
         }
         let (tx, rx) = oneshot::channel();
-        let session_key = opts.multi_session_key.clone();
 
         let browse = {
             let state = self.state.read().await;
@@ -572,7 +577,9 @@ impl RoonAdapter {
         let req_id = match req_id {
             Some(id) => {
                 let mut state = self.state.write().await;
-                state.pending_browses.insert(id, (session_key.clone(), tx));
+                state
+                    .pending_browses
+                    .insert(id, (Some(session_key.clone()), tx));
                 id
             }
             None => return Err(anyhow::anyhow!("Failed to initiate browse request")),
@@ -596,8 +603,13 @@ impl RoonAdapter {
 
     /// Load items from the current browse position (for pagination)
     pub async fn load(&self, opts: LoadOpts) -> Result<LoadResult> {
+        // Require session key to avoid concurrent request collisions
+        let session_key = opts
+            .multi_session_key
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("multi_session_key is required for load requests"))?;
+
         let (tx, rx) = oneshot::channel();
-        let session_key = opts.multi_session_key.clone();
 
         let browse = {
             let state = self.state.read().await;
@@ -611,7 +623,9 @@ impl RoonAdapter {
         let req_id = match req_id {
             Some(id) => {
                 let mut state = self.state.write().await;
-                state.pending_loads.insert(id, (session_key.clone(), tx));
+                state
+                    .pending_loads
+                    .insert(id, (Some(session_key.clone()), tx));
                 id
             }
             None => return Err(anyhow::anyhow!("Failed to initiate load request")),
