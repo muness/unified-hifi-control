@@ -408,29 +408,45 @@ impl RoonAdapter {
     /// volume range. dB-based zones (like HQPlayer) use ranges like -64 to 0.
     /// Naively clamping to 0-100 would send -12 dB → 0 (MAX VOLUME), risking
     /// equipment damage. See tests/volume_safety.rs for regression protection.
-    pub async fn change_volume(&self, output_id: &str, value: f32, relative: bool) -> Result<()> {
-        let output_id = strip_roon_prefix(output_id);
+    pub async fn change_volume(&self, zone_id: &str, value: f32, relative: bool) -> Result<()> {
+        let zone_id = strip_roon_prefix(zone_id);
 
         // Clone transport and gather volume info while holding lock, then release before await
-        let (transport, mode, final_value) = {
+        let (transport, output_id, mode, final_value) = {
             let state = self.state.read().await;
             let transport = state
                 .transport
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("Not connected to Roon"))?;
 
+            // Look up zone and get first output
+            let zone = state
+                .zones
+                .get(zone_id)
+                .ok_or_else(|| anyhow::anyhow!("Zone not found: {}", zone_id))?;
+            let output = zone
+                .outputs
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("Zone has no outputs"))?;
+            let output_id = output.output_id.clone();
+
             if relative {
                 // Relative volume changes - clamp step size to prevent wild jumps
                 let clamped_step = clamp(value, -MAX_RELATIVE_STEP, MAX_RELATIVE_STEP);
-                (transport, volume::ChangeMode::Relative, clamped_step)
+                (
+                    transport,
+                    output_id,
+                    volume::ChangeMode::Relative,
+                    clamped_step,
+                )
             } else {
                 // Absolute volume - MUST use output's actual range
-                let output = self.find_output(&state, output_id);
-                let (min, max) = get_volume_range(output.as_ref());
+                let (min, max) = get_volume_range(Some(output));
                 let clamped_value = clamp(value, min, max);
 
                 tracing::debug!(
-                    "Volume change: output={}, requested={}, clamped={}, range={}..{}",
+                    "Volume change: zone={}, output={}, requested={}, clamped={}, range={}..{}",
+                    zone_id,
                     output_id,
                     value,
                     clamped_value,
@@ -438,40 +454,47 @@ impl RoonAdapter {
                     max
                 );
 
-                (transport, volume::ChangeMode::Absolute, clamped_value)
+                (
+                    transport,
+                    output_id,
+                    volume::ChangeMode::Absolute,
+                    clamped_value,
+                )
             }
         };
 
         // Roon transport API now takes f64 to support fractional dB steps
         transport
-            .change_volume(output_id, &mode, final_value as f64)
+            .change_volume(&output_id, &mode, final_value as f64)
             .await;
         Ok(())
     }
 
-    /// Find output by ID across all zones
-    fn find_output(&self, state: &RoonState, output_id: &str) -> Option<Output> {
-        for zone in state.zones.values() {
-            for output in &zone.outputs {
-                if output.output_id == output_id {
-                    return Some(output.clone());
-                }
-            }
-        }
-        None
-    }
-
     /// Mute/unmute
-    pub async fn mute(&self, output_id: &str, mute: bool) -> Result<()> {
-        let output_id = strip_roon_prefix(output_id);
+    pub async fn mute(&self, zone_id: &str, mute: bool) -> Result<()> {
+        let zone_id = strip_roon_prefix(zone_id);
 
-        // Clone transport while holding lock, then release before await
-        let transport = {
+        // Clone transport and get output_id while holding lock, then release before await
+        let (transport, output_id) = {
             let state = self.state.read().await;
-            state
+            let transport = state
                 .transport
                 .clone()
-                .ok_or_else(|| anyhow::anyhow!("Not connected to Roon"))?
+                .ok_or_else(|| anyhow::anyhow!("Not connected to Roon"))?;
+
+            // Look up zone and get first output
+            let zone = state
+                .zones
+                .get(zone_id)
+                .ok_or_else(|| anyhow::anyhow!("Zone not found: {}", zone_id))?;
+            let output_id = zone
+                .outputs
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("Zone has no outputs"))?
+                .output_id
+                .clone();
+
+            (transport, output_id)
         };
 
         let how = if mute {
@@ -479,7 +502,7 @@ impl RoonAdapter {
         } else {
             volume::Mute::Unmute
         };
-        transport.mute(output_id, &how).await;
+        transport.mute(&output_id, &how).await;
         Ok(())
     }
 
@@ -1296,43 +1319,12 @@ impl AdapterLogic for RoonAdapter {
             AdapterCommand::Next => self.control(zone_id, "next").await,
             AdapterCommand::Previous => self.control(zone_id, "previous").await,
             AdapterCommand::VolumeAbsolute(value) => {
-                // Get the first output for this zone
-                if let Some(zone) = self.get_zone(zone_id).await {
-                    if let Some(output) = zone.outputs.first() {
-                        self.change_volume(&output.output_id, value as f32, false)
-                            .await
-                    } else {
-                        Err(anyhow::anyhow!("Zone has no outputs"))
-                    }
-                } else {
-                    Err(anyhow::anyhow!("Zone not found"))
-                }
+                self.change_volume(zone_id, value as f32, false).await
             }
             AdapterCommand::VolumeRelative(delta) => {
-                // Get the first output for this zone
-                if let Some(zone) = self.get_zone(zone_id).await {
-                    if let Some(output) = zone.outputs.first() {
-                        self.change_volume(&output.output_id, delta as f32, true)
-                            .await
-                    } else {
-                        Err(anyhow::anyhow!("Zone has no outputs"))
-                    }
-                } else {
-                    Err(anyhow::anyhow!("Zone not found"))
-                }
+                self.change_volume(zone_id, delta as f32, true).await
             }
-            AdapterCommand::Mute(mute) => {
-                // Get the first output for this zone
-                if let Some(zone) = self.get_zone(zone_id).await {
-                    if let Some(output) = zone.outputs.first() {
-                        self.mute(&output.output_id, mute).await
-                    } else {
-                        Err(anyhow::anyhow!("Zone has no outputs"))
-                    }
-                } else {
-                    Err(anyhow::anyhow!("Zone not found"))
-                }
-            }
+            AdapterCommand::Mute(mute) => self.mute(zone_id, mute).await,
         };
 
         match result {

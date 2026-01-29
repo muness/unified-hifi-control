@@ -288,7 +288,9 @@ pub async fn roon_control_handler(
 /// Volume request body (f32 for fractional step support)
 #[derive(Deserialize)]
 pub struct VolumeRequest {
-    pub output_id: String,
+    /// Zone ID (also accepts output_id for backwards compatibility)
+    #[serde(alias = "output_id")]
+    pub zone_id: String,
     pub value: f32,
     #[serde(default)]
     pub relative: bool,
@@ -301,7 +303,7 @@ pub async fn roon_volume_handler(
 ) -> impl IntoResponse {
     match state
         .roon
-        .change_volume(&req.output_id, req.value, req.relative)
+        .change_volume(&req.zone_id, req.value, req.relative)
         .await
     {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
