@@ -103,56 +103,6 @@ pub struct HifiPlayTool {
     pub action: Option<String>,
 }
 
-/// Play or queue a specific item by its item_key
-#[mcp_tool(
-    name = "hifi_play_item",
-    description = "Play or queue a specific item by its item_key (from hifi_search or hifi_browse results). Use action='queue' to add to the current queue without interrupting playback. To build a playlist, call this multiple times with action='queue' for each track."
-)]
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct HifiPlayItemTool {
-    /// The item_key from search or browse results
-    pub item_key: String,
-    /// Zone ID to play on (get from hifi_zones)
-    pub zone_id: String,
-    /// What to do: "play" (default), "queue", or "radio"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub action: Option<String>,
-}
-
-/// Navigate the Roon library hierarchy
-#[mcp_tool(
-    name = "hifi_browse",
-    description = "Navigate the Roon library hierarchy (artists, albums, genres, etc). Returns items at the current level. Use session_key from previous response to maintain navigation state.",
-    read_only_hint = true
-)]
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct HifiBrowseTool {
-    /// Key of item to browse into (from previous browse or search)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item_key: Option<String>,
-    /// Session key from previous browse to maintain navigation state
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_key: Option<String>,
-    /// Optional zone ID for context
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub zone_id: Option<String>,
-    /// Search input for this browse level
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub input: Option<String>,
-    /// Reset to root level
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pop_all: Option<bool>,
-}
-
-/// Check if Roon Browse service is connected
-#[mcp_tool(
-    name = "hifi_browse_status",
-    description = "Check if the Roon Browse service is connected",
-    read_only_hint = true
-)]
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct HifiBrowseStatusTool {}
-
 /// Get overall bridge status
 #[mcp_tool(
     name = "hifi_status",
@@ -214,9 +164,6 @@ tool_box!(
         HifiControlTool,
         HifiSearchTool,
         HifiPlayTool,
-        HifiPlayItemTool,
-        HifiBrowseTool,
-        HifiBrowseStatusTool,
         HifiStatusTool,
         HifiHqplayerStatusTool,
         HifiHqplayerProfilesTool,
@@ -255,13 +202,6 @@ struct McpSearchResult {
     title: String,
     subtitle: Option<String>,
     item_key: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct McpBrowseResult {
-    items: Vec<McpSearchResult>,
-    session_key: Option<String>,
-    list_title: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -530,89 +470,6 @@ impl ServerHandler for HifiMcpHandler {
                     Ok(message) => Ok(Self::text_result(message)),
                     Err(e) => Self::error_result(format!("Play error: {}", e)),
                 }
-            }
-
-            HifiTools::HifiPlayItemTool(args) => {
-                use crate::adapters::roon::PlayAction;
-
-                let action = PlayAction::parse(args.action.as_deref().unwrap_or("play"));
-
-                match self
-                    .state
-                    .roon
-                    .play_item(&args.item_key, &args.zone_id, action)
-                    .await
-                {
-                    Ok(message) => Ok(Self::text_result(message)),
-                    Err(e) => Self::error_result(format!("Play item error: {}", e)),
-                }
-            }
-
-            HifiTools::HifiBrowseTool(args) => {
-                use roon_api::browse::{BrowseOpts, LoadOpts};
-
-                // Generate or use provided session key
-                let session_key = args.session_key.unwrap_or_else(|| {
-                    format!(
-                        "mcp_browse_{}",
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_nanos()
-                    )
-                });
-
-                let opts = BrowseOpts {
-                    item_key: args.item_key,
-                    multi_session_key: Some(session_key.clone()),
-                    zone_or_output_id: args.zone_id,
-                    input: args.input,
-                    pop_all: args.pop_all.unwrap_or(false),
-                    ..Default::default()
-                };
-
-                match self.state.roon.browse(opts).await {
-                    Ok(result) => {
-                        match self
-                            .state
-                            .roon
-                            .load(LoadOpts {
-                                multi_session_key: Some(session_key.clone()),
-                                count: Some(20),
-                                ..Default::default()
-                            })
-                            .await
-                        {
-                            Ok(items) => {
-                                let mcp_result = McpBrowseResult {
-                                    items: items
-                                        .items
-                                        .into_iter()
-                                        .map(|item| McpSearchResult {
-                                            title: item.title,
-                                            subtitle: item.subtitle,
-                                            item_key: item.item_key,
-                                        })
-                                        .collect(),
-                                    session_key: Some(session_key),
-                                    list_title: result.list.as_ref().map(|l| l.title.clone()),
-                                };
-                                Ok(Self::json_result(&mcp_result))
-                            }
-                            Err(e) => Self::error_result(format!("Browse load error: {}", e)),
-                        }
-                    }
-                    Err(e) => Self::error_result(format!("Browse error: {}", e)),
-                }
-            }
-
-            HifiTools::HifiBrowseStatusTool(_) => {
-                let connected = self.state.roon.is_browse_connected().await;
-                let json = serde_json::json!({
-                    "connected": connected,
-                    "service": "roon_browse"
-                });
-                Ok(Self::json_result(&json))
             }
 
             HifiTools::HifiStatusTool(_) => {
@@ -917,8 +774,8 @@ pub fn create_mcp_extension(state: AppState) -> axum::Extension<McpExtState> {
             "Unified Hi-Fi Control MCP Server - Control Your Music System\n\n\
             Use hifi_zones to list available zones, hifi_now_playing to see what's playing, \
             hifi_control for playback control, hifi_search to find music, and hifi_play to play it.\n\n\
-            To build a playlist: use hifi_search to find tracks, then call hifi_play_item multiple times \
-            with action='queue' for each track. The first track can use action='play' to start playback."
+            To build a playlist: call hifi_play multiple times with action='queue'. The first track \
+            can use action='play' to start playback, then subsequent tracks use action='queue' to add to the queue."
                 .into(),
         ),
         protocol_version: ProtocolVersion::V2025_11_25.into(),
