@@ -87,7 +87,7 @@ pub struct HifiSearchTool {
 /// Search and play music - the AI DJ command
 #[mcp_tool(
     name = "hifi_play",
-    description = "Search and play music - the AI DJ command. Searches and immediately plays the first matching result."
+    description = "Search and play music - the AI DJ command. Searches and plays, queues, or starts radio from the first matching result. Use action='queue' to add to queue without interrupting current playback."
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct HifiPlayTool {
@@ -103,10 +103,10 @@ pub struct HifiPlayTool {
     pub action: Option<String>,
 }
 
-/// Play a specific item by its item_key
+/// Play or queue a specific item by its item_key
 #[mcp_tool(
     name = "hifi_play_item",
-    description = "Play a specific item by its item_key (from hifi_search or hifi_browse results). Use this when you want to play a specific search result rather than the first match."
+    description = "Play or queue a specific item by its item_key (from hifi_search or hifi_browse results). Use action='queue' to add to the current queue without interrupting playback. To build a playlist, call this multiple times with action='queue' for each track."
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct HifiPlayItemTool {
@@ -916,7 +916,9 @@ pub fn create_mcp_extension(state: AppState) -> axum::Extension<McpExtState> {
         instructions: Some(
             "Unified Hi-Fi Control MCP Server - Control Your Music System\n\n\
             Use hifi_zones to list available zones, hifi_now_playing to see what's playing, \
-            hifi_control for playback control, hifi_search to find music, and hifi_play to play it."
+            hifi_control for playback control, hifi_search to find music, and hifi_play to play it.\n\n\
+            To build a playlist: use hifi_search to find tracks, then call hifi_play_item multiple times \
+            with action='queue' for each track. The first track can use action='play' to start playback."
                 .into(),
         ),
         protocol_version: ProtocolVersion::V2025_11_25.into(),
