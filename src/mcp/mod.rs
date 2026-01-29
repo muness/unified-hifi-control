@@ -318,10 +318,22 @@ impl HifiMcpHandler {
                 .change_volume(zone_id, value as f32, relative)
                 .await
         } else if zone_id.starts_with("roon:") || !zone_id.contains(':') {
-            self.state
-                .roon
-                .change_volume(zone_id, value as f32, relative)
-                .await
+            // Roon change_volume expects output_id, not zone_id
+            // Look up the zone and get its first output
+            let bare_zone_id = zone_id.strip_prefix("roon:").unwrap_or(zone_id);
+            match self.state.roon.get_zone(bare_zone_id).await {
+                Some(zone) => {
+                    if let Some(output) = zone.outputs.first() {
+                        self.state
+                            .roon
+                            .change_volume(&output.output_id, value as f32, relative)
+                            .await
+                    } else {
+                        return Self::error_result("Zone has no outputs".into());
+                    }
+                }
+                None => return Self::error_result(format!("Zone not found: {}", zone_id)),
+            }
         } else {
             return Self::error_result("Volume control not supported for this zone type".into());
         };
