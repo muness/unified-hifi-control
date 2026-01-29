@@ -564,12 +564,6 @@ async fn control_roon(
         "previous" | "prev" => "previous",
         "stop" => "stop",
         "vol_up" | "volume_up" => {
-            let output = get_first_output_id(state, zone_id).await.ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({"error": "no outputs in zone"})),
-                )
-            })?;
             // Use provided value, or look up zone's actual step from aggregator
             let step = match value.and_then(|v| v.as_f64()) {
                 Some(v) => v as f32,
@@ -577,7 +571,7 @@ async fn control_roon(
             };
             state
                 .roon
-                .change_volume(&output, step, true)
+                .change_volume(zone_id, step, true)
                 .await
                 .map_err(|e| {
                     (
@@ -588,12 +582,6 @@ async fn control_roon(
             return Ok(Json(serde_json::json!({"ok": true})));
         }
         "vol_down" | "volume_down" => {
-            let output = get_first_output_id(state, zone_id).await.ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({"error": "no outputs in zone"})),
-                )
-            })?;
             // Use provided value, or look up zone's actual step from aggregator
             let step = match value.and_then(|v| v.as_f64()) {
                 Some(v) => v as f32,
@@ -601,7 +589,7 @@ async fn control_roon(
             };
             state
                 .roon
-                .change_volume(&output, -step, true)
+                .change_volume(zone_id, -step, true)
                 .await
                 .map_err(|e| {
                     (
@@ -612,20 +600,12 @@ async fn control_roon(
             return Ok(Json(serde_json::json!({"ok": true})));
         }
         "vol_abs" | "volume" => {
-            let output = get_first_output_id(state, zone_id).await.ok_or_else(|| {
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({"error": "no outputs in zone"})),
-                )
-            })?;
-            // Log raw value for debugging - knob sends floats like 75.0
-            tracing::debug!("vol_abs raw value: {:?}", value);
             // Use as_f64() which handles both JSON integers and floats
             // (as_i64() returns None for floats like 75.0, causing fallback to 50)
             let vol = value.and_then(|v| v.as_f64()).unwrap_or(50.0) as f32;
             state
                 .roon
-                .change_volume(&output, vol, false)
+                .change_volume(zone_id, vol, false)
                 .await
                 .map_err(|e| {
                     (
@@ -793,13 +773,6 @@ async fn control_upnp(
         )),
     }
 }
-
-/// Helper to get first output ID for a Roon zone (for volume control)
-async fn get_first_output_id(state: &AppState, zone_id: &str) -> Option<String> {
-    let zone = state.roon.get_zone(zone_id).await?;
-    zone.outputs.first().map(|o| o.output_id.clone())
-}
-
 /// Helper to get zone's volume step from aggregator (returns 1.0 if not found)
 async fn get_zone_step(state: &AppState, zone_id: &str) -> f32 {
     state
