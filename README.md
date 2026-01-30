@@ -119,22 +119,19 @@ If you route audio through HQPlayer for upsampling or filtering, this bridge let
 
 ## MCP Server (Claude Integration)
 
-Control your hi-fi with natural language. The bridge includes an MCP server so Claude can play, pause, adjust volume, and switch HQPlayer profiles.
+Control your hi-fi with natural language. The bridge includes an MCP server so Claude can search, play, queue music, adjust volume, and switch HQPlayer profiles.
 
 ### Setup
 
 1. Start the bridge (`docker compose up -d`)
-2. Add to your Claude Code MCP config:
+2. Add to your MCP config (Claude Code, ChatGPT, BoltAI, etc.):
 
 ```json
 {
   "mcpServers": {
-    "hifi": {
-      "command": "npx",
-      "args": ["unified-hifi-control-mcp"],
-      "env": {
-        "HIFI_BRIDGE_URL": "http://localhost:8088"
-      }
+    "unified-hifi-control": {
+      "type": "http",
+      "url": "http://<your-bridge-host>:8088/mcp"
     }
   }
 }
@@ -144,18 +141,22 @@ Control your hi-fi with natural language. The bridge includes an MCP server so C
 
 | Tool | Description |
 |------|-------------|
-| `hifi_zones` | List available zones (Roon, Lyrion, OpenHome, UPnP) |
+| `hifi_zones` | List available zones (Roon, LMS, OpenHome, UPnP) |
 | `hifi_now_playing` | Get current track, artist, album, play state |
 | `hifi_control` | Play, pause, next, previous, volume control |
+| `hifi_search` | Search library, TIDAL, or Qobuz *(Roon only)* |
+| `hifi_play` | AI DJ: search and play/queue in one command *(Roon only)* |
+| `hifi_status` | Overall bridge status |
 | `hifi_hqplayer_status` | HQPlayer Embedded status and pipeline |
 | `hifi_hqplayer_profiles` | List saved HQPlayer profiles |
 | `hifi_hqplayer_load_profile` | Switch HQPlayer profile |
 | `hifi_hqplayer_set_pipeline` | Change filter, shaper, dither settings |
-| `hifi_status` | Overall bridge status |
+
+*Search and play are currently Roon-only. Transport controls work with all adapters. [LMS search/play contributions welcome!](https://github.com/open-horizon-labs/unified-hifi-control/issues)*
 
 ### Example Usage
 
-Ask Claude: "What's playing right now?" or "Turn the volume down a bit" or "Switch to my DSD profile in HQPlayer"
+Ask Claude: "Play some jazz piano" or "Queue Hotel California" or "What's playing?" or "Turn the volume down"
 
 <details>
 <summary><strong>Firmware Updates (roon-knob)</strong></summary>

@@ -130,7 +130,7 @@ fn lint_roon_change_volume_uses_f32() {
         fs::read_to_string("src/adapters/roon.rs").expect("Failed to read src/adapters/roon.rs");
 
     // The function signature must use f32 for fractional step support
-    let uses_f32 = src.contains("fn change_volume(&self, output_id: &str, value: f32");
+    let uses_f32 = src.contains("fn change_volume(&self, zone_id: &str, value: f32");
 
     assert!(
         uses_f32,
