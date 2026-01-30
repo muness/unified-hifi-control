@@ -66,10 +66,10 @@ pub struct HifiControlTool {
     pub value: Option<f64>,
 }
 
-/// Search for music
+/// Search for music (Roon zones only)
 #[mcp_tool(
     name = "hifi_search",
-    description = "Search for tracks, albums, or artists in Library, TIDAL, or Qobuz",
+    description = "Search for tracks, albums, or artists in Library, TIDAL, or Qobuz (Roon zones only)",
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -84,10 +84,10 @@ pub struct HifiSearchTool {
     pub source: Option<String>,
 }
 
-/// Search and play music - the AI DJ command
+/// Search and play music - the AI DJ command (Roon zones only)
 #[mcp_tool(
     name = "hifi_play",
-    description = "Search and play music - the AI DJ command. Searches and plays, queues, or starts radio from the first matching result. Use action='queue' to add to queue without interrupting current playback."
+    description = "Search and play music - the AI DJ command. Searches and plays, queues, or starts radio from the first matching result. Use action='queue' to add to queue without interrupting current playback. (Roon zones only - LMS/OpenHome/UPnP contributions welcome!)"
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct HifiPlayTool {
@@ -776,6 +776,8 @@ pub fn create_mcp_extension(state: AppState) -> axum::Extension<McpExtState> {
             "Unified Hi-Fi Control MCP Server - Control Your Music System\n\n\
             Use hifi_zones to list available zones, hifi_now_playing to see what's playing, \
             hifi_control for playback control, hifi_search to find music, and hifi_play to play it.\n\n\
+            Note: hifi_search and hifi_play currently work with Roon zones only. \
+            Transport controls (play/pause/next/volume) work with all zones (Roon, LMS, OpenHome, UPnP).\n\n\
             To build a playlist: call hifi_play multiple times with action='queue'. The first track \
             can use action='play' to start playback, then subsequent tracks use action='queue' to add to the queue."
                 .into(),
