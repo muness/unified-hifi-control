@@ -521,49 +521,53 @@ impl ServerHandler for HifiMcpHandler {
             }
 
             HifiTools::HifiHqplayerSetPipelineTool(args) => {
-                // Parse as i64 to allow negative values (e.g., -1 for PCM mode), then cast to u32
-                let parse_value = |v: &str| v.parse::<i64>().ok().map(|n| n as u32);
+                // Non-negative parser for filter/shaper/rate (rejects negative values)
+                let parse_nonneg =
+                    |v: &str| v.parse::<i64>().ok().filter(|n| *n >= 0).map(|n| n as u32);
+                // Signed parser for mode (allows -1 sentinel for PCM mode)
+                let parse_signed = |v: &str| v.parse::<i64>().ok().map(|n| n as u32);
 
                 let result = match args.setting.as_str() {
                     "filter1x" | "filter_1x" => {
-                        if let Some(v) = parse_value(&args.value) {
+                        if let Some(v) = parse_nonneg(&args.value) {
                             self.state.hqplayer.set_filter_1x(v).await
                         } else {
                             return Self::error_result(
-                                "Invalid filter1x value (expected integer)".into(),
+                                "Invalid filter1x value (expected non-negative integer)".into(),
                             );
                         }
                     }
                     "filterNx" | "filter_nx" | "filternx" => {
-                        if let Some(v) = parse_value(&args.value) {
+                        if let Some(v) = parse_nonneg(&args.value) {
                             self.state.hqplayer.set_filter_nx(v).await
                         } else {
                             return Self::error_result(
-                                "Invalid filterNx value (expected integer)".into(),
+                                "Invalid filterNx value (expected non-negative integer)".into(),
                             );
                         }
                     }
                     "shaper" | "dither" => {
                         // shaper (DSD) and dither (PCM) use the same HQPlayer API
-                        if let Some(v) = parse_value(&args.value) {
+                        if let Some(v) = parse_nonneg(&args.value) {
                             self.state.hqplayer.set_shaper(v).await
                         } else {
                             return Self::error_result(
-                                "Invalid shaper/dither value (expected integer)".into(),
+                                "Invalid shaper/dither value (expected non-negative integer)"
+                                    .into(),
                             );
                         }
                     }
                     "rate" | "samplerate" => {
-                        if let Some(v) = parse_value(&args.value) {
+                        if let Some(v) = parse_nonneg(&args.value) {
                             self.state.hqplayer.set_rate(v).await
                         } else {
                             return Self::error_result(
-                                "Invalid rate value (expected integer)".into(),
+                                "Invalid rate value (expected non-negative integer)".into(),
                             );
                         }
                     }
                     "mode" => {
-                        if let Some(v) = parse_value(&args.value) {
+                        if let Some(v) = parse_signed(&args.value) {
                             self.state.hqplayer.set_mode(v).await
                         } else {
                             return Self::error_result(
