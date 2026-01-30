@@ -165,6 +165,52 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the event bus pattern and d
 - Aggregator owns state (merge, hydrate, track last-seen)
 - UI talks to aggregator only (never directly to backends)
 
+## MCP Server (AI Assistant Integration)
+
+**Endpoint:** `http://<host>:8088/mcp` (Streamable HTTP transport)
+
+MCP (Model Context Protocol) enables AI assistants (Claude, ChatGPT, BoltAI, etc.) to control music playback.
+
+### Current Capabilities
+
+| Feature | Roon | LMS | OpenHome | UPnP |
+|---------|------|-----|----------|------|
+| Discovery (zones) | ✅ | ✅ | ✅ | ✅ |
+| Transport (play/pause/next) | ✅ | ✅ | ✅ | ✅ |
+| Volume control | ✅ | ✅ | ❌ | ❌ |
+| Search | ✅ | ❌ | ❌ | ❌ |
+| Play by query | ✅ | ❌ | ❌ | ❌ |
+| Queue building | ✅ | ❌ | ❌ | ❌ |
+
+### Tool Design Principles
+
+**Every tool must work as documented.** AI models try the "obvious" thing first - if it fails, they give up or confuse users.
+
+- **No broken tools** - If a tool can't reliably do what its description says, remove it
+- **No orphaned fields** - Don't return data (like `item_key`) that can't be used by any tool
+- **Clear queue pattern** - Use `hifi_play` with `action='queue'` to build playlists; call multiple times for multiple tracks
+
+**Tool descriptions are documentation.** AI models read descriptions to decide which tool to use. Be explicit about capabilities:
+- ❌ "Searches and immediately plays" (hides queue capability)
+- ✅ "Searches and plays, queues, or starts radio. Use action='queue' to add to queue."
+
+### Current Tools (10)
+
+| Tool | Purpose |
+|------|---------|
+| `hifi_zones` | List all playback zones |
+| `hifi_now_playing` | Get current track info |
+| `hifi_control` | Play, pause, next, previous, volume |
+| `hifi_search` | Search library/TIDAL/Qobuz (Roon only) |
+| `hifi_play` | AI DJ: search and play/queue/radio |
+| `hifi_status` | Bridge connection status |
+| `hifi_hqplayer_status` | HQPlayer pipeline status |
+| `hifi_hqplayer_profiles` | List HQPlayer configs |
+| `hifi_hqplayer_load_profile` | Load HQPlayer config |
+| `hifi_hqplayer_set_pipeline` | Change HQPlayer setting |
+
+---
+
 ## UI Stack
 
 **Web UI:** Dioxus + Tailwind CSS + DioxusLabs components
