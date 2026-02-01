@@ -371,6 +371,7 @@ impl RoonAdapter {
 
     /// Get specific zone
     pub async fn get_zone(&self, zone_id: &str) -> Option<Zone> {
+        let zone_id = strip_roon_prefix(zone_id);
         let state = self.state.read().await;
         state.zones.get(zone_id).cloned()
     }

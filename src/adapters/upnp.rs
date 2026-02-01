@@ -661,12 +661,14 @@ impl UPnPAdapter {
 
     /// Get specific renderer by UUID
     pub async fn get_renderer(&self, uuid: &str) -> Option<UPnPRenderer> {
+        let uuid = strip_upnp_prefix(uuid);
         let state = self.state.read().await;
         state.renderers.get(uuid).cloned()
     }
 
     /// Get now playing info for a renderer
     pub async fn get_now_playing(&self, uuid: &str) -> Option<UPnPNowPlaying> {
+        let uuid = strip_upnp_prefix(uuid);
         let state = self.state.read().await;
         let renderer = state.renderers.get(uuid)?;
 

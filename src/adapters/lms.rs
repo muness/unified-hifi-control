@@ -817,6 +817,7 @@ impl LmsAdapter {
 
     /// Get player status (delegates to shared RPC)
     pub async fn get_player_status(&self, player_id: &str) -> Result<LmsPlayer> {
+        let player_id = strip_lms_prefix(player_id);
         self.rpc.get_player_status(player_id).await
     }
 
@@ -989,6 +990,7 @@ impl LmsAdapter {
 
     /// Get cached player
     pub async fn get_cached_player(&self, player_id: &str) -> Option<LmsPlayer> {
+        let player_id = strip_lms_prefix(player_id);
         self.state.read().await.players.get(player_id).cloned()
     }
 
@@ -1085,7 +1087,8 @@ impl LmsAdapter {
                 .and_then(|v| v.as_i64());
 
             // Determine result type based on available fields
-            let result_type = if item.get("album_id").is_some() || item.get("album").is_some() {
+            // Must match the id extraction logic above - only classify as Album if album_id exists
+            let result_type = if item.get("album_id").is_some() {
                 Some(LmsSearchResultType::Album)
             } else if item.get("artist_id").is_some()
                 || (item.get("contributor").is_some() && item.get("album").is_none())

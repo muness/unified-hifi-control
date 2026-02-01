@@ -722,12 +722,14 @@ impl OpenHomeAdapter {
 
     /// Get specific zone by UUID
     pub async fn get_zone(&self, uuid: &str) -> Option<OpenHomeDevice> {
+        let uuid = strip_openhome_prefix(uuid);
         let state = self.state.read().await;
         state.devices.get(uuid).cloned()
     }
 
     /// Get now playing info for a zone
     pub async fn get_now_playing(&self, uuid: &str) -> Option<OpenHomeNowPlaying> {
+        let uuid = strip_openhome_prefix(uuid);
         let state = self.state.read().await;
         let device = state.devices.get(uuid)?;
         let track = device.track_info.as_ref();
