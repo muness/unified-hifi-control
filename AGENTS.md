@@ -178,9 +178,9 @@ MCP (Model Context Protocol) enables AI assistants (Claude, ChatGPT, BoltAI, etc
 | Discovery (zones) | ✅ | ✅ | ✅ | ✅ |
 | Transport (play/pause/next) | ✅ | ✅ | ✅ | ✅ |
 | Volume control | ✅ | ✅ | ❌ | ❌ |
-| Search | ✅ | ❌ | ❌ | ❌ |
-| Play by query | ✅ | ❌ | ❌ | ❌ |
-| Queue building | ✅ | ❌ | ❌ | ❌ |
+| Search | ✅ | ✅ | ❌ | ❌ |
+| Play by query | ✅ | ✅ | ❌ | ❌ |
+| Queue building | ✅ | ✅ | ❌ | ❌ |
 
 ### Tool Design Principles
 

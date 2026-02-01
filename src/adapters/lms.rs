@@ -519,6 +519,71 @@ pub struct LmsPlayerInfo {
     pub connected: bool,
 }
 
+/// Type of search result from LMS
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LmsSearchResultType {
+    Album,
+    Artist,
+    Track,
+}
+
+impl std::fmt::Display for LmsSearchResultType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LmsSearchResultType::Album => write!(f, "album"),
+            LmsSearchResultType::Artist => write!(f, "artist"),
+            LmsSearchResultType::Track => write!(f, "track"),
+        }
+    }
+}
+
+/// A search result from LMS library
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LmsSearchResult {
+    /// Type of result (album, artist, track)
+    pub result_type: LmsSearchResultType,
+    /// Entity ID in LMS database
+    pub id: i64,
+    /// Primary title (album name, artist name, or track title)
+    pub title: String,
+    /// Artist name (for albums and tracks)
+    pub artist: Option<String>,
+    /// Album name (for tracks)
+    pub album: Option<String>,
+}
+
+/// Action to take when playing search results
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LmsPlayAction {
+    /// Clear queue and start playing immediately
+    #[default]
+    Play,
+    /// Add to end of queue without interrupting playback
+    Queue,
+    /// Insert next in queue (play next)
+    Insert,
+}
+
+impl LmsPlayAction {
+    /// Parse action from string
+    pub fn parse(s: Option<&str>) -> Self {
+        match s {
+            Some("queue" | "add") => LmsPlayAction::Queue,
+            Some("insert" | "next") => LmsPlayAction::Insert,
+            _ => LmsPlayAction::Play,
+        }
+    }
+
+    /// Get the LMS playlistcontrol cmd parameter
+    pub fn to_lms_cmd(&self) -> &'static str {
+        match self {
+            LmsPlayAction::Play => "load",
+            LmsPlayAction::Queue => "add",
+            LmsPlayAction::Insert => "insert",
+        }
+    }
+}
+
 /// Internal state
 struct LmsState {
     host: Option<String>,
@@ -929,6 +994,174 @@ impl LmsAdapter {
         // LMS uses integer volume 0-100, round at the last moment
         self.control(player_id, command, Some(value.round() as i32))
             .await
+    }
+
+    /// Search the LMS library for albums, artists, and tracks
+    ///
+    /// Uses the LMS JSON-RPC `search` query which returns results across all types.
+    /// Results are returned in order: albums first (most likely what user wants),
+    /// then artists, then tracks.
+    pub async fn search(&self, query: &str, limit: Option<usize>) -> Result<Vec<LmsSearchResult>> {
+        let limit = limit.unwrap_or(20);
+
+        // LMS search query: ["search", start, count, "term:query"]
+        let result = self
+            .rpc
+            .execute(
+                None,
+                vec![
+                    json!("search"),
+                    json!(0),
+                    json!(limit),
+                    json!(format!("term:{}", query)),
+                ],
+            )
+            .await?;
+
+        let mut results = Vec::new();
+
+        // Parse albums (highest priority - most likely what user wants)
+        if let Some(albums) = result.get("albums_loop").and_then(|v| v.as_array()) {
+            for album in albums.iter().take(limit) {
+                if let (Some(id), Some(title)) = (
+                    album.get("id").and_then(|v| v.as_i64()),
+                    album.get("album").and_then(|v| v.as_str()),
+                ) {
+                    results.push(LmsSearchResult {
+                        result_type: LmsSearchResultType::Album,
+                        id,
+                        title: title.to_string(),
+                        artist: album
+                            .get("artist")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        album: None,
+                    });
+                }
+            }
+        }
+
+        // Parse artists
+        if let Some(artists) = result.get("contributors_loop").and_then(|v| v.as_array()) {
+            for artist in artists.iter().take(limit.saturating_sub(results.len())) {
+                if let (Some(id), Some(name)) = (
+                    artist.get("id").and_then(|v| v.as_i64()),
+                    artist.get("contributor").and_then(|v| v.as_str()),
+                ) {
+                    results.push(LmsSearchResult {
+                        result_type: LmsSearchResultType::Artist,
+                        id,
+                        title: name.to_string(),
+                        artist: None,
+                        album: None,
+                    });
+                }
+            }
+        }
+
+        // Parse tracks
+        if let Some(tracks) = result.get("tracks_loop").and_then(|v| v.as_array()) {
+            for track in tracks.iter().take(limit.saturating_sub(results.len())) {
+                if let (Some(id), Some(title)) = (
+                    track.get("id").and_then(|v| v.as_i64()),
+                    track.get("track").and_then(|v| v.as_str()),
+                ) {
+                    results.push(LmsSearchResult {
+                        result_type: LmsSearchResultType::Track,
+                        id,
+                        title: title.to_string(),
+                        artist: track
+                            .get("artist")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        album: track
+                            .get("album")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                    });
+                }
+            }
+        }
+
+        debug!(
+            query = query,
+            results = results.len(),
+            "LMS search completed"
+        );
+
+        Ok(results)
+    }
+
+    /// Search and play the first matching result
+    ///
+    /// Searches for the query, finds the first playable result (preferring albums),
+    /// and executes the specified action (play, queue, or insert).
+    pub async fn search_and_play(
+        &self,
+        query: &str,
+        player_id: &str,
+        action: LmsPlayAction,
+    ) -> Result<String> {
+        // Search for content
+        let results = self.search(query, Some(10)).await?;
+
+        if results.is_empty() {
+            return Err(anyhow!("No results found for '{}'", query));
+        }
+
+        // Take the first result (albums are prioritized by search())
+        let result = &results[0];
+
+        // Build playlistcontrol command based on result type
+        let id_param = match result.result_type {
+            LmsSearchResultType::Album => format!("album_id:{}", result.id),
+            LmsSearchResultType::Artist => format!("artist_id:{}", result.id),
+            LmsSearchResultType::Track => format!("track_id:{}", result.id),
+        };
+
+        let cmd_param = format!("cmd:{}", action.to_lms_cmd());
+
+        // Execute playlistcontrol
+        self.rpc
+            .execute(
+                Some(player_id),
+                vec![json!("playlistcontrol"), json!(cmd_param), json!(id_param)],
+            )
+            .await?;
+
+        // Build response message
+        let action_verb = match action {
+            LmsPlayAction::Play => "Playing",
+            LmsPlayAction::Queue => "Queued",
+            LmsPlayAction::Insert => "Playing next",
+        };
+
+        let what = match result.result_type {
+            LmsSearchResultType::Album => {
+                if let Some(ref artist) = result.artist {
+                    format!("album \"{}\" by {}", result.title, artist)
+                } else {
+                    format!("album \"{}\"", result.title)
+                }
+            }
+            LmsSearchResultType::Artist => format!("music by {}", result.title),
+            LmsSearchResultType::Track => {
+                if let Some(ref artist) = result.artist {
+                    format!("\"{}\" by {}", result.title, artist)
+                } else {
+                    format!("\"{}\"", result.title)
+                }
+            }
+        };
+
+        info!(
+            action = action_verb,
+            what = what,
+            player_id = player_id,
+            "LMS search_and_play"
+        );
+
+        Ok(format!("{} {}", action_verb, what))
     }
 }
 
