@@ -1059,13 +1059,12 @@ impl LmsAdapter {
 
         let mut results = Vec::new();
 
-        // Look for streaming providers (TIDAL, Qobuz) and drill into them
+        // Look for providers and drill into them to find playable items
         for item in items {
             if results.len() >= limit {
                 break;
             }
 
-            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let item_id = item.get("id").and_then(|v| v.as_str());
             let has_items = item.get("hasitems").and_then(|v| v.as_i64()).unwrap_or(0) == 1;
             let is_audio = item.get("isaudio").and_then(|v| v.as_i64()).unwrap_or(0) == 1
@@ -1079,12 +1078,9 @@ impl LmsAdapter {
                 continue;
             }
 
-            // Check if this is a streaming provider we should drill into
-            let is_streaming_provider = name == "TIDAL" || name == "Qobuz" || name == "Everything";
-
+            // Drill into any provider that has sub-items (TIDAL, Qobuz, Spotify, Deezer, etc.)
             if let Some(item_id) = item_id {
-                if has_items && is_streaming_provider {
-                    // Drill into this provider to find songs
+                if has_items {
                     if let Ok(songs) = self
                         .drill_into_songs(&player_id, query, item_id, limit - results.len())
                         .await
