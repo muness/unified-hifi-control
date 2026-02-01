@@ -1028,10 +1028,13 @@ impl LmsAdapter {
         let player_id = match player_id.map(strip_lms_prefix) {
             Some(id) => id.to_string(),
             None => {
-                // Try to get any connected player
-                let state = self.state.read().await;
-                match state.players.keys().next() {
-                    Some(id) => id.clone(),
+                // Try to get any connected player (drop lock before any await)
+                let any_player = {
+                    let state = self.state.read().await;
+                    state.players.keys().next().cloned()
+                };
+                match any_player {
+                    Some(id) => id,
                     None => return self.search_library(query, limit).await,
                 }
             }
