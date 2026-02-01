@@ -537,12 +537,12 @@ impl std::fmt::Display for LmsSearchResultType {
     }
 }
 
-/// A search result from LMS library
+/// A search result from LMS (library or streaming service)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LmsSearchResult {
     /// Type of result (album, artist, track)
     pub result_type: LmsSearchResultType,
-    /// Entity ID in LMS database
+    /// Entity ID in LMS database (for library items)
     pub id: i64,
     /// Primary title (album name, artist name, or track title)
     pub title: String,
@@ -550,6 +550,8 @@ pub struct LmsSearchResult {
     pub artist: Option<String>,
     /// Album name (for tracks)
     pub album: Option<String>,
+    /// Direct playback URL (for streaming service items)
+    pub url: Option<String>,
 }
 
 /// Action to take when playing search results
@@ -996,15 +998,124 @@ impl LmsAdapter {
             .await
     }
 
-    /// Search the LMS library for albums, artists, and tracks
+    /// Search using LMS globalsearch which includes all providers (library, TIDAL, Qobuz, etc.)
     ///
-    /// Uses the LMS JSON-RPC `search` query which returns results across all types.
-    /// Results are returned in order: albums first (most likely what user wants),
-    /// then artists, then tracks.
+    /// Uses the LMS JSON-RPC `globalsearch items` command which searches across all
+    /// registered search providers including streaming service plugins.
     pub async fn search(&self, query: &str, limit: Option<usize>) -> Result<Vec<LmsSearchResult>> {
         let limit = limit.unwrap_or(20);
 
-        // LMS search query: ["search", start, count, "term:query"]
+        // globalsearch items: searches all providers (library, TIDAL, Qobuz plugins, etc.)
+        let result = self
+            .rpc
+            .execute(
+                None,
+                vec![
+                    json!("globalsearch"),
+                    json!("items"),
+                    json!(0),
+                    json!(limit * 3), // Request more since results are nested
+                    json!(format!("search:{}", query)),
+                ],
+            )
+            .await?;
+
+        let mut results = Vec::new();
+
+        // Parse items_loop - each item is a search provider or a result
+        if let Some(items) = result.get("items_loop").and_then(|v| v.as_array()) {
+            self.parse_global_search_items(items, &mut results, limit);
+        }
+
+        // Fallback to basic search if globalsearch returns nothing
+        // (globalsearch may not be available on older LMS versions)
+        if results.is_empty() {
+            return self.search_library(query, limit).await;
+        }
+
+        debug!(
+            query = query,
+            results = results.len(),
+            "LMS globalsearch completed"
+        );
+
+        Ok(results)
+    }
+
+    /// Parse globalsearch items recursively, extracting playable results
+    fn parse_global_search_items(
+        &self,
+        items: &[serde_json::Value],
+        results: &mut Vec<LmsSearchResult>,
+        limit: usize,
+    ) {
+        for item in items {
+            if results.len() >= limit {
+                break;
+            }
+
+            // Check if this item has nested items (it's a category/provider)
+            if let Some(sub_items) = item.get("items_loop").and_then(|v| v.as_array()) {
+                self.parse_global_search_items(sub_items, results, limit);
+                continue;
+            }
+
+            // Try to extract a playable result
+            let title = item
+                .get("name")
+                .or_else(|| item.get("title"))
+                .and_then(|v| v.as_str());
+
+            let item_type = item.get("type").and_then(|v| v.as_str());
+
+            // Get ID - could be album_id, artist_id, track_id, or generic id
+            let id = item
+                .get("album_id")
+                .or_else(|| item.get("artist_id"))
+                .or_else(|| item.get("track_id"))
+                .or_else(|| item.get("id"))
+                .and_then(|v| v.as_i64());
+
+            // Determine result type based on available fields
+            let result_type = if item.get("album_id").is_some() || item.get("album").is_some() {
+                Some(LmsSearchResultType::Album)
+            } else if item.get("artist_id").is_some()
+                || (item.get("contributor").is_some() && item.get("album").is_none())
+            {
+                Some(LmsSearchResultType::Artist)
+            } else if item.get("track_id").is_some()
+                || item_type == Some("audio")
+                || item.get("url").is_some()
+                || item.get("play").is_some()
+            {
+                Some(LmsSearchResultType::Track)
+            } else {
+                None
+            };
+
+            if let (Some(title), Some(id), Some(result_type)) = (title, id, result_type) {
+                results.push(LmsSearchResult {
+                    result_type,
+                    id,
+                    title: title.to_string(),
+                    artist: item
+                        .get("artist")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    album: item.get("album").and_then(|v| v.as_str()).map(String::from),
+                    // Store URL for direct playback if available
+                    url: item
+                        .get("play")
+                        .or_else(|| item.get("url"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                });
+            }
+        }
+    }
+
+    /// Fallback library-only search for older LMS versions without globalsearch
+    async fn search_library(&self, query: &str, limit: usize) -> Result<Vec<LmsSearchResult>> {
         let result = self
             .rpc
             .execute(
@@ -1020,7 +1131,7 @@ impl LmsAdapter {
 
         let mut results = Vec::new();
 
-        // Parse albums (highest priority - most likely what user wants)
+        // Parse albums
         if let Some(albums) = result.get("albums_loop").and_then(|v| v.as_array()) {
             for album in albums.iter().take(limit) {
                 if let (Some(id), Some(title)) = (
@@ -1036,6 +1147,7 @@ impl LmsAdapter {
                             .and_then(|v| v.as_str())
                             .map(String::from),
                         album: None,
+                        url: None,
                     });
                 }
             }
@@ -1054,6 +1166,7 @@ impl LmsAdapter {
                         title: name.to_string(),
                         artist: None,
                         album: None,
+                        url: None,
                     });
                 }
             }
@@ -1078,6 +1191,7 @@ impl LmsAdapter {
                             .get("album")
                             .and_then(|v| v.as_str())
                             .map(String::from),
+                        url: None,
                     });
                 }
             }
@@ -1086,7 +1200,7 @@ impl LmsAdapter {
         debug!(
             query = query,
             results = results.len(),
-            "LMS search completed"
+            "LMS library search completed (fallback)"
         );
 
         Ok(results)
@@ -1094,40 +1208,56 @@ impl LmsAdapter {
 
     /// Search and play the first matching result
     ///
-    /// Searches for the query, finds the first playable result (preferring albums),
-    /// and executes the specified action (play, queue, or insert).
+    /// Searches using globalsearch (includes streaming services), finds the first
+    /// playable result, and executes the specified action (play, queue, or insert).
+    /// Uses URL-based playback for streaming items, playlistcontrol for library items.
     pub async fn search_and_play(
         &self,
         query: &str,
         player_id: &str,
         action: LmsPlayAction,
     ) -> Result<String> {
-        // Search for content
+        // Search for content (uses globalsearch which includes all providers)
         let results = self.search(query, Some(10)).await?;
 
         if results.is_empty() {
             return Err(anyhow!("No results found for '{}'", query));
         }
 
-        // Take the first result (albums are prioritized by search())
+        // Take the first result
         let result = &results[0];
 
-        // Build playlistcontrol command based on result type
-        let id_param = match result.result_type {
-            LmsSearchResultType::Album => format!("album_id:{}", result.id),
-            LmsSearchResultType::Artist => format!("artist_id:{}", result.id),
-            LmsSearchResultType::Track => format!("track_id:{}", result.id),
-        };
+        // Determine playback method based on whether we have a URL (streaming) or ID (library)
+        if let Some(ref url) = result.url {
+            // Streaming service item - use playlist command with URL
+            let method = match action {
+                LmsPlayAction::Play => "load",
+                LmsPlayAction::Queue => "add",
+                LmsPlayAction::Insert => "insert",
+            };
+            self.rpc
+                .execute(
+                    Some(player_id),
+                    vec![json!("playlist"), json!(method), json!(url)],
+                )
+                .await?;
+        } else {
+            // Library item - use playlistcontrol with entity ID
+            let id_param = match result.result_type {
+                LmsSearchResultType::Album => format!("album_id:{}", result.id),
+                LmsSearchResultType::Artist => format!("artist_id:{}", result.id),
+                LmsSearchResultType::Track => format!("track_id:{}", result.id),
+            };
 
-        let cmd_param = format!("cmd:{}", action.to_lms_cmd());
+            let cmd_param = format!("cmd:{}", action.to_lms_cmd());
 
-        // Execute playlistcontrol
-        self.rpc
-            .execute(
-                Some(player_id),
-                vec![json!("playlistcontrol"), json!(cmd_param), json!(id_param)],
-            )
-            .await?;
+            self.rpc
+                .execute(
+                    Some(player_id),
+                    vec![json!("playlistcontrol"), json!(cmd_param), json!(id_param)],
+                )
+                .await?;
+        }
 
         // Build response message
         let action_verb = match action {
@@ -1158,6 +1288,7 @@ impl LmsAdapter {
             action = action_verb,
             what = what,
             player_id = player_id,
+            url = result.url.as_deref().unwrap_or("library"),
             "LMS search_and_play"
         );
 
