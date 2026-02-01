@@ -422,8 +422,13 @@ impl ServerHandler for HifiMcpHandler {
             HifiTools::HifiSearchTool(args) => {
                 // Route based on zone_id prefix
                 if args.zone_id.as_ref().is_some_and(|z| z.starts_with("lms:")) {
-                    // LMS search - library only (source param ignored)
-                    match self.state.lms.search(&args.query, Some(10)).await {
+                    // LMS search - uses globalsearch for all providers (library, TIDAL, Qobuz, etc.)
+                    match self
+                        .state
+                        .lms
+                        .search(&args.query, args.zone_id.as_deref(), Some(10))
+                        .await
+                    {
                         Ok(results) => {
                             let mcp_results: Vec<McpSearchResult> = results
                                 .into_iter()

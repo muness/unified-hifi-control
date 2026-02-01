@@ -1012,14 +1012,30 @@ impl LmsAdapter {
     ///
     /// Uses the LMS JSON-RPC `globalsearch items` command which searches across all
     /// registered search providers including streaming service plugins.
-    pub async fn search(&self, query: &str, limit: Option<usize>) -> Result<Vec<LmsSearchResult>> {
+    ///
+    /// NOTE: globalsearch requires a player_id to determine which apps/providers are available.
+    /// If player_id is None, falls back to library-only search.
+    pub async fn search(
+        &self,
+        query: &str,
+        player_id: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<LmsSearchResult>> {
         let limit = limit.unwrap_or(20);
+
+        // globalsearch requires a player_id to work - without it, LMS returns empty response
+        let player_id = player_id.map(strip_lms_prefix);
+
+        // If no player_id, fall back to library search
+        let Some(player_id) = player_id else {
+            return self.search_library(query, limit).await;
+        };
 
         // globalsearch items: searches all providers (library, TIDAL, Qobuz plugins, etc.)
         let result = self
             .rpc
             .execute(
-                None,
+                Some(player_id),
                 vec![
                     json!("globalsearch"),
                     json!("items"),
@@ -1231,7 +1247,7 @@ impl LmsAdapter {
         let player_id = strip_lms_prefix(player_id);
 
         // Search for content (uses globalsearch which includes all providers)
-        let results = self.search(query, Some(10)).await?;
+        let results = self.search(query, Some(player_id), Some(10)).await?;
 
         if results.is_empty() {
             return Err(anyhow!("No results found for '{}'", query));
