@@ -69,14 +69,14 @@ pub struct HifiControlTool {
 /// Search for music
 #[mcp_tool(
     name = "hifi_search",
-    description = "Search for tracks, albums, or artists. Roon: searches Library, TIDAL, or Qobuz (use source param). LMS: searches all installed providers including streaming plugins.",
+    description = "Search for tracks, albums, or artists. Roon: searches Library, TIDAL, or Qobuz (use source param). LMS: searches all installed providers including streaming plugins (zone_id recommended as different players may have different sources configured).",
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct HifiSearchTool {
     /// Search query (e.g., "Hotel California", "Eagles", "jazz piano")
     pub query: String,
-    /// Optional zone ID for context-aware results
+    /// Zone ID for context-aware results. Recommended for LMS (different players may have different sources).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zone_id: Option<String>,
     /// Where to search: "library" (default), "tidal", or "qobuz". Roon only; LMS searches all providers.
