@@ -499,14 +499,12 @@ impl ServerHandler for HifiMcpHandler {
                         );
                     }
 
-                    // Strip lms: prefix for the adapter
-                    let player_id = args.zone_id.strip_prefix("lms:").unwrap_or(&args.zone_id);
                     let action = LmsPlayAction::parse(args.action.as_deref());
 
                     match self
                         .state
                         .lms
-                        .search_and_play(&args.query, player_id, action)
+                        .search_and_play(&args.query, &args.zone_id, action)
                         .await
                     {
                         Ok(message) => Ok(Self::text_result(message)),

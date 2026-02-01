@@ -68,6 +68,12 @@ const LMS_CONFIG_FILE: &str = "lms-config.json";
 /// Request ID for LMS JSON-RPC calls (aids debugging in LMS logs)
 const LMS_REQUEST_ID: i32 = 217;
 
+/// Strip "lms:" prefix from player IDs.
+/// MCP and aggregator use prefixed IDs (e.g., "lms:00:11:22:33:44:55"), but LMS API expects bare IDs.
+fn strip_lms_prefix(id: &str) -> &str {
+    id.strip_prefix("lms:").unwrap_or(id)
+}
+
 /// Saved config for persistence
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SavedLmsConfig {
@@ -866,6 +872,7 @@ impl LmsAdapter {
 
     /// Control player
     pub async fn control(&self, player_id: &str, command: &str, value: Option<i32>) -> Result<()> {
+        let player_id = strip_lms_prefix(player_id);
         let params: Vec<Value> = match command {
             // Per real-world testing (issue #68), "play" handles both start and resume.
             // No need to check cached state - just send the command directly.
@@ -992,6 +999,7 @@ impl LmsAdapter {
 
     /// Change volume (f32 for fractional step support)
     pub async fn change_volume(&self, player_id: &str, value: f32, relative: bool) -> Result<()> {
+        let player_id = strip_lms_prefix(player_id);
         let command = if relative { "vol_rel" } else { "vol_abs" };
         // LMS uses integer volume 0-100, round at the last moment
         self.control(player_id, command, Some(value.round() as i32))
@@ -1217,6 +1225,8 @@ impl LmsAdapter {
         player_id: &str,
         action: LmsPlayAction,
     ) -> Result<String> {
+        let player_id = strip_lms_prefix(player_id);
+
         // Search for content (uses globalsearch which includes all providers)
         let results = self.search(query, Some(10)).await?;
 

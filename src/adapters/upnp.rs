@@ -34,6 +34,12 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const STALE_THRESHOLD: Duration = Duration::from_secs(90);
 const SOAP_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Strip "upnp:" prefix from renderer UUIDs.
+/// MCP and aggregator use prefixed IDs, but UPnP API expects bare UUIDs.
+fn strip_upnp_prefix(id: &str) -> &str {
+    id.strip_prefix("upnp:").unwrap_or(id)
+}
+
 /// UPnP Media Renderer information
 #[derive(Debug, Clone, Serialize)]
 pub struct UPnPRenderer {
@@ -687,6 +693,7 @@ impl UPnPAdapter {
         action: &str,
         value: Option<i32>,
     ) -> anyhow::Result<()> {
+        let uuid = strip_upnp_prefix(uuid);
         let (av_url, rc_url) = {
             let state = self.state.read().await;
             let renderer = state

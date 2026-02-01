@@ -39,6 +39,12 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const STALE_THRESHOLD: Duration = Duration::from_secs(90);
 const SOAP_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Strip "openhome:" prefix from device UUIDs.
+/// MCP and aggregator use prefixed IDs, but OpenHome API expects bare UUIDs.
+fn strip_openhome_prefix(id: &str) -> &str {
+    id.strip_prefix("openhome:").unwrap_or(id)
+}
+
 /// OpenHome device information
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenHomeDevice {
@@ -750,6 +756,7 @@ impl OpenHomeAdapter {
         action: &str,
         value: Option<i32>,
     ) -> anyhow::Result<()> {
+        let uuid = strip_openhome_prefix(uuid);
         let location = {
             let state = self.state.read().await;
             state
