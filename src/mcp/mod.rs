@@ -422,13 +422,7 @@ impl ServerHandler for HifiMcpHandler {
             HifiTools::HifiSearchTool(args) => {
                 // Route based on zone_id prefix
                 if args.zone_id.as_ref().is_some_and(|z| z.starts_with("lms:")) {
-                    // LMS search - library only, no streaming services
-                    if args.source.as_deref().is_some_and(|s| s != "library") {
-                        return Self::error_result(
-                            "LMS only supports library search (no TIDAL/Qobuz)".into(),
-                        );
-                    }
-
+                    // LMS search - library only (source param ignored)
                     match self.state.lms.search(&args.query, Some(10)).await {
                         Ok(results) => {
                             let mcp_results: Vec<McpSearchResult> = results
@@ -498,16 +492,10 @@ impl ServerHandler for HifiMcpHandler {
                 if args.zone_id.starts_with("lms:") {
                     use crate::adapters::lms::LmsPlayAction;
 
-                    // LMS doesn't support streaming services or radio
-                    if args.source.as_deref().is_some_and(|s| s != "library") {
-                        return Self::error_result(
-                            "LMS only supports library playback (no TIDAL/Qobuz)".into(),
-                        );
-                    }
+                    // LMS: source param ignored (library only), radio not supported
                     if args.action.as_deref() == Some("radio") {
                         return Self::error_result(
-                            "LMS does not support radio mode. Use 'play' or 'queue' instead."
-                                .into(),
+                            "Radio mode not supported for LMS. Use 'play' or 'queue'.".into(),
                         );
                     }
 
