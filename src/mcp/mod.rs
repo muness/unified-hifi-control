@@ -69,7 +69,7 @@ pub struct HifiControlTool {
 /// Search for music
 #[mcp_tool(
     name = "hifi_search",
-    description = "Search for tracks, albums, or artists in Library, TIDAL, or Qobuz (Roon and LMS zones)",
+    description = "Search for tracks, albums, or artists. Roon: searches Library, TIDAL, or Qobuz (use source param). LMS: searches all installed providers including streaming plugins.",
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -79,7 +79,7 @@ pub struct HifiSearchTool {
     /// Optional zone ID for context-aware results
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zone_id: Option<String>,
-    /// Where to search: "library" (default), "tidal", or "qobuz"
+    /// Where to search: "library" (default), "tidal", or "qobuz". Roon only; LMS searches all providers.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 }
@@ -87,7 +87,7 @@ pub struct HifiSearchTool {
 /// Search and play music in one command
 #[mcp_tool(
     name = "hifi_play",
-    description = "Search and play music. Searches and plays, queues, or starts radio from the first matching result. Use action='queue' to add to queue without interrupting current playback. action='radio' is Roon-only. (Roon and LMS zones)"
+    description = "Search and play music. Searches and plays, queues, or starts radio from the first matching result. Use action='queue' to add to queue. action='radio' and source param are Roon-only; LMS searches all providers."
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct HifiPlayTool {
@@ -95,10 +95,10 @@ pub struct HifiPlayTool {
     pub query: String,
     /// Zone ID to play on (get from hifi_zones)
     pub zone_id: String,
-    /// Where to search: "library" (default), "tidal", or "qobuz"
+    /// Where to search: "library" (default), "tidal", or "qobuz". Roon only; LMS searches all providers.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// What to do: "play" (default), "queue", or "radio"
+    /// What to do: "play" (default), "queue", or "radio". radio is Roon-only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action: Option<String>,
 }
