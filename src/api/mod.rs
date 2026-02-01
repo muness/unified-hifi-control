@@ -361,7 +361,7 @@ pub async fn roon_image_handler(
 }
 
 // =============================================================================
-// Roon Browse handlers (AI DJ Phase 1)
+// Roon Browse handlers
 // =============================================================================
 
 /// Query params for search request

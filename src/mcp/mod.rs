@@ -84,10 +84,10 @@ pub struct HifiSearchTool {
     pub source: Option<String>,
 }
 
-/// Search and play music - the AI DJ command
+/// Search and play music in one command
 #[mcp_tool(
     name = "hifi_play",
-    description = "Search and play music - the AI DJ command. Searches and plays, queues, or starts radio from the first matching result. Use action='queue' to add to queue without interrupting current playback. action='radio' is Roon-only. (Roon and LMS zones)"
+    description = "Search and play music. Searches and plays, queues, or starts radio from the first matching result. Use action='queue' to add to queue without interrupting current playback. action='radio' is Roon-only. (Roon and LMS zones)"
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct HifiPlayTool {
