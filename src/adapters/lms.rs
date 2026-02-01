@@ -1014,7 +1014,7 @@ impl LmsAdapter {
     /// registered search providers including streaming service plugins.
     ///
     /// NOTE: globalsearch requires a player_id to determine which apps/providers are available.
-    /// If player_id is None, falls back to library-only search.
+    /// Fallback chain: passed player_id -> any connected player -> library-only search.
     pub async fn search(
         &self,
         query: &str,
@@ -1024,18 +1024,24 @@ impl LmsAdapter {
         let limit = limit.unwrap_or(20);
 
         // globalsearch requires a player_id to work - without it, LMS returns empty response
-        let player_id = player_id.map(strip_lms_prefix);
-
-        // If no player_id, fall back to library search
-        let Some(player_id) = player_id else {
-            return self.search_library(query, limit).await;
+        // Fallback chain: passed player_id -> any connected player -> library-only
+        let player_id = match player_id.map(strip_lms_prefix) {
+            Some(id) => id.to_string(),
+            None => {
+                // Try to get any connected player
+                let state = self.state.read().await;
+                match state.players.keys().next() {
+                    Some(id) => id.clone(),
+                    None => return self.search_library(query, limit).await,
+                }
+            }
         };
 
         // globalsearch items: searches all providers (library, TIDAL, Qobuz plugins, etc.)
         let result = self
             .rpc
             .execute(
-                Some(player_id),
+                Some(&player_id),
                 vec![
                     json!("globalsearch"),
                     json!("items"),
