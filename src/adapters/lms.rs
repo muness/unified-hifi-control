@@ -1196,6 +1196,11 @@ impl LmsAdapter {
     }
 
     /// Parse a single globalsearch item into an LmsSearchResult
+    ///
+    /// Only returns Some if the item has at least one playback handle:
+    /// - item_id (string, for globalsearch streaming)
+    /// - url (for direct playback)
+    /// - numeric id > 0 (for library items)
     fn parse_single_item(&self, item: &serde_json::Value) -> Option<LmsSearchResult> {
         let title = item
             .get("name")
@@ -1209,23 +1214,38 @@ impl LmsAdapter {
             return None;
         }
 
-        // Get string item_id for streaming playback
+        // Get string item_id for streaming playback (globalsearch items have string IDs)
         let string_item_id = item.get("id").and_then(|v| v.as_str()).map(String::from);
+
+        // Get numeric id for library items
+        let numeric_id = item
+            .get("id")
+            .and_then(|v| v.as_i64())
+            .or_else(|| item.get("track_id").and_then(|v| v.as_i64()))
+            .unwrap_or(0);
+
+        // Get URL for direct playback
+        let url = item
+            .get("play")
+            .or_else(|| item.get("url"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        // Must have at least one playback handle
+        if string_item_id.is_none() && url.is_none() && numeric_id <= 0 {
+            return None;
+        }
 
         Some(LmsSearchResult {
             result_type: LmsSearchResultType::Track,
-            id: 0, // Streaming items don't have numeric IDs
+            id: numeric_id,
             title: title.to_string(),
             artist: item
                 .get("artist")
                 .and_then(|v| v.as_str())
                 .map(String::from),
             album: item.get("album").and_then(|v| v.as_str()).map(String::from),
-            url: item
-                .get("play")
-                .or_else(|| item.get("url"))
-                .and_then(|v| v.as_str())
-                .map(String::from),
+            url,
             item_id: string_item_id,
         })
     }
@@ -1384,7 +1404,7 @@ impl LmsAdapter {
                     vec![json!("playlist"), json!(method), json!(url)],
                 )
                 .await?;
-        } else {
+        } else if result.id > 0 {
             // Library item - use playlistcontrol with entity ID
             let id_param = match result.result_type {
                 LmsSearchResultType::Album => format!("album_id:{}", result.id),
@@ -1400,6 +1420,12 @@ impl LmsAdapter {
                     vec![json!("playlistcontrol"), json!(cmd_param), json!(id_param)],
                 )
                 .await?;
+        } else {
+            // No valid playback handle - this shouldn't happen if parse_single_item works correctly
+            return Err(anyhow!(
+                "No playable result found for '{}' (missing item_id, url, and valid id)",
+                query
+            ));
         }
 
         // Build response message
