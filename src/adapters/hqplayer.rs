@@ -554,35 +554,18 @@ impl HqpAdapter {
             state.connected = true;
         }
 
-        // Get info and cache lists (use inner methods to avoid reconnection loop)
+        // Minimal on-connect: just GetInfo + Status to verify connection
         let info = self.get_info_inner().await?;
-        let modes = self.get_modes_inner().await?;
-        let filters = self.get_filters_inner().await?;
-        let shapers = self.get_shapers_inner().await?;
-        let rates = self.get_rates_inner().await?;
+        let status = self.get_playback_status_inner().await.unwrap_or_default();
 
         {
             let mut state = self.state.write().await;
             state.info = Some(info.clone());
-            state.modes = modes;
-            state.filters = filters;
-            state.shapers = shapers;
-            state.rates = rates;
         }
 
         tracing::info!("HQPlayer connected: {} v{}", info.name, info.version);
         self.bus
             .publish(BusEvent::HqpConnected { host: host.clone() });
-
-        // Get status and volume range for ZoneDiscovered (using inner methods to avoid recursion)
-        let status = self.get_playback_status_inner().await.unwrap_or_default();
-        let vol_range = self.get_volume_range_inner().await.unwrap_or_default();
-
-        // Cache volume range (rarely changes)
-        {
-            let mut state = self.state.write().await;
-            state.volume_range = Some(vol_range.clone());
-        }
 
         // Get instance name for zone ID
         let instance_name = {
@@ -591,9 +574,17 @@ impl HqpAdapter {
         };
 
         // Emit ZoneDiscovered for this HQPlayer instance
-        let zone =
-            Self::hqp_status_to_zone(&host, instance_name.as_deref(), &info, &status, &vol_range);
+        let zone = Self::hqp_status_to_zone(
+            &host,
+            instance_name.as_deref(),
+            &info,
+            &status,
+            &VolumeRange::default(),
+        );
         self.bus.publish(BusEvent::ZoneDiscovered { zone });
+
+        // Queue background fetch of lists with delays to avoid overwhelming HQPlayer
+        self.spawn_background_cache_fetch();
 
         Ok(())
     }
@@ -635,6 +626,106 @@ impl HqpAdapter {
         state.shapers = shapers;
         state.rates = rates;
         tracing::debug!("Refreshed HQPlayer lists cache");
+    }
+
+    /// Spawn background task to fetch and cache lists with delays
+    /// This avoids hammering HQPlayer with rapid requests on connect
+    fn spawn_background_cache_fetch(&self) {
+        let state = self.state.clone();
+        let connection = self.connection.clone();
+
+        tokio::spawn(async move {
+            const DELAY: Duration = Duration::from_millis(100);
+
+            // Helper to send command using shared connection
+            async fn fetch_list(
+                connection: &Mutex<Option<HqpConnection>>,
+                xml: &str,
+            ) -> Option<String> {
+                let mut conn_guard = connection.lock().await;
+                let conn = conn_guard.as_mut()?;
+
+                if let Err(e) = conn.write_half.write_all(xml.as_bytes()).await {
+                    tracing::debug!("Background fetch write failed: {}", e);
+                    return None;
+                }
+
+                let mut response = String::new();
+                match tokio::time::timeout(RESPONSE_TIMEOUT, conn.stream.read_line(&mut response))
+                    .await
+                {
+                    Ok(Ok(_)) => Some(response),
+                    _ => None,
+                }
+            }
+
+            // Wait a bit before starting background fetches
+            tokio::time::sleep(Duration::from_millis(200)).await;
+
+            // Fetch modes
+            let xml = HqpAdapter::build_request("GetModes", &[]);
+            if let Some(response) = fetch_list(&connection, &xml).await {
+                let modes = HqpAdapter::parse_items(&response, "ModesItem", |item| ListItem {
+                    index: HqpAdapter::parse_attr_u32(item, "index"),
+                    name: HqpAdapter::parse_attr(item, "name").unwrap_or_default(),
+                    value: HqpAdapter::parse_attr_i32(item, "value"),
+                });
+                state.write().await.modes = modes;
+            }
+            tokio::time::sleep(DELAY).await;
+
+            // Fetch filters
+            let xml = HqpAdapter::build_request("GetFilters", &[]);
+            if let Some(response) = fetch_list(&connection, &xml).await {
+                let filters =
+                    HqpAdapter::parse_items(&response, "FiltersItem", |item| FilterItem {
+                        index: HqpAdapter::parse_attr_u32(item, "index"),
+                        name: HqpAdapter::parse_attr(item, "name").unwrap_or_default(),
+                        value: HqpAdapter::parse_attr_i32(item, "value"),
+                        arg: HqpAdapter::parse_attr_u32(item, "arg"),
+                    });
+                state.write().await.filters = filters;
+            }
+            tokio::time::sleep(DELAY).await;
+
+            // Fetch shapers
+            let xml = HqpAdapter::build_request("GetShapers", &[]);
+            if let Some(response) = fetch_list(&connection, &xml).await {
+                let shapers = HqpAdapter::parse_items(&response, "ShapersItem", |item| ListItem {
+                    index: HqpAdapter::parse_attr_u32(item, "index"),
+                    name: HqpAdapter::parse_attr(item, "name").unwrap_or_default(),
+                    value: HqpAdapter::parse_attr_i32(item, "value"),
+                });
+                state.write().await.shapers = shapers;
+            }
+            tokio::time::sleep(DELAY).await;
+
+            // Fetch rates
+            let xml = HqpAdapter::build_request("GetRates", &[]);
+            if let Some(response) = fetch_list(&connection, &xml).await {
+                let rates = HqpAdapter::parse_items(&response, "RatesItem", |item| RateItem {
+                    index: HqpAdapter::parse_attr_u32(item, "index"),
+                    rate: HqpAdapter::parse_attr_u32(item, "rate"),
+                });
+                state.write().await.rates = rates;
+            }
+            tokio::time::sleep(DELAY).await;
+
+            // Fetch volume range
+            let xml = HqpAdapter::build_request("VolumeRange", &[]);
+            if let Some(response) = fetch_list(&connection, &xml).await {
+                let vol_range = VolumeRange {
+                    min: HqpAdapter::parse_attr_i32(&response, "min"),
+                    max: HqpAdapter::parse_attr_i32(&response, "max"),
+                    step: HqpAdapter::parse_attr_i32(&response, "step"),
+                    enabled: HqpAdapter::parse_attr_bool(&response, "enabled"),
+                    adaptive: HqpAdapter::parse_attr_bool(&response, "adaptive"),
+                };
+                state.write().await.volume_range = Some(vol_range);
+            }
+
+            tracing::debug!("Background HQPlayer cache fetch complete");
+        });
     }
 
     /// Ensure connection is established, reconnecting if needed
@@ -770,58 +861,6 @@ impl HqpAdapter {
         })
     }
 
-    /// Get available modes (no reconnection)
-    async fn get_modes_inner(&self) -> Result<Vec<ListItem>> {
-        let xml = Self::build_request("GetModes", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(Self::parse_items(&response, "ModesItem", |item| ListItem {
-            index: Self::parse_attr_u32(item, "index"),
-            name: Self::parse_attr(item, "name").unwrap_or_default(),
-            value: Self::parse_attr_i32(item, "value"), // Mode values can be negative (-1 for PCM)
-        }))
-    }
-
-    /// Get available filters (no reconnection)
-    async fn get_filters_inner(&self) -> Result<Vec<FilterItem>> {
-        let xml = Self::build_request("GetFilters", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(Self::parse_items(&response, "FiltersItem", |item| {
-            FilterItem {
-                index: Self::parse_attr_u32(item, "index"),
-                name: Self::parse_attr(item, "name").unwrap_or_default(),
-                value: Self::parse_attr_i32(item, "value"),
-                arg: Self::parse_attr_u32(item, "arg"),
-            }
-        }))
-    }
-
-    /// Get available shapers (no reconnection)
-    async fn get_shapers_inner(&self) -> Result<Vec<ListItem>> {
-        let xml = Self::build_request("GetShapers", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(Self::parse_items(&response, "ShapersItem", |item| {
-            ListItem {
-                index: Self::parse_attr_u32(item, "index"),
-                name: Self::parse_attr(item, "name").unwrap_or_default(),
-                value: Self::parse_attr_i32(item, "value"),
-            }
-        }))
-    }
-
-    /// Get available sample rates (no reconnection)
-    async fn get_rates_inner(&self) -> Result<Vec<RateItem>> {
-        let xml = Self::build_request("GetRates", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(Self::parse_items(&response, "RatesItem", |item| RateItem {
-            index: Self::parse_attr_u32(item, "index"),
-            rate: Self::parse_attr_u32(item, "rate"),
-        }))
-    }
-
     /// Get playback status (no reconnection)
     async fn get_playback_status_inner(&self) -> Result<HqpStatus> {
         let xml = Self::build_request("Status", &[("subscribe", "0")]);
@@ -842,20 +881,6 @@ impl HqpAdapter {
             active_channels: Self::parse_attr_u32(&response, "active_channels"),
             samplerate: Self::parse_attr_u32(&response, "samplerate"),
             bitrate: Self::parse_attr_u32(&response, "bitrate"),
-        })
-    }
-
-    /// Get volume range (no reconnection)
-    async fn get_volume_range_inner(&self) -> Result<VolumeRange> {
-        let xml = Self::build_request("VolumeRange", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(VolumeRange {
-            min: Self::parse_attr_i32(&response, "min"),
-            max: Self::parse_attr_i32(&response, "max"),
-            step: Self::parse_attr_i32(&response, "step").max(1),
-            enabled: Self::parse_attr_bool(&response, "enabled"),
-            adaptive: Self::parse_attr_bool(&response, "adaptive"),
         })
     }
 
@@ -1228,13 +1253,32 @@ impl HqpAdapter {
 
     /// Get full pipeline status
     pub async fn get_pipeline_status(&self) -> Result<PipelineStatus> {
-        // Only 2 TCP commands needed: State + Status
+        // Core data: State + Status (2 TCP commands)
         let state = self.get_state().await?;
-        // Get playback status for actual active filter/shaper/mode strings
         let playback_status = self.get_playback_status().await.unwrap_or_default();
 
-        // Use cached data - fetched on connect and refreshed after profile loads
-        // This avoids hammering HQPlayer with extra commands on every status request
+        // Lazy-load lists if not cached (first request after connect)
+        let needs_lists = {
+            let cached = self.state.read().await;
+            cached.modes.is_empty()
+        };
+        if needs_lists {
+            self.refresh_lists().await;
+        }
+
+        // Lazy-load volume range if not cached
+        let needs_vol_range = {
+            let cached = self.state.read().await;
+            cached.volume_range.is_none()
+        };
+        if needs_vol_range {
+            if let Ok(vr) = self.get_volume_range().await {
+                let mut cached = self.state.write().await;
+                cached.volume_range = Some(vr);
+            }
+        }
+
+        // Use cached data
         let (modes, filters, shapers, rates, vol_range) = {
             let cached = self.state.read().await;
             (
