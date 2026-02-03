@@ -322,6 +322,7 @@ struct HqpAdapterState {
     filters: Vec<FilterItem>,
     shapers: Vec<ListItem>,
     rates: Vec<RateItem>,
+    volume_range: Option<VolumeRange>,
     // Web client state for profiles
     profiles: Vec<HqpProfile>,
     hidden_fields: HashMap<String, String>,
@@ -356,6 +357,7 @@ impl Default for HqpAdapterState {
             filters: Vec::new(),
             shapers: Vec::new(),
             rates: Vec::new(),
+            volume_range: None,
             profiles: Vec::new(),
             hidden_fields: HashMap::new(),
             config_title: None,
@@ -570,6 +572,12 @@ impl HqpAdapter {
         // Get status and volume range for ZoneDiscovered (using inner methods to avoid recursion)
         let status = self.get_playback_status_inner().await.unwrap_or_default();
         let vol_range = self.get_volume_range_inner().await.unwrap_or_default();
+
+        // Cache volume range (rarely changes)
+        {
+            let mut state = self.state.write().await;
+            state.volume_range = Some(vol_range.clone());
+        }
 
         // Get instance name for zone ID
         let instance_name = {
@@ -1215,20 +1223,21 @@ impl HqpAdapter {
 
     /// Get full pipeline status
     pub async fn get_pipeline_status(&self) -> Result<PipelineStatus> {
+        // Only 2 TCP commands needed: State + Status
         let state = self.get_state().await?;
-        let vol_range = self.get_volume_range().await?;
         // Get playback status for actual active filter/shaper/mode strings
         let playback_status = self.get_playback_status().await.unwrap_or_default();
 
-        // Use cached lists - they were fetched on connect and are refreshed after profile loads
-        // This avoids hammering HQPlayer with 4 extra commands on every status request
-        let (modes, filters, shapers, rates) = {
+        // Use cached data - fetched on connect and refreshed after profile loads
+        // This avoids hammering HQPlayer with extra commands on every status request
+        let (modes, filters, shapers, rates, vol_range) = {
             let cached = self.state.read().await;
             (
                 cached.modes.clone(),
                 cached.filters.clone(),
                 cached.shapers.clone(),
                 cached.rates.clone(),
+                cached.volume_range.clone().unwrap_or_default(),
             )
         };
 
