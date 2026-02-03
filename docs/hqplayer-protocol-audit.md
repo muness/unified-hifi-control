@@ -112,6 +112,43 @@ Comprehensive audit comparing our HQPlayer adapter implementation against the of
 
 ## Protocol Details
 
+### State vs Status: Configured vs Active
+
+HQPlayer has TWO distinct concepts that are often confused:
+
+| Aspect | State Command | Status Command |
+|--------|---------------|----------------|
+| **Purpose** | Configured/saved settings | Active playback state |
+| **Filter/Shaper** | Numeric VALUE (e.g., `filter1x="24"`) | String NAME (e.g., `active_filter="poly-sinc-ext2"`) |
+| **When to use** | Settings UI (what user configured) | Now Playing display (what's actually running) |
+| **Changes when** | User changes setting via Set* commands | Playback starts or settings applied |
+
+**Key Insight:** When you call `SetFilter`, it updates BOTH:
+- The configured value (reflected in State)
+- The active value (reflected in Status)
+
+But they may differ temporarily if HQPlayer selects a filter variant based on CPU load or sample rate.
+
+### Our Caching Strategy
+
+To avoid overwhelming HQPlayer with rapid TCP commands:
+
+| Data | Fetched | Cached | Refreshed |
+|------|---------|--------|-----------|
+| Modes list | On connect | Yes | After profile load |
+| Filters list | On connect | Yes | After profile load |
+| Shapers list | On connect | Yes | After profile load |
+| Rates list | On connect | Yes | After profile load |
+| VolumeRange | On connect | Yes | After profile load |
+| State | Per request | No | N/A |
+| Status | Per request | No | N/A |
+
+**Per-request commands:** Only State + Status (2 TCP commands)
+
+**Connection commands:** GetInfo, GetModes, GetFilters, GetShapers, GetRates, Status, VolumeRange (7 TCP commands, but only on connect)
+
+**Reconnection:** 1 second delay between attempts, max 2 attempts (to avoid crashing HQPlayer)
+
 ### List Item Structure
 
 From hqp-control parsing:
@@ -130,18 +167,47 @@ emit shapersItem(index, name, value);
 emit ratesItem(index, rate);
 ```
 
-### State Response Fields
+### State Response Fields (Configured Settings)
 
-The State XML response contains:
+The `<State/>` command returns CONFIGURED settings as numeric values:
 
-- `filter` - current filter VALUE
-- `filter1x` - 1x filter VALUE (when using split filters)
-- `filterNx` - Nx filter VALUE (when using split filters)
-- `mode` - mode VALUE (can be -1 for [source])
-- `shaper` - shaper VALUE
-- `rate` - rate INDEX (different from others!)
-- `active_rate` - actual sample rate in Hz
-- `volume` - volume in dB
+```xml
+<State filter="24" filter1x="24" filterNx="37" shaper="9" mode="1" rate="2"
+       volume="-58" active_mode="0" active_rate="48000"
+       invert="0" convolution="1" repeat="0" random="0" adaptive="0" filter_20k="0"
+       matrix_profile=""/>
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `filter` | VALUE | General filter (fallback if no split) |
+| `filter1x` | VALUE | 1x filter (for 1x sample rates) |
+| `filterNx` | VALUE | Nx filter (for 2x+ sample rates) |
+| `shaper` | VALUE | Dither/noise shaper |
+| `mode` | VALUE | PCM/SDM mode (-1 = [source]) |
+| `rate` | **INDEX** | Rate list index (NOT the Hz value!) |
+| `active_rate` | Hz | Actual output sample rate |
+| `volume` | dB | Current volume |
+
+### Status Response Fields (Active Playback)
+
+The `<Status subscribe="0"/>` command returns ACTIVE playback state with string names:
+
+```xml
+<Status state="0" track="0" position="0" length="0" volume="-58"
+        active_mode="PCM" active_filter="poly-sinc-ext2" active_shaper="LNS15"
+        active_rate="48000" active_bits="32" active_channels="2"/>
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `active_mode` | String | Active mode name (e.g., "PCM", "SDM") |
+| `active_filter` | String | Active filter name (what's actually running) |
+| `active_shaper` | String | Active shaper name |
+| `active_rate` | Hz | Actual output sample rate |
+| `state` | 0/1/2 | Stopped/Paused/Playing |
+
+**Why both?** Use State VALUES for settings UI (what to send in Set commands). Use Status STRINGS for display (what user sees as "now playing").
 
 ### Key Insight: VALUE vs INDEX
 
