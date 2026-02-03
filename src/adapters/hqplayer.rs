@@ -1202,11 +1202,21 @@ impl HqpAdapter {
         let state = self.get_state().await?;
         let vol_range = self.get_volume_range().await?;
 
-        let cached = self.state.read().await;
-        let modes = &cached.modes;
-        let filters = &cached.filters;
-        let shapers = &cached.shapers;
-        let rates = &cached.rates;
+        // Fetch fresh lists from HQPlayer to ensure labels are current
+        // (cached lists can become stale after profile changes)
+        let modes = self.get_modes().await.unwrap_or_default();
+        let filters = self.get_filters().await.unwrap_or_default();
+        let shapers = self.get_shapers().await.unwrap_or_default();
+        let rates = self.get_rates().await.unwrap_or_default();
+
+        // Update cache with fresh data
+        {
+            let mut cached = self.state.write().await;
+            cached.modes = modes.clone();
+            cached.filters = filters.clone();
+            cached.shapers = shapers.clone();
+            cached.rates = rates.clone();
+        }
 
         // State returns actual HQPlayer values, look up by value field (not array index)
         let filter1x_val = state.filter1x.unwrap_or(state.filter) as i32;
