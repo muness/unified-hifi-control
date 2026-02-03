@@ -129,9 +129,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3);
 const PROFILE_PATH: &str = "/config/profile/load";
 /// Maximum reconnection attempts before giving up
-const MAX_RECONNECT_ATTEMPTS: u32 = 3;
-/// Delay between reconnection attempts
-const RECONNECT_DELAY: Duration = Duration::from_millis(200);
+const MAX_RECONNECT_ATTEMPTS: u32 = 2;
+/// Delay between reconnection attempts (HQPlayer can be overwhelmed by rapid connections)
+const RECONNECT_DELAY: Duration = Duration::from_secs(1);
 
 /// HQPlayer state information
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
