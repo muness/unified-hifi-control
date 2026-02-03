@@ -102,7 +102,7 @@ rumqttc = { version = "0.24", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 # Config (server only)
-config = { version = "0.14", optional = true }
+config = { version = "0.15", optional = true }
 
 # Image processing (server only)
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp"], optional = true }
