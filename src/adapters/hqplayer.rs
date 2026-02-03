@@ -3,6 +3,11 @@
 //! Implements the TCP/XML control protocol on port 4321 for pipeline control.
 //! Also implements HTTP/Digest auth for web UI profile loading (port 8088).
 //! Based on Jussi Laako's hqp-control reference implementation.
+//!
+//! See `docs/hqplayer-protocol-audit.md` for:
+//! - State vs Status semantics (configured vs active values)
+//! - VALUE vs INDEX field usage for Set commands
+//! - Caching strategy to avoid overwhelming HQPlayer
 
 use anyhow::{anyhow, Result};
 use quick_xml::events::{BytesStart, Event};
