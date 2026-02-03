@@ -1201,6 +1201,8 @@ impl HqpAdapter {
     pub async fn get_pipeline_status(&self) -> Result<PipelineStatus> {
         let state = self.get_state().await?;
         let vol_range = self.get_volume_range().await?;
+        // Get playback status for actual active filter/shaper/mode strings
+        let playback_status = self.get_playback_status().await.unwrap_or_default();
 
         // Fetch fresh lists from HQPlayer to ensure labels are current
         // (cached lists can become stale after profile changes)
@@ -1234,13 +1236,6 @@ impl HqpAdapter {
                 .map(|m| m.name.clone())
                 .unwrap_or_default()
         };
-        let get_mode_by_value = |val: u8| -> String {
-            modes
-                .iter()
-                .find(|m| m.value == val as i32)
-                .map(|m| m.name.clone())
-                .unwrap_or_default()
-        };
 
         let state_str = match state.state {
             0 => "Stopped",
@@ -1253,9 +1248,10 @@ impl HqpAdapter {
             status: PipelineState {
                 state: state_str.to_string(),
                 mode: get_mode_by_index(state.mode),
-                active_mode: get_mode_by_value(state.active_mode),
-                active_filter: filter1x_obj.map(|f| f.name.clone()).unwrap_or_default(),
-                active_shaper: shaper_obj.map(|s| s.name.clone()).unwrap_or_default(),
+                // Use actual active values from Status response, not configured values from State
+                active_mode: playback_status.active_mode.clone(),
+                active_filter: playback_status.active_filter.clone(),
+                active_shaper: playback_status.active_shaper.clone(),
                 active_rate: state.active_rate,
                 convolution: state.convolution,
                 invert: state.invert,
@@ -1331,18 +1327,24 @@ impl HqpAdapter {
                 },
                 samplerate: PipelineSetting {
                     selected: SelectedOption {
-                        // state.rate is the actual rate value (e.g., 48000), not an index
-                        value: state.rate.to_string(),
-                        label: if state.rate == 0 {
-                            "Auto".to_string()
-                        } else {
-                            // Look up by rate value, not index
-                            rates
-                                .iter()
-                                .find(|r| r.rate == state.rate)
-                                .map(|r| r.rate.to_string())
-                                .unwrap_or_else(|| state.rate.to_string())
-                        },
+                        // state.rate is an INDEX into the rates list, not a rate value
+                        // Look up by index to get the actual rate
+                        value: rates
+                            .iter()
+                            .find(|r| r.index == state.rate)
+                            .map(|r| r.rate.to_string())
+                            .unwrap_or_else(|| state.active_rate.to_string()),
+                        label: rates
+                            .iter()
+                            .find(|r| r.index == state.rate)
+                            .map(|r| {
+                                if r.rate == 0 {
+                                    "Auto".to_string()
+                                } else {
+                                    r.rate.to_string()
+                                }
+                            })
+                            .unwrap_or_else(|| state.active_rate.to_string()),
                     },
                     options: rates
                         .iter()
