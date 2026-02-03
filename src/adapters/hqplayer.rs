@@ -608,6 +608,22 @@ impl HqpAdapter {
         }
     }
 
+    /// Refresh cached lists (modes, filters, shapers, rates)
+    /// Call this after profile changes
+    async fn refresh_lists(&self) {
+        let modes = self.get_modes().await.unwrap_or_default();
+        let filters = self.get_filters().await.unwrap_or_default();
+        let shapers = self.get_shapers().await.unwrap_or_default();
+        let rates = self.get_rates().await.unwrap_or_default();
+
+        let mut state = self.state.write().await;
+        state.modes = modes;
+        state.filters = filters;
+        state.shapers = shapers;
+        state.rates = rates;
+        tracing::debug!("Refreshed HQPlayer lists cache");
+    }
+
     /// Ensure connection is established, reconnecting if needed
     pub async fn ensure_connected(&self) -> Result<()> {
         // Check if already connected
@@ -1204,21 +1220,17 @@ impl HqpAdapter {
         // Get playback status for actual active filter/shaper/mode strings
         let playback_status = self.get_playback_status().await.unwrap_or_default();
 
-        // Fetch fresh lists from HQPlayer to ensure labels are current
-        // (cached lists can become stale after profile changes)
-        let modes = self.get_modes().await.unwrap_or_default();
-        let filters = self.get_filters().await.unwrap_or_default();
-        let shapers = self.get_shapers().await.unwrap_or_default();
-        let rates = self.get_rates().await.unwrap_or_default();
-
-        // Update cache with fresh data
-        {
-            let mut cached = self.state.write().await;
-            cached.modes = modes.clone();
-            cached.filters = filters.clone();
-            cached.shapers = shapers.clone();
-            cached.rates = rates.clone();
-        }
+        // Use cached lists - they were fetched on connect and are refreshed after profile loads
+        // This avoids hammering HQPlayer with 4 extra commands on every status request
+        let (modes, filters, shapers, rates) = {
+            let cached = self.state.read().await;
+            (
+                cached.modes.clone(),
+                cached.filters.clone(),
+                cached.shapers.clone(),
+                cached.rates.clone(),
+            )
+        };
 
         // State returns actual HQPlayer values, look up by value field (not array index)
         let filter1x_val = state.filter1x.unwrap_or(state.filter) as i32;
@@ -1724,6 +1736,8 @@ impl HqpAdapter {
                     if response.status().is_client_error() || response.status().is_server_error() {
                         return Err(anyhow!("Profile load failed: {}", response.status()));
                     }
+                    // Refresh cached lists after profile change
+                    self.refresh_lists().await;
                     return Ok(());
                 }
             }
@@ -1734,6 +1748,8 @@ impl HqpAdapter {
             return Err(anyhow!("Profile load failed: {}", response.status()));
         }
 
+        // Refresh cached lists after profile change
+        self.refresh_lists().await;
         Ok(())
     }
 
