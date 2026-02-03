@@ -96,7 +96,7 @@ roon-api = { git = "https://github.com/open-horizon-labs/rust-roon-api.git", bra
 reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls"], optional = true }
 
 # MQTT (server only)
-rumqttc = { version = "0.24", optional = true }
+rumqttc = { version = "0.25", optional = true }
 
 # Logging subscriber (server only - needs tokio)
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
