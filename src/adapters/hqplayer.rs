@@ -1025,55 +1025,92 @@ impl HqpAdapter {
         }))
     }
 
-    /// Set mode
-    pub async fn set_mode(&self, value: u32) -> Result<()> {
-        let xml = Self::build_request("SetMode", &[("value", &value.to_string())]);
+    /// Set mode - sends VALUE directly to HQPlayer
+    /// Despite hqp-control help saying "index", HQPlayer actually expects the VALUE field
+    pub async fn set_mode(&self, mode_value: u32) -> Result<()> {
+        // Mode values can be negative (e.g., -1 for [source]), so cast carefully
+        let mode_val_i32 = mode_value as i32;
+        // HQPlayer SetMode takes VALUE field directly (not array index)
+        let xml = Self::build_request("SetMode", &[("value", &mode_val_i32.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
 
-    /// Set filter (low-level)
-    /// - value: sets the Nx (non-1x) filter
-    /// - value1x: if provided, also sets the 1x filter
+    /// Set filter (low-level) - takes VALUE fields directly (not indices)
+    ///
+    /// - value: sets the Nx (non-1x) filter as VALUE
+    /// - value1x: if provided, also sets the 1x filter as VALUE
+    ///
+    /// NOTE: Despite hqp-control help saying "index", HQPlayer actually expects the VALUE field
     pub async fn set_filter(&self, value: u32, value1x: Option<u32>) -> Result<()> {
         let value_str = value.to_string();
         let mut attrs = vec![("value", value_str.as_str())];
+
         let value1x_str;
         if let Some(v1x) = value1x {
             value1x_str = v1x.to_string();
             attrs.push(("value1x", value1x_str.as_str()));
         }
+
         let xml = Self::build_request("SetFilter", &attrs);
         self.send_command(&xml).await?;
         Ok(())
     }
 
     /// Set only the 1x filter, preserving current Nx filter value
-    pub async fn set_filter_1x(&self, value: u32) -> Result<()> {
-        // Get current state to preserve Nx filter
+    pub async fn set_filter_1x(&self, filter_value: u32) -> Result<()> {
         let state = self.get_state().await?;
-        let current_nx = state.filter_nx.unwrap_or(state.filter);
-        self.set_filter(current_nx, Some(value)).await
+        let current_nx_value = state.filter_nx.unwrap_or(state.filter);
+        self.set_filter(current_nx_value, Some(filter_value)).await
     }
 
     /// Set only the Nx filter, preserving current 1x filter value
-    pub async fn set_filter_nx(&self, value: u32) -> Result<()> {
-        // Get current state to preserve 1x filter
+    pub async fn set_filter_nx(&self, filter_value: u32) -> Result<()> {
+        // Get current state to preserve 1x filter (state returns values, not indices)
         let state = self.get_state().await?;
-        let current_1x = state.filter1x.unwrap_or(state.filter);
-        self.set_filter(value, Some(current_1x)).await
+        let current_1x_value = state.filter1x.unwrap_or(state.filter);
+        self.set_filter(filter_value, Some(current_1x_value)).await
     }
 
-    /// Set shaper
-    pub async fn set_shaper(&self, value: u32) -> Result<()> {
-        let xml = Self::build_request("SetShaping", &[("value", &value.to_string())]);
+    /// Set shaper - sends VALUE directly to HQPlayer
+    /// Despite hqp-control help saying "index", HQPlayer actually expects the VALUE field
+    pub async fn set_shaper(&self, shaper_value: u32) -> Result<()> {
+        // HQPlayer SetShaping takes VALUE field directly (not array index)
+        let xml = Self::build_request("SetShaping", &[("value", &shaper_value.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
 
     /// Set sample rate
-    pub async fn set_rate(&self, value: u32) -> Result<()> {
-        let xml = Self::build_request("SetRate", &[("value", &value.to_string())]);
+    /// The value parameter is the actual rate (e.g., 48000), but HQPlayer's SetRate
+    /// command expects the index from the rates list, so we look it up.
+    pub async fn set_rate(&self, rate_value: u32) -> Result<()> {
+        // Look up the index for this rate value from cached rates
+        let index = {
+            let state = self.state.read().await;
+            state
+                .rates
+                .iter()
+                .find(|r| r.rate == rate_value)
+                .map(|r| r.index)
+        };
+
+        let index = match index {
+            Some(idx) => idx,
+            None => {
+                // Rate not found in cached list - maybe cache is stale, try refreshing
+                let rates = self.get_rates().await?;
+                rates
+                    .iter()
+                    .find(|r| r.rate == rate_value)
+                    .map(|r| r.index)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Rate {} not found in available rates", rate_value)
+                    })?
+            }
+        };
+
+        let xml = Self::build_request("SetRate", &[("value", &index.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
@@ -1171,14 +1208,14 @@ impl HqpAdapter {
         let shapers = &cached.shapers;
         let rates = &cached.rates;
 
-        // State returns array indices, look up to get actual objects
-        let filter1x_idx = state.filter1x.unwrap_or(state.filter) as usize;
-        let filter_nx_idx = state.filter_nx.unwrap_or(state.filter) as usize;
-        let shaper_idx = state.shaper as usize;
+        // State returns actual HQPlayer values, look up by value field (not array index)
+        let filter1x_val = state.filter1x.unwrap_or(state.filter) as i32;
+        let filter_nx_val = state.filter_nx.unwrap_or(state.filter) as i32;
+        let shaper_val = state.shaper as i32;
 
-        let filter1x_obj = filters.get(filter1x_idx);
-        let filter_nx_obj = filters.get(filter_nx_idx);
-        let shaper_obj = shapers.get(shaper_idx);
+        let filter1x_obj = filters.iter().find(|f| f.value == filter1x_val);
+        let filter_nx_obj = filters.iter().find(|f| f.value == filter_nx_val);
+        let shaper_obj = shapers.iter().find(|s| s.value == shaper_val);
 
         let get_mode_by_index = |idx: u8| -> String {
             modes
@@ -1241,7 +1278,7 @@ impl HqpAdapter {
                     selected: SelectedOption {
                         value: filter1x_obj
                             .map(|f| f.value.to_string())
-                            .unwrap_or_else(|| filter1x_idx.to_string()),
+                            .unwrap_or_else(|| filter1x_val.to_string()),
                         label: filter1x_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
@@ -1256,7 +1293,7 @@ impl HqpAdapter {
                     selected: SelectedOption {
                         value: filter_nx_obj
                             .map(|f| f.value.to_string())
-                            .unwrap_or_else(|| filter_nx_idx.to_string()),
+                            .unwrap_or_else(|| filter_nx_val.to_string()),
                         label: filter_nx_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
@@ -1271,7 +1308,7 @@ impl HqpAdapter {
                     selected: SelectedOption {
                         value: shaper_obj
                             .map(|s| s.value.to_string())
-                            .unwrap_or_else(|| shaper_idx.to_string()),
+                            .unwrap_or_else(|| shaper_val.to_string()),
                         label: shaper_obj.map(|s| s.name.clone()).unwrap_or_default(),
                     },
                     options: shapers
@@ -1284,22 +1321,25 @@ impl HqpAdapter {
                 },
                 samplerate: PipelineSetting {
                     selected: SelectedOption {
+                        // state.rate is the actual rate value (e.g., 48000), not an index
                         value: state.rate.to_string(),
                         label: if state.rate == 0 {
                             "Auto".to_string()
                         } else {
+                            // Look up by rate value, not index
                             rates
                                 .iter()
-                                .find(|r| r.index == state.rate)
+                                .find(|r| r.rate == state.rate)
                                 .map(|r| r.rate.to_string())
-                                .unwrap_or_else(|| "Auto".to_string())
+                                .unwrap_or_else(|| state.rate.to_string())
                         },
                     },
                     options: rates
                         .iter()
                         .map(|r| SelectOption {
-                            value: r.index.to_string(),
-                            label: if r.index == 0 {
+                            // Use rate as value (what HQPlayer expects)
+                            value: r.rate.to_string(),
+                            label: if r.rate == 0 {
                                 "Auto".to_string()
                             } else {
                                 r.rate.to_string()
@@ -1734,9 +1774,17 @@ impl HqpAdapter {
         }
     }
 
-    /// Set matrix profile by index
-    pub async fn set_matrix_profile(&self, value: u32) -> Result<()> {
-        let xml = Self::build_request("MatrixSetProfile", &[("value", &value.to_string())]);
+    /// Set matrix profile by index - converts index to name for HQPlayer
+    /// HQPlayer's MatrixSetProfile expects profile NAME, not index
+    pub async fn set_matrix_profile(&self, profile_index: u32) -> Result<()> {
+        // Get the list of profiles and find the name for this index
+        let profiles = self.get_matrix_profiles().await?;
+        let profile = profiles
+            .iter()
+            .find(|p| p.index == profile_index)
+            .ok_or_else(|| anyhow::anyhow!("Matrix profile index {} not found", profile_index))?;
+
+        let xml = Self::build_request("MatrixSetProfile", &[("value", &profile.name)]);
         self.send_command(&xml).await?;
         Ok(())
     }

@@ -904,7 +904,17 @@ pub async fn hqp_pipeline_update_handler(
     };
 
     match result {
-        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
+        Ok(()) => {
+            // After setting, fetch and return the fresh pipeline state
+            // This ensures the UI gets the updated state immediately
+            match state.hqplayer.get_pipeline_status().await {
+                Ok(pipeline) => (StatusCode::OK, Json(pipeline)).into_response(),
+                Err(_) => {
+                    // If fetching fresh state fails, still return ok
+                    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+                }
+            }
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {

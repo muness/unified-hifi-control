@@ -269,6 +269,8 @@ pub fn HqPlayer() -> Element {
             if let Err(e) = api::post_json_no_response("/hqp/pipeline", &req).await {
                 hqp_error.set(Some(format!("Pipeline update failed: {e}")));
             } else {
+                // Server now returns fresh state after setting, so HQPlayer has processed
+                // the change before we refresh
                 pipeline.restart();
             }
             hqp_loading.set(false);
@@ -725,7 +727,8 @@ fn DspSettings(
         .unwrap_or_default();
     let matrix_current = matrix.as_ref().and_then(|m| m.current);
 
-    // Dynamic shaper label
+    // Dynamic shaper label based on mode
+    // SDM/DSD mode = "Modulator", PCM mode = "Shaper" (not "Dither")
     let shaper_label = mode_opts
         .as_ref()
         .and_then(|m| m.selected.as_ref())
@@ -735,7 +738,7 @@ fn DspSettings(
             if lower.contains("sdm") || lower.contains("dsd") {
                 "Modulator"
             } else {
-                "Dither"
+                "Shaper" // PCM mode uses noise shaping, not dithering
             }
         })
         .unwrap_or("Shaper");
