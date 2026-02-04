@@ -832,12 +832,14 @@ pub async fn hqp_setting_handler(
     State(state): State<AppState>,
     Json(req): Json<HqpSettingRequest>,
 ) -> impl IntoResponse {
+    // Legacy endpoint uses u32 values - convert to string for name-based lookups
+    let value_str = req.value.to_string();
     let result = match req.name.as_str() {
         "mode" => state.hqplayer.set_mode(req.value).await,
         "filter" => state.hqplayer.set_filter(req.value, Some(req.value)).await, // Sets both 1x and Nx
-        "filter1x" => state.hqplayer.set_filter_1x(req.value).await, // Sets only 1x, preserves Nx
-        "filterNx" | "filternx" => state.hqplayer.set_filter_nx(req.value).await, // Sets only Nx, preserves 1x
-        "shaper" => state.hqplayer.set_shaper(req.value).await,
+        "filter1x" => state.hqplayer.set_filter_1x(&value_str).await, // Sets only 1x, preserves Nx
+        "filterNx" | "filternx" => state.hqplayer.set_filter_nx(&value_str).await, // Sets only Nx, preserves 1x
+        "shaper" => state.hqplayer.set_shaper(&value_str).await,
         "samplerate" | "rate" => state.hqplayer.set_rate(req.value).await,
         _ => Err(anyhow::anyhow!("Unknown setting: {}", req.name)),
     };
@@ -866,10 +868,16 @@ pub async fn hqp_pipeline_update_handler(
     State(state): State<AppState>,
     Json(req): Json<HqpPipelineRequest>,
 ) -> impl IntoResponse {
-    // Convert value to u32 - accept both numeric and string representations
+    // Convert value to string for name-based lookups (filter, shaper)
+    let value_str: String = match &req.value {
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        _ => "0".to_string(),
+    };
+
+    // Convert value to u32 for numeric settings (mode, samplerate)
     // Note: HQPlayer mode values can be negative (e.g., -1 for PCM), so we parse as i64 first
-    // and cast to u32 to preserve the bit pattern
-    let value: u32 = match &req.value {
+    let value_u32: u32 = match &req.value {
         serde_json::Value::Number(n) => n.as_i64().unwrap_or(0) as u32,
         serde_json::Value::String(s) => s.parse::<i64>().unwrap_or(0) as u32,
         _ => 0,
@@ -894,12 +902,12 @@ pub async fn hqp_pipeline_update_handler(
     }
 
     let result = match req.setting.as_str() {
-        "mode" => state.hqplayer.set_mode(value).await,
-        "filter1x" => state.hqplayer.set_filter_1x(value).await,
-        "filterNx" | "filternx" => state.hqplayer.set_filter_nx(value).await,
-        "shaper" => state.hqplayer.set_shaper(value).await,
-        "samplerate" => state.hqplayer.set_rate(value).await,
-        "dither" => state.hqplayer.set_shaper(value).await, // dither uses same API
+        "mode" => state.hqplayer.set_mode(value_u32).await,
+        "filter1x" => state.hqplayer.set_filter_1x(&value_str).await,
+        "filterNx" | "filternx" => state.hqplayer.set_filter_nx(&value_str).await,
+        "shaper" => state.hqplayer.set_shaper(&value_str).await,
+        "samplerate" => state.hqplayer.set_rate(value_u32).await,
+        "dither" => state.hqplayer.set_shaper(&value_str).await, // dither uses same API
         _ => Err(anyhow::anyhow!("Unknown setting: {}", req.setting)),
     };
 

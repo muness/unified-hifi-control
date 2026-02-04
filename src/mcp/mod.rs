@@ -529,33 +529,16 @@ impl ServerHandler for HifiMcpHandler {
 
                 let result = match args.setting.as_str() {
                     "filter1x" | "filter_1x" => {
-                        if let Some(v) = parse_nonneg(&args.value) {
-                            self.state.hqplayer.set_filter_1x(v).await
-                        } else {
-                            return Self::error_result(
-                                "Invalid filter1x value (expected non-negative integer)".into(),
-                            );
-                        }
+                        // Adapter handles name→value lookup
+                        self.state.hqplayer.set_filter_1x(&args.value).await
                     }
                     "filterNx" | "filter_nx" | "filternx" => {
-                        if let Some(v) = parse_nonneg(&args.value) {
-                            self.state.hqplayer.set_filter_nx(v).await
-                        } else {
-                            return Self::error_result(
-                                "Invalid filterNx value (expected non-negative integer)".into(),
-                            );
-                        }
+                        // Adapter handles name→value lookup
+                        self.state.hqplayer.set_filter_nx(&args.value).await
                     }
                     "shaper" | "dither" => {
-                        // shaper (DSD) and dither (PCM) use the same HQPlayer API
-                        if let Some(v) = parse_nonneg(&args.value) {
-                            self.state.hqplayer.set_shaper(v).await
-                        } else {
-                            return Self::error_result(
-                                "Invalid shaper/dither value (expected non-negative integer)"
-                                    .into(),
-                            );
-                        }
+                        // Adapter handles name→value lookup
+                        self.state.hqplayer.set_shaper(&args.value).await
                     }
                     "rate" | "samplerate" => {
                         if let Some(v) = parse_nonneg(&args.value) {
