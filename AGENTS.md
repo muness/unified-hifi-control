@@ -178,9 +178,9 @@ MCP (Model Context Protocol) enables AI assistants (Claude, ChatGPT, BoltAI, etc
 | Discovery (zones) | ✅ | ✅ | ✅ | ✅ |
 | Transport (play/pause/next) | ✅ | ✅ | ✅ | ✅ |
 | Volume control | ✅ | ✅ | ❌ | ❌ |
-| Search | ✅ | ❌ | ❌ | ❌ |
-| Play by query | ✅ | ❌ | ❌ | ❌ |
-| Queue building | ✅ | ❌ | ❌ | ❌ |
+| Search | ✅ | ✅ | ❌ | ❌ |
+| Play by query | ✅ | ✅ | ❌ | ❌ |
+| Queue building | ✅ | ✅ | ❌ | ❌ |
 
 ### Tool Design Principles
 
@@ -201,8 +201,8 @@ MCP (Model Context Protocol) enables AI assistants (Claude, ChatGPT, BoltAI, etc
 | `hifi_zones` | List all playback zones |
 | `hifi_now_playing` | Get current track info |
 | `hifi_control` | Play, pause, next, previous, volume |
-| `hifi_search` | Search library/TIDAL/Qobuz (Roon only) |
-| `hifi_play` | AI DJ: search and play/queue/radio |
+| `hifi_search` | Search library/TIDAL/Qobuz (Roon, LMS) |
+| `hifi_play` | Search and play/queue/radio (Roon, LMS) |
 | `hifi_status` | Bridge connection status |
 | `hifi_hqplayer_status` | HQPlayer pipeline status |
 | `hifi_hqplayer_profiles` | List HQPlayer configs |

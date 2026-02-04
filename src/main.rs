@@ -279,7 +279,7 @@ mod server {
             .route("/roon/control", post(api::roon_control_handler))
             .route("/roon/volume", post(api::roon_volume_handler))
             .route("/roon/image", get(api::roon_image_handler))
-            // Roon Browse routes (AI DJ Phase 1)
+            // Roon Browse routes
             .route("/roon/search", get(api::roon_search_handler))
             .route("/roon/play", post(api::roon_play_handler))
             .route("/roon/play_item", post(api::roon_play_item_handler))

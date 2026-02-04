@@ -144,15 +144,15 @@ Control your hi-fi with natural language. The bridge includes an MCP server so C
 | `hifi_zones` | List available zones (Roon, LMS, OpenHome, UPnP) |
 | `hifi_now_playing` | Get current track, artist, album, play state |
 | `hifi_control` | Play, pause, next, previous, volume control |
-| `hifi_search` | Search library, TIDAL, or Qobuz *(Roon only)* |
-| `hifi_play` | AI DJ: search and play/queue in one command *(Roon only)* |
+| `hifi_search` | Search library, TIDAL, or Qobuz *(Roon, LMS)* |
+| `hifi_play` | Search and play/queue in one command *(Roon, LMS)* |
 | `hifi_status` | Overall bridge status |
 | `hifi_hqplayer_status` | HQPlayer Embedded status and pipeline |
 | `hifi_hqplayer_profiles` | List saved HQPlayer profiles |
 | `hifi_hqplayer_load_profile` | Switch HQPlayer profile |
 | `hifi_hqplayer_set_pipeline` | Change filter, shaper, dither settings |
 
-*Search and play are currently Roon-only. Transport controls work with all adapters. [LMS search/play contributions welcome!](https://github.com/open-horizon-labs/unified-hifi-control/issues)*
+*Search and play work with Roon and LMS. Transport controls work with all adapters.*
 
 ### Example Usage
 
