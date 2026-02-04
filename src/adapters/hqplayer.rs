@@ -1029,16 +1029,51 @@ impl HqpAdapter {
         }))
     }
 
-    /// Set mode - sends VALUE directly to HQPlayer
-    /// Mode only has 3 meaningful values: -1 ([source]), 0 (PCM), 1 (SDM)
-    /// State.mode returns VALUE, SetMode expects VALUE.
-    pub async fn set_mode(&self, mode_value: u32) -> Result<()> {
-        // Mode values can be negative (e.g., -1 for [source]), so cast carefully
-        let mode_val_i32 = mode_value as i32;
-        // HQPlayer SetMode takes VALUE field directly (not array index)
-        let xml = Self::build_request("SetMode", &[("value", &mode_val_i32.to_string())]);
+    /// Set mode by name (e.g., "PCM", "DSD", "[source]")
+    /// Resolves name to VALUE (-1, 0, 1) and sends to HQPlayer.
+    pub async fn set_mode(&self, mode_name: &str) -> Result<()> {
+        let mode_value = self.resolve_mode_value(mode_name).await?;
+        let xml = Self::build_request("SetMode", &[("value", &mode_value.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
+    }
+
+    /// Resolve mode name to VALUE, checking cache first then fetching if needed
+    /// Mode values: -1 ([source]), 0 (PCM), 1 (SDM/DSD)
+    async fn resolve_mode_value(&self, mode_name: &str) -> Result<i32> {
+        // First try to find by name in cached modes (case-insensitive)
+        let cached_value = {
+            let state = self.state.read().await;
+            state
+                .modes
+                .iter()
+                .find(|m| m.name.eq_ignore_ascii_case(mode_name))
+                .map(|m| m.value)
+        };
+
+        if let Some(val) = cached_value {
+            return Ok(val);
+        }
+
+        // Not found in cache - try parsing as integer (direct value for backwards compat)
+        if let Ok(val) = mode_name.parse::<i32>() {
+            return Ok(val);
+        }
+
+        // Try refreshing mode list and searching again
+        let modes = self.get_modes().await?;
+        modes
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(mode_name))
+            .map(|m| m.value)
+            .ok_or_else(|| {
+                let available: Vec<_> = modes.iter().map(|m| m.name.as_str()).collect();
+                anyhow::anyhow!(
+                    "Mode '{}' not found. Available: {}",
+                    mode_name,
+                    available.join(", ")
+                )
+            })
     }
 
     /// Set filter (low-level) - takes INDEX values
@@ -1367,67 +1402,56 @@ impl HqpAdapter {
             settings: PipelineSettings {
                 mode: PipelineSetting {
                     selected: SelectedOption {
-                        // state.mode is a VALUE stored as u8, but can be -1 (wraps to 255)
-                        // Convert to i32 to match options which use m.value (i32)
-                        value: (if state.mode == 255 {
-                            -1i32
-                        } else {
-                            state.mode as i32
-                        })
-                        .to_string(),
+                        // Use name for the value - adapter handles name→value conversion
+                        value: get_mode_by_value(state.mode),
                         label: get_mode_by_value(state.mode),
                     },
                     options: modes
                         .iter()
                         .map(|m| SelectOption {
-                            value: m.value.to_string(),
+                            value: m.name.clone(), // Send NAME, not value
                             label: m.name.clone(),
                         })
                         .collect(),
                 },
                 filter1x: PipelineSetting {
                     selected: SelectedOption {
-                        // Use index - HQPlayer SetFilter uses index, not value
-                        value: filter1x_obj
-                            .map(|f| f.index.to_string())
-                            .unwrap_or_else(|| filter1x_idx.to_string()),
+                        // Use name - adapter handles name→index conversion
+                        value: filter1x_obj.map(|f| f.name.clone()).unwrap_or_default(),
                         label: filter1x_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
                         .iter()
                         .map(|f| SelectOption {
-                            value: f.index.to_string(), // index, not value!
+                            value: f.name.clone(), // Send NAME, not index
                             label: f.name.clone(),
                         })
                         .collect(),
                 },
                 filter_nx: PipelineSetting {
                     selected: SelectedOption {
-                        value: filter_nx_obj
-                            .map(|f| f.index.to_string())
-                            .unwrap_or_else(|| filter_nx_idx.to_string()),
+                        // Use name - adapter handles name→index conversion
+                        value: filter_nx_obj.map(|f| f.name.clone()).unwrap_or_default(),
                         label: filter_nx_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
                         .iter()
                         .map(|f| SelectOption {
-                            value: f.index.to_string(), // index, not value!
+                            value: f.name.clone(), // Send NAME, not index
                             label: f.name.clone(),
                         })
                         .collect(),
                 },
                 shaper: PipelineSetting {
                     selected: SelectedOption {
-                        // Use index - HQPlayer SetShaping uses index
-                        value: shaper_obj
-                            .map(|s| s.index.to_string())
-                            .unwrap_or_else(|| shaper_idx.to_string()),
+                        // Use name - adapter handles name→index conversion
+                        value: shaper_obj.map(|s| s.name.clone()).unwrap_or_default(),
                         label: shaper_obj.map(|s| s.name.clone()).unwrap_or_default(),
                     },
                     options: shapers
                         .iter()
                         .map(|s| SelectOption {
-                            value: s.index.to_string(), // index, not value!
+                            value: s.name.clone(), // Send NAME, not index
                             label: s.name.clone(),
                         })
                         .collect(),

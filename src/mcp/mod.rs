@@ -589,40 +589,27 @@ impl ServerHandler for HifiMcpHandler {
             }
 
             HifiTools::HifiHqplayerSetPipelineTool(args) => {
-                // Non-negative parser for filter/shaper/rate (rejects negative values)
-                let parse_nonneg =
-                    |v: &str| v.parse::<i64>().ok().filter(|n| *n >= 0).map(|n| n as u32);
-                // Signed parser for mode (allows -1 sentinel for PCM mode)
-                let parse_signed = |v: &str| v.parse::<i64>().ok().map(|n| n as u32);
-
+                // All settings now use name-based lookups - adapter handles conversion
+                // Only samplerate needs numeric parsing (Hz value)
                 let result = match args.setting.as_str() {
+                    "mode" => {
+                        // Accepts name like "PCM", "DSD", "[source]"
+                        self.state.hqplayer.set_mode(&args.value).await
+                    }
                     "filter1x" | "filter_1x" => {
-                        // Adapter handles name→value lookup
                         self.state.hqplayer.set_filter_1x(&args.value).await
                     }
                     "filterNx" | "filter_nx" | "filternx" => {
-                        // Adapter handles name→value lookup
                         self.state.hqplayer.set_filter_nx(&args.value).await
                     }
-                    "shaper" | "dither" => {
-                        // Adapter handles name→value lookup
-                        self.state.hqplayer.set_shaper(&args.value).await
-                    }
+                    "shaper" | "dither" => self.state.hqplayer.set_shaper(&args.value).await,
                     "rate" | "samplerate" => {
-                        if let Some(v) = parse_nonneg(&args.value) {
+                        // Samplerate uses Hz value (e.g., "48000", "96000")
+                        if let Ok(v) = args.value.parse::<u32>() {
                             self.state.hqplayer.set_rate(v).await
                         } else {
                             return Self::error_result(
-                                "Invalid rate value (expected non-negative integer)".into(),
-                            );
-                        }
-                    }
-                    "mode" => {
-                        if let Some(v) = parse_signed(&args.value) {
-                            self.state.hqplayer.set_mode(v).await
-                        } else {
-                            return Self::error_result(
-                                "Invalid mode value (expected integer)".into(),
+                                "Invalid rate value (expected Hz like 48000, 96000)".into(),
                             );
                         }
                     }

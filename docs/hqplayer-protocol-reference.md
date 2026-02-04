@@ -155,13 +155,27 @@ When implementing HQPlayer control:
 
 ## Quick Reference Table
 
-| Setting | State Field | State Type | Set Command | Set Expects | UI Options Use |
-|---------|-------------|------------|-------------|-------------|----------------|
-| Mode | `mode` | VALUE | SetMode | VALUE | `m.value` |
-| Filter 1x | `filter1x` | INDEX | SetFilter | INDEX | `f.index` |
-| Filter Nx | `filterNx` | INDEX | SetFilter | INDEX | `f.index` |
-| Shaper | `shaper` | INDEX | SetShaping | INDEX | `s.index` |
-| Rate | `rate` | INDEX | SetRate | INDEX | `r.rate` (Hz) |
+| Setting | State Field | State Type | Set Command | Set Expects | UI/API Use |
+|---------|-------------|------------|-------------|-------------|------------|
+| Mode | `mode` | VALUE | SetMode | VALUE | NAME (e.g., "PCM") |
+| Filter 1x | `filter1x` | INDEX | SetFilter | INDEX | NAME (e.g., "poly-sinc-ext2") |
+| Filter Nx | `filterNx` | INDEX | SetFilter | INDEX | NAME |
+| Shaper | `shaper` | INDEX | SetShaping | INDEX | NAME (e.g., "ASDM7") |
+| Rate | `rate` | INDEX | SetRate | INDEX | Hz (e.g., 48000) |
+
+## API Design
+
+**Clients (UI, API, MCP) use semantic values:**
+- Mode: `"PCM"`, `"DSD"`, `"[source]"`
+- Filter: `"poly-sinc-ext2"`, `"IIR"`, etc.
+- Shaper: `"ASDM7"`, `"NS5"`, etc.
+- Samplerate: `48000`, `96000`, etc. (Hz)
+
+**Adapter handles all HQPlayer-specific conversions:**
+- Mode name → VALUE (-1, 0, 1)
+- Filter name → INDEX
+- Shaper name → INDEX
+- Rate Hz → INDEX
 
 ## Version
 
