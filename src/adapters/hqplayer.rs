@@ -1061,44 +1061,46 @@ impl HqpAdapter {
         Ok(())
     }
 
-    /// Set only the 1x filter, preserving current Nx filter value
-    /// Accepts filter name (e.g., "poly-sinc-lp") or value as string
+    /// Set only the 1x filter, preserving current Nx filter index
+    /// Accepts filter name (e.g., "poly-sinc-lp") or index as string
     pub async fn set_filter_1x(&self, filter_name: &str) -> Result<()> {
-        let filter_value = self.resolve_filter_value(filter_name).await?;
+        let filter_index = self.resolve_filter_index(filter_name).await?;
         let state = self.get_state().await?;
-        let current_nx_value = state.filter_nx.unwrap_or(state.filter);
-        self.set_filter(current_nx_value, Some(filter_value)).await
+        // State returns INDEX for filters
+        let current_nx_index = state.filter_nx.unwrap_or(state.filter);
+        self.set_filter(current_nx_index, Some(filter_index)).await
     }
 
-    /// Set only the Nx filter, preserving current 1x filter value
-    /// Accepts filter name (e.g., "poly-sinc-lp") or value as string
+    /// Set only the Nx filter, preserving current 1x filter index
+    /// Accepts filter name (e.g., "poly-sinc-lp") or index as string
     pub async fn set_filter_nx(&self, filter_name: &str) -> Result<()> {
-        let filter_value = self.resolve_filter_value(filter_name).await?;
-        // Get current state to preserve 1x filter (state returns values, not indices)
+        let filter_index = self.resolve_filter_index(filter_name).await?;
+        // State returns INDEX for filters
         let state = self.get_state().await?;
-        let current_1x_value = state.filter1x.unwrap_or(state.filter);
-        self.set_filter(filter_value, Some(current_1x_value)).await
+        let current_1x_index = state.filter1x.unwrap_or(state.filter);
+        self.set_filter(filter_index, Some(current_1x_index)).await
     }
 
-    /// Resolve filter name to value, checking cache first then fetching if needed
-    async fn resolve_filter_value(&self, filter_name: &str) -> Result<u32> {
+    /// Resolve filter name to INDEX, checking cache first then fetching if needed
+    /// HQPlayer SetFilter uses INDEX, not value!
+    async fn resolve_filter_index(&self, filter_name: &str) -> Result<u32> {
         // First try to find by name in cached filters
-        let cached_value = {
+        let cached_index = {
             let state = self.state.read().await;
             state
                 .filters
                 .iter()
                 .find(|f| f.name == filter_name)
-                .map(|f| f.value)
+                .map(|f| f.index)
         };
 
-        if let Some(v) = cached_value {
-            return Ok(v as u32);
+        if let Some(idx) = cached_index {
+            return Ok(idx);
         }
 
-        // Not found in cache - try parsing as integer (direct value)
-        if let Ok(v) = filter_name.parse::<u32>() {
-            return Ok(v);
+        // Not found in cache - try parsing as integer (direct index)
+        if let Ok(idx) = filter_name.parse::<u32>() {
+            return Ok(idx);
         }
 
         // Try refreshing filter list and searching again
@@ -1106,41 +1108,42 @@ impl HqpAdapter {
         filters
             .iter()
             .find(|f| f.name == filter_name)
-            .map(|f| f.value as u32)
+            .map(|f| f.index)
             .ok_or_else(|| {
                 anyhow::anyhow!("Filter '{}' not found in available filters", filter_name)
             })
     }
 
-    /// Set shaper - sends VALUE directly to HQPlayer
-    /// Accepts shaper name (e.g., "ASDM7") or value as string
+    /// Set shaper - sends INDEX to HQPlayer (not value!)
+    /// Accepts shaper name (e.g., "ASDM7") or index as string
     pub async fn set_shaper(&self, shaper_name: &str) -> Result<()> {
-        let shaper_value = self.resolve_shaper_value(shaper_name).await?;
-        // HQPlayer SetShaping takes VALUE field directly (not array index)
-        let xml = Self::build_request("SetShaping", &[("value", &shaper_value.to_string())]);
+        let shaper_index = self.resolve_shaper_index(shaper_name).await?;
+        // HQPlayer SetShaping uses INDEX (see --set-shaping <index> in hqp-control help)
+        let xml = Self::build_request("SetShaping", &[("value", &shaper_index.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
 
-    /// Resolve shaper name to value, checking cache first then fetching if needed
-    async fn resolve_shaper_value(&self, shaper_name: &str) -> Result<u32> {
+    /// Resolve shaper name to INDEX, checking cache first then fetching if needed
+    /// HQPlayer SetShaping uses INDEX, not value!
+    async fn resolve_shaper_index(&self, shaper_name: &str) -> Result<u32> {
         // First try to find by name in cached shapers
-        let cached_value = {
+        let cached_index = {
             let state = self.state.read().await;
             state
                 .shapers
                 .iter()
                 .find(|s| s.name == shaper_name)
-                .map(|s| s.value)
+                .map(|s| s.index)
         };
 
-        if let Some(v) = cached_value {
-            return Ok(v as u32);
+        if let Some(idx) = cached_index {
+            return Ok(idx);
         }
 
-        // Not found in cache - try parsing as integer (direct value)
-        if let Ok(v) = shaper_name.parse::<u32>() {
-            return Ok(v);
+        // Not found in cache - try parsing as integer (direct index)
+        if let Ok(idx) = shaper_name.parse::<u32>() {
+            return Ok(idx);
         }
 
         // Try refreshing shaper list and searching again
@@ -1148,7 +1151,7 @@ impl HqpAdapter {
         shapers
             .iter()
             .find(|s| s.name == shaper_name)
-            .map(|s| s.value as u32)
+            .map(|s| s.index)
             .ok_or_else(|| {
                 anyhow::anyhow!("Shaper '{}' not found in available shapers", shaper_name)
             })
@@ -1313,14 +1316,15 @@ impl HqpAdapter {
             )
         };
 
-        // State returns actual HQPlayer values, look up by value field (not array index)
-        let filter1x_val = state.filter1x.unwrap_or(state.filter) as i32;
-        let filter_nx_val = state.filter_nx.unwrap_or(state.filter) as i32;
-        let shaper_val = state.shaper as i32;
+        // State returns INDEX for filters and shapers (not value!)
+        // See hqp-control help: --set-filter <index> [index1x]
+        let filter1x_idx = state.filter1x.unwrap_or(state.filter);
+        let filter_nx_idx = state.filter_nx.unwrap_or(state.filter);
+        let shaper_idx = state.shaper;
 
-        let filter1x_obj = filters.iter().find(|f| f.value == filter1x_val);
-        let filter_nx_obj = filters.iter().find(|f| f.value == filter_nx_val);
-        let shaper_obj = shapers.iter().find(|s| s.value == shaper_val);
+        let filter1x_obj = filters.iter().find(|f| f.index == filter1x_idx);
+        let filter_nx_obj = filters.iter().find(|f| f.index == filter_nx_idx);
+        let shaper_obj = shapers.iter().find(|s| s.index == shaper_idx);
 
         // Look up mode by VALUE (not index). state.mode and state.active_mode are
         // stored as u8, but value can be -1 (which wraps to 255 as u8), 0 (PCM), or 1 (SDM).
@@ -1383,15 +1387,16 @@ impl HqpAdapter {
                 },
                 filter1x: PipelineSetting {
                     selected: SelectedOption {
+                        // Use index - HQPlayer SetFilter uses index, not value
                         value: filter1x_obj
-                            .map(|f| f.value.to_string())
-                            .unwrap_or_else(|| filter1x_val.to_string()),
+                            .map(|f| f.index.to_string())
+                            .unwrap_or_else(|| filter1x_idx.to_string()),
                         label: filter1x_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
                         .iter()
                         .map(|f| SelectOption {
-                            value: f.value.to_string(),
+                            value: f.index.to_string(), // index, not value!
                             label: f.name.clone(),
                         })
                         .collect(),
@@ -1399,29 +1404,30 @@ impl HqpAdapter {
                 filter_nx: PipelineSetting {
                     selected: SelectedOption {
                         value: filter_nx_obj
-                            .map(|f| f.value.to_string())
-                            .unwrap_or_else(|| filter_nx_val.to_string()),
+                            .map(|f| f.index.to_string())
+                            .unwrap_or_else(|| filter_nx_idx.to_string()),
                         label: filter_nx_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
                         .iter()
                         .map(|f| SelectOption {
-                            value: f.value.to_string(),
+                            value: f.index.to_string(), // index, not value!
                             label: f.name.clone(),
                         })
                         .collect(),
                 },
                 shaper: PipelineSetting {
                     selected: SelectedOption {
+                        // Use index - HQPlayer SetShaping uses index
                         value: shaper_obj
-                            .map(|s| s.value.to_string())
-                            .unwrap_or_else(|| shaper_val.to_string()),
+                            .map(|s| s.index.to_string())
+                            .unwrap_or_else(|| shaper_idx.to_string()),
                         label: shaper_obj.map(|s| s.name.clone()).unwrap_or_default(),
                     },
                     options: shapers
                         .iter()
                         .map(|s| SelectOption {
-                            value: s.value.to_string(),
+                            value: s.index.to_string(), // index, not value!
                             label: s.name.clone(),
                         })
                         .collect(),
