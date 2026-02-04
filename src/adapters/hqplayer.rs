@@ -851,8 +851,10 @@ impl HqpAdapter {
     }
 
     /// Parse XML attribute
+    /// Uses space prefix to avoid matching attribute name suffixes
+    /// (e.g., searching for "mode" shouldn't match "active_mode")
     fn parse_attr(xml: &str, attr: &str) -> Option<String> {
-        let pattern = format!("{}=\"", attr);
+        let pattern = format!(" {}=\"", attr);
         if let Some(start) = xml.find(&pattern) {
             let rest = &xml[start + pattern.len()..];
             if let Some(end) = rest.find('"') {
