@@ -20,7 +20,7 @@ Every list item (modes, filters, shapers) has **two identifiers**:
 
 **Example filter list showing the difference:**
 
-```
+```text
 [0] "none" value=0
 [1] "IIR" value=1
 [2] "IIR2" value=57        <- value != index
@@ -77,7 +77,7 @@ The `<State/>` command returns these fields for settings:
 
 ### CLI Help (Main.cpp:43)
 
-```
+```text
 --set-mode <index>
 --set-filter <index> [index1x]
 --set-shaping <index>
