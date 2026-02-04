@@ -1270,9 +1270,13 @@ impl HqpAdapter {
         let playback_status = self.get_playback_status().await.unwrap_or_default();
 
         // Lazy-load lists if not cached (first request after connect)
+        // Check ALL lists - if any are empty, we need to refresh
         let needs_lists = {
             let cached = self.state.read().await;
             cached.modes.is_empty()
+                || cached.filters.is_empty()
+                || cached.shapers.is_empty()
+                || cached.rates.is_empty()
         };
         if needs_lists {
             self.refresh_lists().await;
