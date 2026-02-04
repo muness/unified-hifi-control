@@ -3,6 +3,11 @@
 //! Implements the TCP/XML control protocol on port 4321 for pipeline control.
 //! Also implements HTTP/Digest auth for web UI profile loading (port 8088).
 //! Based on Jussi Laako's hqp-control reference implementation.
+//!
+//! See `docs/hqplayer-protocol-audit.md` for:
+//! - State vs Status semantics (configured vs active values)
+//! - VALUE vs INDEX field usage for Set commands
+//! - Caching strategy to avoid overwhelming HQPlayer
 
 use anyhow::{anyhow, Result};
 use quick_xml::events::{BytesStart, Event};
@@ -129,9 +134,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3);
 const PROFILE_PATH: &str = "/config/profile/load";
 /// Maximum reconnection attempts before giving up
-const MAX_RECONNECT_ATTEMPTS: u32 = 3;
-/// Delay between reconnection attempts
-const RECONNECT_DELAY: Duration = Duration::from_millis(200);
+const MAX_RECONNECT_ATTEMPTS: u32 = 2;
+/// Delay between reconnection attempts (HQPlayer can be overwhelmed by rapid connections)
+const RECONNECT_DELAY: Duration = Duration::from_secs(1);
 
 /// HQPlayer state information
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -322,6 +327,7 @@ struct HqpAdapterState {
     filters: Vec<FilterItem>,
     shapers: Vec<ListItem>,
     rates: Vec<RateItem>,
+    volume_range: Option<VolumeRange>,
     // Web client state for profiles
     profiles: Vec<HqpProfile>,
     hidden_fields: HashMap<String, String>,
@@ -356,6 +362,7 @@ impl Default for HqpAdapterState {
             filters: Vec::new(),
             shapers: Vec::new(),
             rates: Vec::new(),
+            volume_range: None,
             profiles: Vec::new(),
             hidden_fields: HashMap::new(),
             config_title: None,
@@ -478,6 +485,17 @@ impl HqpAdapter {
 
             if changed {
                 state.connected = false;
+                // Clear ALL instance-specific cached data when switching hosts
+                state.info = None;
+                state.last_state = None;
+                state.modes.clear();
+                state.filters.clear();
+                state.shapers.clear();
+                state.rates.clear();
+                state.volume_range = None;
+                state.profiles.clear();
+                state.hidden_fields.clear();
+                state.config_title = None;
             }
             changed
         };
@@ -547,29 +565,18 @@ impl HqpAdapter {
             state.connected = true;
         }
 
-        // Get info and cache lists (use inner methods to avoid reconnection loop)
+        // Minimal on-connect: just GetInfo + Status to verify connection
         let info = self.get_info_inner().await?;
-        let modes = self.get_modes_inner().await?;
-        let filters = self.get_filters_inner().await?;
-        let shapers = self.get_shapers_inner().await?;
-        let rates = self.get_rates_inner().await?;
+        let status = self.get_playback_status_inner().await.unwrap_or_default();
 
         {
             let mut state = self.state.write().await;
             state.info = Some(info.clone());
-            state.modes = modes;
-            state.filters = filters;
-            state.shapers = shapers;
-            state.rates = rates;
         }
 
         tracing::info!("HQPlayer connected: {} v{}", info.name, info.version);
         self.bus
             .publish(BusEvent::HqpConnected { host: host.clone() });
-
-        // Get status and volume range for ZoneDiscovered (using inner methods to avoid recursion)
-        let status = self.get_playback_status_inner().await.unwrap_or_default();
-        let vol_range = self.get_volume_range_inner().await.unwrap_or_default();
 
         // Get instance name for zone ID
         let instance_name = {
@@ -578,9 +585,18 @@ impl HqpAdapter {
         };
 
         // Emit ZoneDiscovered for this HQPlayer instance
-        let zone =
-            Self::hqp_status_to_zone(&host, instance_name.as_deref(), &info, &status, &vol_range);
+        let zone = Self::hqp_status_to_zone(
+            &host,
+            instance_name.as_deref(),
+            &info,
+            &status,
+            &VolumeRange::default(),
+        );
         self.bus.publish(BusEvent::ZoneDiscovered { zone });
+
+        // Lists are fetched lazily on first pipeline request via refresh_lists()
+        // (Background fetch was removed due to response desync bugs - it used single-line
+        // read_line() which corrupted the TCP buffer when interleaved with multi-line responses)
 
         Ok(())
     }
@@ -606,6 +622,58 @@ impl HqpAdapter {
             self.bus
                 .publish(BusEvent::HqpDisconnected { host: h.clone() });
         }
+    }
+
+    /// Refresh cached lists (modes, filters, shapers, rates)
+    /// Call this after profile changes
+    async fn refresh_lists(&self) {
+        let modes = match self.get_modes().await {
+            Ok(m) => {
+                tracing::debug!("Fetched {} modes", m.len());
+                m
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch modes: {}", e);
+                Vec::new()
+            }
+        };
+        let filters = match self.get_filters().await {
+            Ok(f) => {
+                tracing::debug!("Fetched {} filters", f.len());
+                f
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch filters: {}", e);
+                Vec::new()
+            }
+        };
+        let shapers = match self.get_shapers().await {
+            Ok(s) => {
+                tracing::debug!("Fetched {} shapers", s.len());
+                s
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch shapers: {}", e);
+                Vec::new()
+            }
+        };
+        let rates = match self.get_rates().await {
+            Ok(r) => {
+                tracing::debug!("Fetched {} rates", r.len());
+                r
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch rates: {}", e);
+                Vec::new()
+            }
+        };
+
+        let mut state = self.state.write().await;
+        state.modes = modes;
+        state.filters = filters;
+        state.shapers = shapers;
+        state.rates = rates;
+        tracing::debug!("Refreshed HQPlayer lists cache");
     }
 
     /// Ensure connection is established, reconnecting if needed
@@ -741,58 +809,6 @@ impl HqpAdapter {
         })
     }
 
-    /// Get available modes (no reconnection)
-    async fn get_modes_inner(&self) -> Result<Vec<ListItem>> {
-        let xml = Self::build_request("GetModes", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(Self::parse_items(&response, "ModesItem", |item| ListItem {
-            index: Self::parse_attr_u32(item, "index"),
-            name: Self::parse_attr(item, "name").unwrap_or_default(),
-            value: Self::parse_attr_i32(item, "value"), // Mode values can be negative (-1 for PCM)
-        }))
-    }
-
-    /// Get available filters (no reconnection)
-    async fn get_filters_inner(&self) -> Result<Vec<FilterItem>> {
-        let xml = Self::build_request("GetFilters", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(Self::parse_items(&response, "FiltersItem", |item| {
-            FilterItem {
-                index: Self::parse_attr_u32(item, "index"),
-                name: Self::parse_attr(item, "name").unwrap_or_default(),
-                value: Self::parse_attr_i32(item, "value"),
-                arg: Self::parse_attr_u32(item, "arg"),
-            }
-        }))
-    }
-
-    /// Get available shapers (no reconnection)
-    async fn get_shapers_inner(&self) -> Result<Vec<ListItem>> {
-        let xml = Self::build_request("GetShapers", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(Self::parse_items(&response, "ShapersItem", |item| {
-            ListItem {
-                index: Self::parse_attr_u32(item, "index"),
-                name: Self::parse_attr(item, "name").unwrap_or_default(),
-                value: Self::parse_attr_i32(item, "value"),
-            }
-        }))
-    }
-
-    /// Get available sample rates (no reconnection)
-    async fn get_rates_inner(&self) -> Result<Vec<RateItem>> {
-        let xml = Self::build_request("GetRates", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(Self::parse_items(&response, "RatesItem", |item| RateItem {
-            index: Self::parse_attr_u32(item, "index"),
-            rate: Self::parse_attr_u32(item, "rate"),
-        }))
-    }
-
     /// Get playback status (no reconnection)
     async fn get_playback_status_inner(&self) -> Result<HqpStatus> {
         let xml = Self::build_request("Status", &[("subscribe", "0")]);
@@ -813,20 +829,6 @@ impl HqpAdapter {
             active_channels: Self::parse_attr_u32(&response, "active_channels"),
             samplerate: Self::parse_attr_u32(&response, "samplerate"),
             bitrate: Self::parse_attr_u32(&response, "bitrate"),
-        })
-    }
-
-    /// Get volume range (no reconnection)
-    async fn get_volume_range_inner(&self) -> Result<VolumeRange> {
-        let xml = Self::build_request("VolumeRange", &[]);
-        let response = self.send_command_inner(&xml).await?;
-
-        Ok(VolumeRange {
-            min: Self::parse_attr_i32(&response, "min"),
-            max: Self::parse_attr_i32(&response, "max"),
-            step: Self::parse_attr_i32(&response, "step").max(1),
-            enabled: Self::parse_attr_bool(&response, "enabled"),
-            adaptive: Self::parse_attr_bool(&response, "adaptive"),
         })
     }
 
@@ -1025,55 +1027,161 @@ impl HqpAdapter {
         }))
     }
 
-    /// Set mode
-    pub async fn set_mode(&self, value: u32) -> Result<()> {
-        let xml = Self::build_request("SetMode", &[("value", &value.to_string())]);
+    /// Set mode - sends VALUE directly to HQPlayer
+    /// Despite hqp-control help saying "index", HQPlayer actually expects the VALUE field
+    pub async fn set_mode(&self, mode_value: u32) -> Result<()> {
+        // Mode values can be negative (e.g., -1 for [source]), so cast carefully
+        let mode_val_i32 = mode_value as i32;
+        // HQPlayer SetMode takes VALUE field directly (not array index)
+        let xml = Self::build_request("SetMode", &[("value", &mode_val_i32.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
 
-    /// Set filter (low-level)
-    /// - value: sets the Nx (non-1x) filter
-    /// - value1x: if provided, also sets the 1x filter
+    /// Set filter (low-level) - takes VALUE fields directly (not indices)
+    ///
+    /// - value: sets the Nx (non-1x) filter as VALUE
+    /// - value1x: if provided, also sets the 1x filter as VALUE
+    ///
+    /// NOTE: Despite hqp-control help saying "index", HQPlayer actually expects the VALUE field
     pub async fn set_filter(&self, value: u32, value1x: Option<u32>) -> Result<()> {
         let value_str = value.to_string();
         let mut attrs = vec![("value", value_str.as_str())];
+
         let value1x_str;
         if let Some(v1x) = value1x {
             value1x_str = v1x.to_string();
             attrs.push(("value1x", value1x_str.as_str()));
         }
+
         let xml = Self::build_request("SetFilter", &attrs);
         self.send_command(&xml).await?;
         Ok(())
     }
 
     /// Set only the 1x filter, preserving current Nx filter value
-    pub async fn set_filter_1x(&self, value: u32) -> Result<()> {
-        // Get current state to preserve Nx filter
+    /// Accepts filter name (e.g., "poly-sinc-lp") or value as string
+    pub async fn set_filter_1x(&self, filter_name: &str) -> Result<()> {
+        let filter_value = self.resolve_filter_value(filter_name).await?;
         let state = self.get_state().await?;
-        let current_nx = state.filter_nx.unwrap_or(state.filter);
-        self.set_filter(current_nx, Some(value)).await
+        let current_nx_value = state.filter_nx.unwrap_or(state.filter);
+        self.set_filter(current_nx_value, Some(filter_value)).await
     }
 
     /// Set only the Nx filter, preserving current 1x filter value
-    pub async fn set_filter_nx(&self, value: u32) -> Result<()> {
-        // Get current state to preserve 1x filter
+    /// Accepts filter name (e.g., "poly-sinc-lp") or value as string
+    pub async fn set_filter_nx(&self, filter_name: &str) -> Result<()> {
+        let filter_value = self.resolve_filter_value(filter_name).await?;
+        // Get current state to preserve 1x filter (state returns values, not indices)
         let state = self.get_state().await?;
-        let current_1x = state.filter1x.unwrap_or(state.filter);
-        self.set_filter(value, Some(current_1x)).await
+        let current_1x_value = state.filter1x.unwrap_or(state.filter);
+        self.set_filter(filter_value, Some(current_1x_value)).await
     }
 
-    /// Set shaper
-    pub async fn set_shaper(&self, value: u32) -> Result<()> {
-        let xml = Self::build_request("SetShaping", &[("value", &value.to_string())]);
+    /// Resolve filter name to value, checking cache first then fetching if needed
+    async fn resolve_filter_value(&self, filter_name: &str) -> Result<u32> {
+        // First try to find by name in cached filters
+        let cached_value = {
+            let state = self.state.read().await;
+            state
+                .filters
+                .iter()
+                .find(|f| f.name == filter_name)
+                .map(|f| f.value)
+        };
+
+        if let Some(v) = cached_value {
+            return Ok(v as u32);
+        }
+
+        // Not found in cache - try parsing as integer (direct value)
+        if let Ok(v) = filter_name.parse::<u32>() {
+            return Ok(v);
+        }
+
+        // Try refreshing filter list and searching again
+        let filters = self.get_filters().await?;
+        filters
+            .iter()
+            .find(|f| f.name == filter_name)
+            .map(|f| f.value as u32)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Filter '{}' not found in available filters", filter_name)
+            })
+    }
+
+    /// Set shaper - sends VALUE directly to HQPlayer
+    /// Accepts shaper name (e.g., "ASDM7") or value as string
+    pub async fn set_shaper(&self, shaper_name: &str) -> Result<()> {
+        let shaper_value = self.resolve_shaper_value(shaper_name).await?;
+        // HQPlayer SetShaping takes VALUE field directly (not array index)
+        let xml = Self::build_request("SetShaping", &[("value", &shaper_value.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
 
+    /// Resolve shaper name to value, checking cache first then fetching if needed
+    async fn resolve_shaper_value(&self, shaper_name: &str) -> Result<u32> {
+        // First try to find by name in cached shapers
+        let cached_value = {
+            let state = self.state.read().await;
+            state
+                .shapers
+                .iter()
+                .find(|s| s.name == shaper_name)
+                .map(|s| s.value)
+        };
+
+        if let Some(v) = cached_value {
+            return Ok(v as u32);
+        }
+
+        // Not found in cache - try parsing as integer (direct value)
+        if let Ok(v) = shaper_name.parse::<u32>() {
+            return Ok(v);
+        }
+
+        // Try refreshing shaper list and searching again
+        let shapers = self.get_shapers().await?;
+        shapers
+            .iter()
+            .find(|s| s.name == shaper_name)
+            .map(|s| s.value as u32)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Shaper '{}' not found in available shapers", shaper_name)
+            })
+    }
+
     /// Set sample rate
-    pub async fn set_rate(&self, value: u32) -> Result<()> {
-        let xml = Self::build_request("SetRate", &[("value", &value.to_string())]);
+    /// The value parameter is the actual rate (e.g., 48000), but HQPlayer's SetRate
+    /// command expects the index from the rates list, so we look it up.
+    pub async fn set_rate(&self, rate_value: u32) -> Result<()> {
+        // Look up the index for this rate value from cached rates
+        let index = {
+            let state = self.state.read().await;
+            state
+                .rates
+                .iter()
+                .find(|r| r.rate == rate_value)
+                .map(|r| r.index)
+        };
+
+        let index = match index {
+            Some(idx) => idx,
+            None => {
+                // Rate not found in cached list - maybe cache is stale, try refreshing
+                let rates = self.get_rates().await?;
+                rates
+                    .iter()
+                    .find(|r| r.rate == rate_value)
+                    .map(|r| r.index)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Rate {} not found in available rates", rate_value)
+                    })?
+            }
+        };
+
+        let xml = Self::build_request("SetRate", &[("value", &index.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
@@ -1162,35 +1270,60 @@ impl HqpAdapter {
 
     /// Get full pipeline status
     pub async fn get_pipeline_status(&self) -> Result<PipelineStatus> {
+        // Core data: State + Status (2 TCP commands)
         let state = self.get_state().await?;
-        let vol_range = self.get_volume_range().await?;
+        let playback_status = self.get_playback_status().await.unwrap_or_default();
 
-        let cached = self.state.read().await;
-        let modes = &cached.modes;
-        let filters = &cached.filters;
-        let shapers = &cached.shapers;
-        let rates = &cached.rates;
+        // Lazy-load lists if not cached (first request after connect)
+        // Check ALL lists - if any are empty, we need to refresh
+        let needs_lists = {
+            let cached = self.state.read().await;
+            cached.modes.is_empty()
+                || cached.filters.is_empty()
+                || cached.shapers.is_empty()
+                || cached.rates.is_empty()
+        };
+        if needs_lists {
+            self.refresh_lists().await;
+        }
 
-        // State returns array indices, look up to get actual objects
-        let filter1x_idx = state.filter1x.unwrap_or(state.filter) as usize;
-        let filter_nx_idx = state.filter_nx.unwrap_or(state.filter) as usize;
-        let shaper_idx = state.shaper as usize;
+        // Lazy-load volume range if not cached
+        let needs_vol_range = {
+            let cached = self.state.read().await;
+            cached.volume_range.is_none()
+        };
+        if needs_vol_range {
+            if let Ok(vr) = self.get_volume_range().await {
+                let mut cached = self.state.write().await;
+                cached.volume_range = Some(vr);
+            }
+        }
 
-        let filter1x_obj = filters.get(filter1x_idx);
-        let filter_nx_obj = filters.get(filter_nx_idx);
-        let shaper_obj = shapers.get(shaper_idx);
+        // Use cached data
+        let (modes, filters, shapers, rates, vol_range) = {
+            let cached = self.state.read().await;
+            (
+                cached.modes.clone(),
+                cached.filters.clone(),
+                cached.shapers.clone(),
+                cached.rates.clone(),
+                cached.volume_range.clone().unwrap_or_default(),
+            )
+        };
+
+        // State returns actual HQPlayer values, look up by value field (not array index)
+        let filter1x_val = state.filter1x.unwrap_or(state.filter) as i32;
+        let filter_nx_val = state.filter_nx.unwrap_or(state.filter) as i32;
+        let shaper_val = state.shaper as i32;
+
+        let filter1x_obj = filters.iter().find(|f| f.value == filter1x_val);
+        let filter_nx_obj = filters.iter().find(|f| f.value == filter_nx_val);
+        let shaper_obj = shapers.iter().find(|s| s.value == shaper_val);
 
         let get_mode_by_index = |idx: u8| -> String {
             modes
                 .iter()
                 .find(|m| m.index == idx as u32)
-                .map(|m| m.name.clone())
-                .unwrap_or_default()
-        };
-        let get_mode_by_value = |val: u8| -> String {
-            modes
-                .iter()
-                .find(|m| m.value == val as i32)
                 .map(|m| m.name.clone())
                 .unwrap_or_default()
         };
@@ -1206,9 +1339,10 @@ impl HqpAdapter {
             status: PipelineState {
                 state: state_str.to_string(),
                 mode: get_mode_by_index(state.mode),
-                active_mode: get_mode_by_value(state.active_mode),
-                active_filter: filter1x_obj.map(|f| f.name.clone()).unwrap_or_default(),
-                active_shaper: shaper_obj.map(|s| s.name.clone()).unwrap_or_default(),
+                // Use actual active values from Status response, not configured values from State
+                active_mode: playback_status.active_mode.clone(),
+                active_filter: playback_status.active_filter.clone(),
+                active_shaper: playback_status.active_shaper.clone(),
                 active_rate: state.active_rate,
                 convolution: state.convolution,
                 invert: state.invert,
@@ -1241,7 +1375,7 @@ impl HqpAdapter {
                     selected: SelectedOption {
                         value: filter1x_obj
                             .map(|f| f.value.to_string())
-                            .unwrap_or_else(|| filter1x_idx.to_string()),
+                            .unwrap_or_else(|| filter1x_val.to_string()),
                         label: filter1x_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
@@ -1256,7 +1390,7 @@ impl HqpAdapter {
                     selected: SelectedOption {
                         value: filter_nx_obj
                             .map(|f| f.value.to_string())
-                            .unwrap_or_else(|| filter_nx_idx.to_string()),
+                            .unwrap_or_else(|| filter_nx_val.to_string()),
                         label: filter_nx_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
@@ -1271,7 +1405,7 @@ impl HqpAdapter {
                     selected: SelectedOption {
                         value: shaper_obj
                             .map(|s| s.value.to_string())
-                            .unwrap_or_else(|| shaper_idx.to_string()),
+                            .unwrap_or_else(|| shaper_val.to_string()),
                         label: shaper_obj.map(|s| s.name.clone()).unwrap_or_default(),
                     },
                     options: shapers
@@ -1284,22 +1418,31 @@ impl HqpAdapter {
                 },
                 samplerate: PipelineSetting {
                     selected: SelectedOption {
-                        value: state.rate.to_string(),
-                        label: if state.rate == 0 {
-                            "Auto".to_string()
-                        } else {
-                            rates
-                                .iter()
-                                .find(|r| r.index == state.rate)
-                                .map(|r| r.rate.to_string())
-                                .unwrap_or_else(|| "Auto".to_string())
-                        },
+                        // state.rate is an INDEX into the rates list, not a rate value
+                        // Look up by index to get the actual rate
+                        value: rates
+                            .iter()
+                            .find(|r| r.index == state.rate)
+                            .map(|r| r.rate.to_string())
+                            .unwrap_or_else(|| state.active_rate.to_string()),
+                        label: rates
+                            .iter()
+                            .find(|r| r.index == state.rate)
+                            .map(|r| {
+                                if r.rate == 0 {
+                                    "Auto".to_string()
+                                } else {
+                                    r.rate.to_string()
+                                }
+                            })
+                            .unwrap_or_else(|| state.active_rate.to_string()),
                     },
                     options: rates
                         .iter()
                         .map(|r| SelectOption {
-                            value: r.index.to_string(),
-                            label: if r.index == 0 {
+                            // Use rate as value (what HQPlayer expects)
+                            value: r.rate.to_string(),
+                            label: if r.rate == 0 {
                                 "Auto".to_string()
                             } else {
                                 r.rate.to_string()
@@ -1672,6 +1815,8 @@ impl HqpAdapter {
                     if response.status().is_client_error() || response.status().is_server_error() {
                         return Err(anyhow!("Profile load failed: {}", response.status()));
                     }
+                    // Refresh cached lists after profile change
+                    self.refresh_lists().await;
                     return Ok(());
                 }
             }
@@ -1682,6 +1827,8 @@ impl HqpAdapter {
             return Err(anyhow!("Profile load failed: {}", response.status()));
         }
 
+        // Refresh cached lists after profile change
+        self.refresh_lists().await;
         Ok(())
     }
 
@@ -1734,9 +1881,17 @@ impl HqpAdapter {
         }
     }
 
-    /// Set matrix profile by index
-    pub async fn set_matrix_profile(&self, value: u32) -> Result<()> {
-        let xml = Self::build_request("MatrixSetProfile", &[("value", &value.to_string())]);
+    /// Set matrix profile by index - converts index to name for HQPlayer
+    /// HQPlayer's MatrixSetProfile expects profile NAME, not index
+    pub async fn set_matrix_profile(&self, profile_index: u32) -> Result<()> {
+        // Get the list of profiles and find the name for this index
+        let profiles = self.get_matrix_profiles().await?;
+        let profile = profiles
+            .iter()
+            .find(|p| p.index == profile_index)
+            .ok_or_else(|| anyhow::anyhow!("Matrix profile index {} not found", profile_index))?;
+
+        let xml = Self::build_request("MatrixSetProfile", &[("value", &profile.name)]);
         self.send_command(&xml).await?;
         Ok(())
     }
