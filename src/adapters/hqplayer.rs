@@ -1343,7 +1343,7 @@ impl HqpAdapter {
         Ok(PipelineStatus {
             status: PipelineState {
                 state: state_str.to_string(),
-// state.mode is a VALUE, not an index
+                // state.mode is a VALUE, not an index
                 mode: get_mode_by_value(state.mode),
                 // Use State's active_mode (numeric VALUE) - Status's active_mode string is unreliable
                 // (shows "[source]" even when actually outputting DSD)
