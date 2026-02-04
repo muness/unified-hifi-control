@@ -485,12 +485,17 @@ impl HqpAdapter {
 
             if changed {
                 state.connected = false;
-                // Clear cached lists when switching hosts - they're specific to each HQPlayer instance
+                // Clear ALL instance-specific cached data when switching hosts
+                state.info = None;
+                state.last_state = None;
                 state.modes.clear();
                 state.filters.clear();
                 state.shapers.clear();
                 state.rates.clear();
                 state.volume_range = None;
+                state.profiles.clear();
+                state.hidden_fields.clear();
+                state.config_title = None;
             }
             changed
         };
