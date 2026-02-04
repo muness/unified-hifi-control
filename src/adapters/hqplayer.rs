@@ -1320,17 +1320,9 @@ impl HqpAdapter {
         let filter_nx_obj = filters.iter().find(|f| f.value == filter_nx_val);
         let shaper_obj = shapers.iter().find(|s| s.value == shaper_val);
 
-        let get_mode_by_index = |idx: u8| -> String {
-            modes
-                .iter()
-                .find(|m| m.index == idx as u32)
-                .map(|m| m.name.clone())
-                .unwrap_or_default()
-        };
-
-        // Look up mode by VALUE (not index) - State's active_mode is a VALUE
+        // Look up mode by VALUE (not index). state.mode and state.active_mode are
+        // stored as u8, but value can be -1 (which wraps to 255 as u8), 0 (PCM), or 1 (SDM).
         let get_mode_by_value = |val: u8| -> String {
-            // active_mode is stored as u8, but value can be -1 (which wraps to 255 as u8)
             let val_i32 = if val == 255 { -1i32 } else { val as i32 };
             modes
                 .iter()
@@ -1349,8 +1341,10 @@ impl HqpAdapter {
         Ok(PipelineStatus {
             status: PipelineState {
                 state: state_str.to_string(),
-                mode: get_mode_by_index(state.mode),
+// state.mode is a VALUE, not an index
+                mode: get_mode_by_value(state.mode),
                 // Use State's active_mode (numeric VALUE) - Status's active_mode string is unreliable
+                // (shows "[source]" even when actually outputting DSD)
                 active_mode: get_mode_by_value(state.active_mode),
                 active_filter: playback_status.active_filter.clone(),
                 active_shaper: playback_status.active_shaper.clone(),
@@ -1367,12 +1361,9 @@ impl HqpAdapter {
             settings: PipelineSettings {
                 mode: PipelineSetting {
                     selected: SelectedOption {
-                        value: modes
-                            .iter()
-                            .find(|m| m.index == state.mode as u32)
-                            .map(|m| m.value.to_string())
-                            .unwrap_or_else(|| state.mode.to_string()),
-                        label: get_mode_by_index(state.mode),
+                        // state.mode is a VALUE, not an index - find by value
+                        value: state.mode.to_string(),
+                        label: get_mode_by_value(state.mode),
                     },
                     options: modes
                         .iter()
