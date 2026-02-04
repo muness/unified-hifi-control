@@ -1361,8 +1361,14 @@ impl HqpAdapter {
             settings: PipelineSettings {
                 mode: PipelineSetting {
                     selected: SelectedOption {
-                        // state.mode is a VALUE, not an index - find by value
-                        value: state.mode.to_string(),
+                        // state.mode is a VALUE stored as u8, but can be -1 (wraps to 255)
+                        // Convert to i32 to match options which use m.value (i32)
+                        value: (if state.mode == 255 {
+                            -1i32
+                        } else {
+                            state.mode as i32
+                        })
+                        .to_string(),
                         label: get_mode_by_value(state.mode),
                     },
                     options: modes
