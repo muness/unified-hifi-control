@@ -1328,6 +1328,17 @@ impl HqpAdapter {
                 .unwrap_or_default()
         };
 
+        // Look up mode by VALUE (not index) - State's active_mode is a VALUE
+        let get_mode_by_value = |val: u8| -> String {
+            // active_mode is stored as u8, but value can be -1 (which wraps to 255 as u8)
+            let val_i32 = if val == 255 { -1i32 } else { val as i32 };
+            modes
+                .iter()
+                .find(|m| m.value == val_i32)
+                .map(|m| m.name.clone())
+                .unwrap_or_else(|| format!("Unknown({})", val_i32))
+        };
+
         let state_str = match state.state {
             0 => "Stopped",
             1 => "Paused",
@@ -1339,8 +1350,8 @@ impl HqpAdapter {
             status: PipelineState {
                 state: state_str.to_string(),
                 mode: get_mode_by_index(state.mode),
-                // Use actual active values from Status response, not configured values from State
-                active_mode: playback_status.active_mode.clone(),
+                // Use State's active_mode (numeric VALUE) - Status's active_mode string is unreliable
+                active_mode: get_mode_by_value(state.active_mode),
                 active_filter: playback_status.active_filter.clone(),
                 active_shaper: playback_status.active_shaper.clone(),
                 active_rate: state.active_rate,

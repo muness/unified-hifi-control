@@ -118,16 +118,23 @@ HQPlayer has TWO distinct concepts that are often confused:
 
 | Aspect | State Command | Status Command |
 |--------|---------------|----------------|
-| **Purpose** | Configured/saved settings | Active playback state |
+| **Purpose** | Configured settings + actual active state | Playback position and some active info |
 | **Filter/Shaper** | Numeric VALUE (e.g., `filter1x="24"`) | String NAME (e.g., `active_filter="poly-sinc-ext2"`) |
-| **When to use** | Settings UI (what user configured) | Now Playing display (what's actually running) |
-| **Changes when** | User changes setting via Set* commands | Playback starts or settings applied |
+| **active_mode** | Numeric VALUE - **USE THIS** (e.g., `active_mode="1"` = SDM) | String NAME - **UNRELIABLE** (may show `"[source]"` even when outputting DSD) |
+| **When to use** | Settings UI + actual active mode/rate | Now Playing display (filter/shaper names) |
 
-**Key Insight:** When you call `SetFilter`, it updates BOTH:
-- The configured value (reflected in State)
-- The active value (reflected in Status)
+**Key Insight:** State contains BOTH configured AND active values:
+- `mode` = configured mode (what user set)
+- `active_mode` = actual active mode (what's actually running) - **USE THIS**
+- `rate` = configured rate index
+- `active_rate` = actual output sample rate
 
-But they may differ temporarily if HQPlayer selects a filter variant based on CPU load or sample rate.
+**Warning:** Status's `active_mode` field is unreliable. It may report `"[source]"` even when HQPlayer is actively outputting DSD (e.g., at 11289600 Hz). Always use State's `active_mode` (numeric) for the actual active mode.
+
+**Set commands change CONFIGURED values only.** The active values only change when:
+- Playback is stopped and restarted
+- A new track starts
+- HQPlayer internally decides to apply the change
 
 ### Our Caching Strategy
 
@@ -167,9 +174,9 @@ emit shapersItem(index, name, value);
 emit ratesItem(index, rate);
 ```
 
-### State Response Fields (Configured Settings)
+### State Response Fields (Configured + Active)
 
-The `<State/>` command returns CONFIGURED settings as numeric values:
+The `<State/>` command returns BOTH configured settings AND actual active state:
 
 ```xml
 <State filter="24" filter1x="24" filterNx="37" shaper="9" mode="1" rate="2"
@@ -178,20 +185,28 @@ The `<State/>` command returns CONFIGURED settings as numeric values:
        matrix_profile=""/>
 ```
 
+**Configured Fields:**
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `filter` | VALUE | General filter (fallback if no split) |
 | `filter1x` | VALUE | 1x filter (for 1x sample rates) |
 | `filterNx` | VALUE | Nx filter (for 2x+ sample rates) |
 | `shaper` | VALUE | Dither/noise shaper |
-| `mode` | VALUE | PCM/SDM mode (-1 = [source]) |
-| `rate` | **INDEX** | Rate list index (NOT the Hz value!) |
-| `active_rate` | Hz | Actual output sample rate |
+| `mode` | VALUE | Configured PCM/SDM mode (-1 = [source]) |
+| `rate` | **INDEX** | Configured rate list index (NOT the Hz value!) |
 | `volume` | dB | Current volume |
 
-### Status Response Fields (Active Playback)
+**Active Fields (USE THESE for actual playback state):**
 
-The `<Status subscribe="0"/>` command returns ACTIVE playback state with string names:
+| Field | Type | Description |
+|-------|------|-------------|
+| `active_mode` | VALUE | **Actual** active mode (0=PCM, 1=SDM) - **USE THIS** |
+| `active_rate` | Hz | **Actual** output sample rate |
+
+### Status Response Fields (Playback Position + Display Names)
+
+The `<Status subscribe="0"/>` command returns playback position and string names for display:
 
 ```xml
 <Status state="0" track="0" position="0" length="0" volume="-58"
@@ -201,13 +216,21 @@ The `<Status subscribe="0"/>` command returns ACTIVE playback state with string 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `active_mode` | String | Active mode name (e.g., "PCM", "SDM") |
-| `active_filter` | String | Active filter name (what's actually running) |
-| `active_shaper` | String | Active shaper name |
-| `active_rate` | Hz | Actual output sample rate |
+| `active_mode` | String | **UNRELIABLE** - may show "[source]" even when outputting DSD. Use State's `active_mode` instead. |
+| `active_filter` | String | Active filter name (what's actually running) - reliable |
+| `active_shaper` | String | Active shaper name - reliable |
+| `active_rate` | Hz | Actual output sample rate - reliable |
+| `active_bits` | int | Output bit depth |
+| `active_channels` | int | Output channel count |
 | `state` | 0/1/2 | Stopped/Paused/Playing |
+| `position` | seconds | Current playback position |
+| `length` | seconds | Track length |
 
-**Why both?** Use State VALUES for settings UI (what to send in Set commands). Use Status STRINGS for display (what user sees as "now playing").
+**Which to use:**
+- **Active mode:** Use State's `active_mode` (numeric VALUE) - Status's is unreliable
+- **Active filter/shaper:** Use Status (string names for display)
+- **Active rate:** Either works (both return Hz)
+- **Settings UI:** Use State's configured values (mode, filter1x, filterNx, shaper, rate)
 
 ### Key Insight: VALUE vs INDEX
 
