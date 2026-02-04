@@ -1030,7 +1030,8 @@ impl HqpAdapter {
     }
 
     /// Set mode - sends VALUE directly to HQPlayer
-    /// Despite hqp-control help saying "index", HQPlayer actually expects the VALUE field
+    /// Mode only has 3 meaningful values: -1 ([source]), 0 (PCM), 1 (SDM)
+    /// State.mode returns VALUE, SetMode expects VALUE.
     pub async fn set_mode(&self, mode_value: u32) -> Result<()> {
         // Mode values can be negative (e.g., -1 for [source]), so cast carefully
         let mode_val_i32 = mode_value as i32;
@@ -1040,12 +1041,13 @@ impl HqpAdapter {
         Ok(())
     }
 
-    /// Set filter (low-level) - takes VALUE fields directly (not indices)
+    /// Set filter (low-level) - takes INDEX values
     ///
-    /// - value: sets the Nx (non-1x) filter as VALUE
-    /// - value1x: if provided, also sets the 1x filter as VALUE
+    /// - value: sets the Nx (non-1x) filter by INDEX
+    /// - value1x: if provided, also sets the 1x filter by INDEX
     ///
-    /// NOTE: Despite hqp-control help saying "index", HQPlayer actually expects the VALUE field
+    /// HQPlayer CLI confirms: `--set-filter <index> [index1x]`
+    /// State returns INDEX for filter fields, so read from State and send back unchanged.
     pub async fn set_filter(&self, value: u32, value1x: Option<u32>) -> Result<()> {
         let value_str = value.to_string();
         let mut attrs = vec![("value", value_str.as_str())];
@@ -1082,7 +1084,6 @@ impl HqpAdapter {
     }
 
     /// Resolve filter name to INDEX, checking cache first then fetching if needed
-    /// HQPlayer SetFilter uses INDEX, not value!
     async fn resolve_filter_index(&self, filter_name: &str) -> Result<u32> {
         // First try to find by name in cached filters
         let cached_index = {
@@ -1114,18 +1115,17 @@ impl HqpAdapter {
             })
     }
 
-    /// Set shaper - sends INDEX to HQPlayer (not value!)
+    /// Set shaper - sends INDEX to HQPlayer
     /// Accepts shaper name (e.g., "ASDM7") or index as string
+    /// HQPlayer CLI confirms: `--set-shaping <index>`
     pub async fn set_shaper(&self, shaper_name: &str) -> Result<()> {
         let shaper_index = self.resolve_shaper_index(shaper_name).await?;
-        // HQPlayer SetShaping uses INDEX (see --set-shaping <index> in hqp-control help)
         let xml = Self::build_request("SetShaping", &[("value", &shaper_index.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
 
     /// Resolve shaper name to INDEX, checking cache first then fetching if needed
-    /// HQPlayer SetShaping uses INDEX, not value!
     async fn resolve_shaper_index(&self, shaper_name: &str) -> Result<u32> {
         // First try to find by name in cached shapers
         let cached_index = {
