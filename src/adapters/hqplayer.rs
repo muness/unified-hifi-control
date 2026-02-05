@@ -1456,9 +1456,9 @@ impl HqpAdapter {
         Ok(PipelineStatus {
             status: PipelineState {
                 state: state_str.to_string(),
-                // state.mode is a VALUE, not an index
+                // State.mode and State.active_mode are INDEX (0,1,2) - look up by ModesItem.index
                 mode: get_mode_by_index(state.mode),
-                // Use State's active_mode (numeric VALUE) - Status's active_mode string is unreliable
+                // Use State's active_mode (INDEX) - Status's active_mode string is unreliable
                 // (shows "[source]" even when actually outputting DSD)
                 active_mode: get_mode_by_index(state.active_mode),
                 active_filter: playback_status.active_filter.clone(),
@@ -1533,10 +1533,14 @@ impl HqpAdapter {
                 // In PCM mode, it's called "Shaper"; in DSD/SDM mode, it's "Modulator"
                 shaper_label: {
                     let mode_name = get_mode_by_index(state.mode);
-                    if mode_name.to_uppercase().contains("PCM") {
-                        "Shaper".to_string()
-                    } else {
+                    // PCM mode → "Shaper", DSD/SDM mode → "Modulator"
+                    // "[source]" mode depends on source material - default to "Shaper"
+                    if mode_name.to_uppercase().contains("SDM")
+                        || mode_name.to_uppercase().contains("DSD")
+                    {
                         "Modulator".to_string()
+                    } else {
+                        "Shaper".to_string()
                     }
                 },
                 samplerate: PipelineSetting {

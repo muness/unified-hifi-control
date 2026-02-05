@@ -837,9 +837,11 @@ pub async fn hqp_setting_handler(
     let result = match req.name.as_str() {
         "mode" => state.hqplayer.set_mode(&value_str).await,
         "filter" => {
-            // Sets both 1x and Nx to the same filter
-            let _ = state.hqplayer.set_filter_1x(&value_str).await;
-            state.hqplayer.set_filter_nx(&value_str).await
+            // Sets both 1x and Nx to the same filter - propagate first error if any
+            match state.hqplayer.set_filter_1x(&value_str).await {
+                Ok(()) => state.hqplayer.set_filter_nx(&value_str).await,
+                Err(e) => Err(e),
+            }
         }
         "filter1x" => state.hqplayer.set_filter_1x(&value_str).await,
         "filterNx" | "filternx" => state.hqplayer.set_filter_nx(&value_str).await,
