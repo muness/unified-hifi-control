@@ -994,14 +994,28 @@ impl HqpAdapter {
         let xml = Self::build_request("GetFilters", &[]);
         let response = self.send_command(&xml).await?;
 
-        Ok(Self::parse_items(&response, "FiltersItem", |item| {
-            FilterItem {
-                index: Self::parse_attr_u32(item, "index"),
-                name: Self::parse_attr(item, "name").unwrap_or_default(),
-                value: Self::parse_attr_i32(item, "value"),
-                arg: Self::parse_attr_u32(item, "arg"),
-            }
-        }))
+        let filters = Self::parse_items(&response, "FiltersItem", |item| FilterItem {
+            index: Self::parse_attr_u32(item, "index"),
+            name: Self::parse_attr(item, "name").unwrap_or_default(),
+            value: Self::parse_attr_i32(item, "value"),
+            arg: Self::parse_attr_u32(item, "arg"),
+        });
+
+        // Log first 10 filters to help debug index vs value issues
+        for (i, f) in filters.iter().take(10).enumerate() {
+            tracing::debug!(
+                "Filter[{}]: index={}, name='{}', value={}",
+                i,
+                f.index,
+                f.name,
+                f.value
+            );
+        }
+        if filters.len() > 10 {
+            tracing::debug!("... and {} more filters", filters.len() - 10);
+        }
+
+        Ok(filters)
     }
 
     /// Get available shapers
@@ -1009,13 +1023,27 @@ impl HqpAdapter {
         let xml = Self::build_request("GetShapers", &[]);
         let response = self.send_command(&xml).await?;
 
-        Ok(Self::parse_items(&response, "ShapersItem", |item| {
-            ListItem {
-                index: Self::parse_attr_u32(item, "index"),
-                name: Self::parse_attr(item, "name").unwrap_or_default(),
-                value: Self::parse_attr_i32(item, "value"),
-            }
-        }))
+        let shapers = Self::parse_items(&response, "ShapersItem", |item| ListItem {
+            index: Self::parse_attr_u32(item, "index"),
+            name: Self::parse_attr(item, "name").unwrap_or_default(),
+            value: Self::parse_attr_i32(item, "value"),
+        });
+
+        // Log first 10 shapers to compare index vs value with filters
+        for (i, s) in shapers.iter().take(10).enumerate() {
+            tracing::debug!(
+                "Shaper[{}]: index={}, name='{}', value={}",
+                i,
+                s.index,
+                s.name,
+                s.value
+            );
+        }
+        if shapers.len() > 10 {
+            tracing::debug!("... and {} more shapers", shapers.len() - 10);
+        }
+
+        Ok(shapers)
     }
 
     /// Get available sample rates
@@ -1094,6 +1122,12 @@ impl HqpAdapter {
         }
 
         let xml = Self::build_request("SetFilter", &attrs);
+        tracing::debug!(
+            "SetFilter: value={} (Nx), value1x={:?} (1x) | XML: {}",
+            value,
+            value1x,
+            xml.trim()
+        );
         self.send_command(&xml).await?;
         Ok(())
     }
@@ -1105,6 +1139,10 @@ impl HqpAdapter {
         let state = self.get_state().await?;
         // State returns INDEX for filters
         let current_nx_index = state.filter_nx.unwrap_or(state.filter);
+        tracing::debug!(
+            "set_filter_1x: name='{}' resolved_index={}, state.filter_nx={:?}, state.filter={}, using current_nx={}",
+            filter_name, filter_index, state.filter_nx, state.filter, current_nx_index
+        );
         self.set_filter(current_nx_index, Some(filter_index)).await
     }
 
@@ -1115,39 +1153,67 @@ impl HqpAdapter {
         // State returns INDEX for filters
         let state = self.get_state().await?;
         let current_1x_index = state.filter1x.unwrap_or(state.filter);
+        tracing::debug!(
+            "set_filter_nx: name='{}' resolved_index={}, state.filter1x={:?}, state.filter={}, using current_1x={}",
+            filter_name, filter_index, state.filter1x, state.filter, current_1x_index
+        );
         self.set_filter(filter_index, Some(current_1x_index)).await
     }
 
     /// Resolve filter name to INDEX, checking cache first then fetching if needed
     async fn resolve_filter_index(&self, filter_name: &str) -> Result<u32> {
         // First try to find by name in cached filters
-        let cached_index = {
+        let cached_result = {
             let state = self.state.read().await;
             state
                 .filters
                 .iter()
                 .find(|f| f.name == filter_name)
-                .map(|f| f.index)
+                .map(|f| (f.index, f.value))
         };
 
-        if let Some(idx) = cached_index {
+        if let Some((idx, val)) = cached_result {
+            tracing::debug!(
+                "resolve_filter_index: '{}' -> index={}, value={} (from cache)",
+                filter_name,
+                idx,
+                val
+            );
             return Ok(idx);
         }
 
         // Not found in cache - try parsing as integer (direct index)
         if let Ok(idx) = filter_name.parse::<u32>() {
+            tracing::debug!(
+                "resolve_filter_index: '{}' parsed as direct index={}",
+                filter_name,
+                idx
+            );
             return Ok(idx);
         }
 
         // Try refreshing filter list and searching again
         let filters = self.get_filters().await?;
-        filters
+        let result = filters
             .iter()
             .find(|f| f.name == filter_name)
-            .map(|f| f.index)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Filter '{}' not found in available filters", filter_name)
-            })
+            .map(|f| (f.index, f.value));
+
+        match result {
+            Some((idx, val)) => {
+                tracing::debug!(
+                    "resolve_filter_index: '{}' -> index={}, value={} (after refresh)",
+                    filter_name,
+                    idx,
+                    val
+                );
+                Ok(idx)
+            }
+            None => Err(anyhow::anyhow!(
+                "Filter '{}' not found in available filters",
+                filter_name
+            )),
+        }
     }
 
     /// Set shaper - sends INDEX to HQPlayer
