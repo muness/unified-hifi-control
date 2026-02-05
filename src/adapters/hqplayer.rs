@@ -1058,34 +1058,35 @@ impl HqpAdapter {
     }
 
     /// Set mode by name (e.g., "PCM", "DSD", "[source]")
-    /// Resolves name to VALUE (-1, 0, 1) and sends to HQPlayer.
+    /// Resolves name to INDEX and sends to HQPlayer.
+    /// CLI confirms: `--set-mode <index>`
     pub async fn set_mode(&self, mode_name: &str) -> Result<()> {
-        let mode_value = self.resolve_mode_value(mode_name).await?;
-        let xml = Self::build_request("SetMode", &[("value", &mode_value.to_string())]);
+        let mode_index = self.resolve_mode_index(mode_name).await?;
+        let xml = Self::build_request("SetMode", &[("value", &mode_index.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
 
-    /// Resolve mode name to VALUE, checking cache first then fetching if needed
-    /// Mode values: -1 ([source]), 0 (PCM), 1 (SDM/DSD)
-    async fn resolve_mode_value(&self, mode_name: &str) -> Result<i32> {
+    /// Resolve mode name to INDEX, checking cache first then fetching if needed
+    /// ModesItem has: index (0,1,2), name, value (-1,0,1) - index ≠ value!
+    async fn resolve_mode_index(&self, mode_name: &str) -> Result<u32> {
         // First try to find by name in cached modes (case-insensitive)
-        let cached_value = {
+        let cached_index = {
             let state = self.state.read().await;
             state
                 .modes
                 .iter()
                 .find(|m| m.name.eq_ignore_ascii_case(mode_name))
-                .map(|m| m.value)
+                .map(|m| m.index)
         };
 
-        if let Some(val) = cached_value {
-            return Ok(val);
+        if let Some(idx) = cached_index {
+            return Ok(idx);
         }
 
-        // Not found in cache - try parsing as integer (direct value for backwards compat)
-        if let Ok(val) = mode_name.parse::<i32>() {
-            return Ok(val);
+        // Not found in cache - try parsing as integer (direct index)
+        if let Ok(idx) = mode_name.parse::<u32>() {
+            return Ok(idx);
         }
 
         // Try refreshing mode list and searching again
@@ -1093,7 +1094,7 @@ impl HqpAdapter {
         modes
             .iter()
             .find(|m| m.name.eq_ignore_ascii_case(mode_name))
-            .map(|m| m.value)
+            .map(|m| m.index)
             .ok_or_else(|| {
                 let available: Vec<_> = modes.iter().map(|m| m.name.as_str()).collect();
                 anyhow::anyhow!(
@@ -1427,15 +1428,15 @@ impl HqpAdapter {
         let filter_nx_obj = filters.iter().find(|f| f.index == filter_nx_idx);
         let shaper_obj = shapers.iter().find(|s| s.index == shaper_idx);
 
-        // Look up mode by VALUE (not index). state.mode and state.active_mode are
-        // stored as u8, but value can be -1 (which wraps to 255 as u8), 0 (PCM), or 1 (SDM).
-        let get_mode_by_value = |val: u8| -> String {
-            let val_i32 = if val == 255 { -1i32 } else { val as i32 };
+        // State.mode and State.active_mode return INDEX, not VALUE.
+        // ModesItem has: index (0,1,2), name, value (-1,0,1)
+        // Reference: onModesItem prints "[index] name value"
+        let get_mode_by_index = |idx: u8| -> String {
             modes
                 .iter()
-                .find(|m| m.value == val_i32)
+                .find(|m| m.index == idx as u32)
                 .map(|m| m.name.clone())
-                .unwrap_or_else(|| format!("Unknown({})", val_i32))
+                .unwrap_or_else(|| format!("Unknown({})", idx))
         };
 
         let state_str = match state.state {
@@ -1449,10 +1450,10 @@ impl HqpAdapter {
             status: PipelineState {
                 state: state_str.to_string(),
                 // state.mode is a VALUE, not an index
-                mode: get_mode_by_value(state.mode),
+                mode: get_mode_by_index(state.mode),
                 // Use State's active_mode (numeric VALUE) - Status's active_mode string is unreliable
                 // (shows "[source]" even when actually outputting DSD)
-                active_mode: get_mode_by_value(state.active_mode),
+                active_mode: get_mode_by_index(state.active_mode),
                 active_filter: playback_status.active_filter.clone(),
                 active_shaper: playback_status.active_shaper.clone(),
                 active_rate: state.active_rate,
@@ -1469,8 +1470,8 @@ impl HqpAdapter {
                 mode: PipelineSetting {
                     selected: SelectedOption {
                         // Use name for the value - adapter handles name→value conversion
-                        value: get_mode_by_value(state.mode),
-                        label: get_mode_by_value(state.mode),
+                        value: get_mode_by_index(state.mode),
+                        label: get_mode_by_index(state.mode),
                     },
                     options: modes
                         .iter()

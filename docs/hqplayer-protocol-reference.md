@@ -38,20 +38,20 @@ The `<State/>` command returns these fields for settings:
 
 | Field | Returns | Type | Notes |
 |-------|---------|------|-------|
-| `mode` | VALUE | i32 | -1=[source], 0=PCM, 1=SDM |
+| `mode` | INDEX | u32 | Index into modes list (0,1,2) |
 | `filter` | INDEX | u32 | General filter (fallback) |
 | `filter1x` | INDEX | u32 | 1x filter |
 | `filterNx` | INDEX | u32 | Nx filter |
 | `shaper` | INDEX | u32 | Noise shaper |
 | `rate` | INDEX | u32 | Rate list index (NOT Hz!) |
-| `active_mode` | VALUE | u32 | Actually running mode |
+| `active_mode` | INDEX | u32 | Actually running mode |
 | `active_rate` | Hz | u32 | Actually running rate |
 
 ### What Set Commands Expect
 
 | Command | Parameter | Expects | Evidence |
 |---------|-----------|---------|----------|
-| `SetMode` | `value` | VALUE | Mode only has 3 values: -1, 0, 1 |
+| `SetMode` | `value` | INDEX | CLI: `--set-mode <index>` |
 | `SetFilter` | `value`, `value1x` | **INDEX** | CLI: `--set-filter <index> [index1x]` |
 | `SetShaping` | `value` | **INDEX** | CLI: `--set-shaping <index>` |
 | `SetRate` | `value` | INDEX | RateItem has no VALUE field |
@@ -64,9 +64,9 @@ The `<State/>` command returns these fields for settings:
 - Round-trip: read from State, send back unchanged
 
 **For mode:**
-- State returns VALUE
-- SetMode expects VALUE
-- Different from filter/shaper!
+- State returns INDEX
+- SetMode expects INDEX
+- Same as filter/shaper!
 
 **For rate:**
 - State returns INDEX
@@ -84,7 +84,7 @@ The `<State/>` command returns these fields for settings:
 --set-rate <index>
 ```
 
-Note: The help says "index" for all, but mode only has 3 meaningful values so index≈value.
+All commands use INDEX consistently. ModesItem has index (0,1,2) and value (-1,0,1) - these differ!
 
 ### setFilter Implementation (ControlInterface.cpp:1337)
 
@@ -144,20 +144,20 @@ HQPlayer has two query commands with different semantics:
 
 When implementing HQPlayer control:
 
-- [ ] Parse FiltersItem/ShapersItem storing both `index` and `value`
+- [ ] Parse FiltersItem/ShapersItem/ModesItem storing both `index` and `value`
 - [ ] State.filter/filter1x/filterNx/shaper are INDEX - look up by index
-- [ ] State.mode is VALUE - look up by value
+- [ ] State.mode is INDEX - look up by index (ModesItem has index≠value!)
 - [ ] SetFilter/SetShaping: send INDEX from State unchanged
-- [ ] SetMode: send VALUE directly
+- [ ] SetMode: send INDEX (CLI help confirms `--set-mode <index>`)
 - [ ] SetRate: send INDEX (RateItem has no value field)
 - [ ] For display: use Status's string fields (active_filter, active_shaper)
-- [ ] For actual mode: use State's active_mode (numeric), not Status's
+- [ ] For actual mode: use State's active_mode (INDEX), not Status's string
 
 ## Quick Reference Table
 
 | Setting | State Field | State Type | Set Command | Set Expects | UI/API Use |
 |---------|-------------|------------|-------------|-------------|------------|
-| Mode | `mode` | VALUE | SetMode | VALUE | NAME (e.g., "PCM") |
+| Mode | `mode` | INDEX | SetMode | INDEX | NAME (e.g., "PCM") |
 | Filter 1x | `filter1x` | INDEX | SetFilter | INDEX | NAME (e.g., "poly-sinc-ext2") |
 | Filter Nx | `filterNx` | INDEX | SetFilter | INDEX | NAME |
 | Shaper | `shaper` | INDEX | SetShaping | INDEX | NAME (e.g., "ASDM7") |
