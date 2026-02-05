@@ -278,6 +278,8 @@ pub struct PipelineSettings {
     #[serde(rename = "filterNx")]
     pub filter_nx: PipelineSetting,
     pub shaper: PipelineSetting,
+    /// Dynamic label for shaper field: "Modulator" in DSD mode, "Shaper" in PCM mode
+    pub shaper_label: String,
     pub samplerate: PipelineSetting,
 }
 
@@ -851,8 +853,10 @@ impl HqpAdapter {
     }
 
     /// Parse XML attribute
+    /// Uses space prefix to avoid matching attribute name suffixes
+    /// (e.g., searching for "mode" shouldn't match "active_mode")
     fn parse_attr(xml: &str, attr: &str) -> Option<String> {
-        let pattern = format!("{}=\"", attr);
+        let pattern = format!(" {}=\"", attr);
         if let Some(start) = xml.find(&pattern) {
             let rest = &xml[start + pattern.len()..];
             if let Some(end) = rest.find('"') {
@@ -992,14 +996,28 @@ impl HqpAdapter {
         let xml = Self::build_request("GetFilters", &[]);
         let response = self.send_command(&xml).await?;
 
-        Ok(Self::parse_items(&response, "FiltersItem", |item| {
-            FilterItem {
-                index: Self::parse_attr_u32(item, "index"),
-                name: Self::parse_attr(item, "name").unwrap_or_default(),
-                value: Self::parse_attr_i32(item, "value"),
-                arg: Self::parse_attr_u32(item, "arg"),
-            }
-        }))
+        let filters = Self::parse_items(&response, "FiltersItem", |item| FilterItem {
+            index: Self::parse_attr_u32(item, "index"),
+            name: Self::parse_attr(item, "name").unwrap_or_default(),
+            value: Self::parse_attr_i32(item, "value"),
+            arg: Self::parse_attr_u32(item, "arg"),
+        });
+
+        // Log first 10 filters to help debug index vs value issues
+        for (i, f) in filters.iter().take(10).enumerate() {
+            tracing::debug!(
+                "Filter[{}]: index={}, name='{}', value={}",
+                i,
+                f.index,
+                f.name,
+                f.value
+            );
+        }
+        if filters.len() > 10 {
+            tracing::debug!("... and {} more filters", filters.len() - 10);
+        }
+
+        Ok(filters)
     }
 
     /// Get available shapers
@@ -1007,13 +1025,27 @@ impl HqpAdapter {
         let xml = Self::build_request("GetShapers", &[]);
         let response = self.send_command(&xml).await?;
 
-        Ok(Self::parse_items(&response, "ShapersItem", |item| {
-            ListItem {
-                index: Self::parse_attr_u32(item, "index"),
-                name: Self::parse_attr(item, "name").unwrap_or_default(),
-                value: Self::parse_attr_i32(item, "value"),
-            }
-        }))
+        let shapers = Self::parse_items(&response, "ShapersItem", |item| ListItem {
+            index: Self::parse_attr_u32(item, "index"),
+            name: Self::parse_attr(item, "name").unwrap_or_default(),
+            value: Self::parse_attr_i32(item, "value"),
+        });
+
+        // Log first 10 shapers to compare index vs value with filters
+        for (i, s) in shapers.iter().take(10).enumerate() {
+            tracing::debug!(
+                "Shaper[{}]: index={}, name='{}', value={}",
+                i,
+                s.index,
+                s.name,
+                s.value
+            );
+        }
+        if shapers.len() > 10 {
+            tracing::debug!("... and {} more shapers", shapers.len() - 10);
+        }
+
+        Ok(shapers)
     }
 
     /// Get available sample rates
@@ -1027,23 +1059,66 @@ impl HqpAdapter {
         }))
     }
 
-    /// Set mode - sends VALUE directly to HQPlayer
-    /// Despite hqp-control help saying "index", HQPlayer actually expects the VALUE field
-    pub async fn set_mode(&self, mode_value: u32) -> Result<()> {
-        // Mode values can be negative (e.g., -1 for [source]), so cast carefully
-        let mode_val_i32 = mode_value as i32;
-        // HQPlayer SetMode takes VALUE field directly (not array index)
-        let xml = Self::build_request("SetMode", &[("value", &mode_val_i32.to_string())]);
+    /// Set mode by name (e.g., "PCM", "DSD", "[source]")
+    /// Resolves name to INDEX and sends to HQPlayer.
+    /// CLI confirms: `--set-mode <index>`
+    ///
+    /// NOTE: Mode changes affect available filters, shapers, and rates.
+    /// We refresh the cached lists after changing mode.
+    pub async fn set_mode(&self, mode_name: &str) -> Result<()> {
+        let mode_index = self.resolve_mode_index(mode_name).await?;
+        let xml = Self::build_request("SetMode", &[("value", &mode_index.to_string())]);
         self.send_command(&xml).await?;
+        // Mode change affects available filters/shapers/rates - refresh lists
+        self.refresh_lists().await;
         Ok(())
     }
 
-    /// Set filter (low-level) - takes VALUE fields directly (not indices)
+    /// Resolve mode name to INDEX, checking cache first then fetching if needed
+    /// ModesItem has: index (0,1,2), name, value (-1,0,1) - index ≠ value!
+    async fn resolve_mode_index(&self, mode_name: &str) -> Result<u32> {
+        // First try to find by name in cached modes (case-insensitive)
+        let cached_index = {
+            let state = self.state.read().await;
+            state
+                .modes
+                .iter()
+                .find(|m| m.name.eq_ignore_ascii_case(mode_name))
+                .map(|m| m.index)
+        };
+
+        if let Some(idx) = cached_index {
+            return Ok(idx);
+        }
+
+        // Not found in cache - try parsing as integer (direct index)
+        if let Ok(idx) = mode_name.parse::<u32>() {
+            return Ok(idx);
+        }
+
+        // Try refreshing mode list and searching again
+        let modes = self.get_modes().await?;
+        modes
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(mode_name))
+            .map(|m| m.index)
+            .ok_or_else(|| {
+                let available: Vec<_> = modes.iter().map(|m| m.name.as_str()).collect();
+                anyhow::anyhow!(
+                    "Mode '{}' not found. Available: {}",
+                    mode_name,
+                    available.join(", ")
+                )
+            })
+    }
+
+    /// Set filter (low-level) - takes INDEX values
     ///
-    /// - value: sets the Nx (non-1x) filter as VALUE
-    /// - value1x: if provided, also sets the 1x filter as VALUE
+    /// - value: sets the Nx (non-1x) filter by INDEX
+    /// - value1x: if provided, also sets the 1x filter by INDEX
     ///
-    /// NOTE: Despite hqp-control help saying "index", HQPlayer actually expects the VALUE field
+    /// HQPlayer CLI confirms: `--set-filter <index> [index1x]`
+    /// State returns INDEX for filter fields, so read from State and send back unchanged.
     pub async fn set_filter(&self, value: u32, value1x: Option<u32>) -> Result<()> {
         let value_str = value.to_string();
         let mut attrs = vec![("value", value_str.as_str())];
@@ -1055,90 +1130,129 @@ impl HqpAdapter {
         }
 
         let xml = Self::build_request("SetFilter", &attrs);
+        tracing::debug!(
+            "SetFilter: value={} (Nx), value1x={:?} (1x) | XML: {}",
+            value,
+            value1x,
+            xml.trim()
+        );
         self.send_command(&xml).await?;
         Ok(())
     }
 
-    /// Set only the 1x filter, preserving current Nx filter value
-    /// Accepts filter name (e.g., "poly-sinc-lp") or value as string
+    /// Set only the 1x filter, preserving current Nx filter index
+    /// Accepts filter name (e.g., "poly-sinc-lp") or index as string
     pub async fn set_filter_1x(&self, filter_name: &str) -> Result<()> {
-        let filter_value = self.resolve_filter_value(filter_name).await?;
+        let filter_index = self.resolve_filter_index(filter_name).await?;
         let state = self.get_state().await?;
-        let current_nx_value = state.filter_nx.unwrap_or(state.filter);
-        self.set_filter(current_nx_value, Some(filter_value)).await
+        // State returns INDEX for filters
+        let current_nx_index = state.filter_nx.unwrap_or(state.filter);
+        tracing::debug!(
+            "set_filter_1x: name='{}' resolved_index={}, state.filter_nx={:?}, state.filter={}, using current_nx={}",
+            filter_name, filter_index, state.filter_nx, state.filter, current_nx_index
+        );
+        self.set_filter(current_nx_index, Some(filter_index)).await
     }
 
-    /// Set only the Nx filter, preserving current 1x filter value
-    /// Accepts filter name (e.g., "poly-sinc-lp") or value as string
+    /// Set only the Nx filter, preserving current 1x filter index
+    /// Accepts filter name (e.g., "poly-sinc-lp") or index as string
     pub async fn set_filter_nx(&self, filter_name: &str) -> Result<()> {
-        let filter_value = self.resolve_filter_value(filter_name).await?;
-        // Get current state to preserve 1x filter (state returns values, not indices)
+        let filter_index = self.resolve_filter_index(filter_name).await?;
+        // State returns INDEX for filters
         let state = self.get_state().await?;
-        let current_1x_value = state.filter1x.unwrap_or(state.filter);
-        self.set_filter(filter_value, Some(current_1x_value)).await
+        let current_1x_index = state.filter1x.unwrap_or(state.filter);
+        tracing::debug!(
+            "set_filter_nx: name='{}' resolved_index={}, state.filter1x={:?}, state.filter={}, using current_1x={}",
+            filter_name, filter_index, state.filter1x, state.filter, current_1x_index
+        );
+        self.set_filter(filter_index, Some(current_1x_index)).await
     }
 
-    /// Resolve filter name to value, checking cache first then fetching if needed
-    async fn resolve_filter_value(&self, filter_name: &str) -> Result<u32> {
+    /// Resolve filter name to INDEX, checking cache first then fetching if needed
+    async fn resolve_filter_index(&self, filter_name: &str) -> Result<u32> {
         // First try to find by name in cached filters
-        let cached_value = {
+        let cached_result = {
             let state = self.state.read().await;
             state
                 .filters
                 .iter()
                 .find(|f| f.name == filter_name)
-                .map(|f| f.value)
+                .map(|f| (f.index, f.value))
         };
 
-        if let Some(v) = cached_value {
-            return Ok(v as u32);
+        if let Some((idx, val)) = cached_result {
+            tracing::debug!(
+                "resolve_filter_index: '{}' -> index={}, value={} (from cache)",
+                filter_name,
+                idx,
+                val
+            );
+            return Ok(idx);
         }
 
-        // Not found in cache - try parsing as integer (direct value)
-        if let Ok(v) = filter_name.parse::<u32>() {
-            return Ok(v);
+        // Not found in cache - try parsing as integer (direct index)
+        if let Ok(idx) = filter_name.parse::<u32>() {
+            tracing::debug!(
+                "resolve_filter_index: '{}' parsed as direct index={}",
+                filter_name,
+                idx
+            );
+            return Ok(idx);
         }
 
         // Try refreshing filter list and searching again
         let filters = self.get_filters().await?;
-        filters
+        let result = filters
             .iter()
             .find(|f| f.name == filter_name)
-            .map(|f| f.value as u32)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Filter '{}' not found in available filters", filter_name)
-            })
+            .map(|f| (f.index, f.value));
+
+        match result {
+            Some((idx, val)) => {
+                tracing::debug!(
+                    "resolve_filter_index: '{}' -> index={}, value={} (after refresh)",
+                    filter_name,
+                    idx,
+                    val
+                );
+                Ok(idx)
+            }
+            None => Err(anyhow::anyhow!(
+                "Filter '{}' not found in available filters",
+                filter_name
+            )),
+        }
     }
 
-    /// Set shaper - sends VALUE directly to HQPlayer
-    /// Accepts shaper name (e.g., "ASDM7") or value as string
+    /// Set shaper - sends INDEX to HQPlayer
+    /// Accepts shaper name (e.g., "ASDM7") or index as string
+    /// HQPlayer CLI confirms: `--set-shaping <index>`
     pub async fn set_shaper(&self, shaper_name: &str) -> Result<()> {
-        let shaper_value = self.resolve_shaper_value(shaper_name).await?;
-        // HQPlayer SetShaping takes VALUE field directly (not array index)
-        let xml = Self::build_request("SetShaping", &[("value", &shaper_value.to_string())]);
+        let shaper_index = self.resolve_shaper_index(shaper_name).await?;
+        let xml = Self::build_request("SetShaping", &[("value", &shaper_index.to_string())]);
         self.send_command(&xml).await?;
         Ok(())
     }
 
-    /// Resolve shaper name to value, checking cache first then fetching if needed
-    async fn resolve_shaper_value(&self, shaper_name: &str) -> Result<u32> {
+    /// Resolve shaper name to INDEX, checking cache first then fetching if needed
+    async fn resolve_shaper_index(&self, shaper_name: &str) -> Result<u32> {
         // First try to find by name in cached shapers
-        let cached_value = {
+        let cached_index = {
             let state = self.state.read().await;
             state
                 .shapers
                 .iter()
                 .find(|s| s.name == shaper_name)
-                .map(|s| s.value)
+                .map(|s| s.index)
         };
 
-        if let Some(v) = cached_value {
-            return Ok(v as u32);
+        if let Some(idx) = cached_index {
+            return Ok(idx);
         }
 
-        // Not found in cache - try parsing as integer (direct value)
-        if let Ok(v) = shaper_name.parse::<u32>() {
-            return Ok(v);
+        // Not found in cache - try parsing as integer (direct index)
+        if let Ok(idx) = shaper_name.parse::<u32>() {
+            return Ok(idx);
         }
 
         // Try refreshing shaper list and searching again
@@ -1146,7 +1260,7 @@ impl HqpAdapter {
         shapers
             .iter()
             .find(|s| s.name == shaper_name)
-            .map(|s| s.value as u32)
+            .map(|s| s.index)
             .ok_or_else(|| {
                 anyhow::anyhow!("Shaper '{}' not found in available shapers", shaper_name)
             })
@@ -1311,32 +1425,25 @@ impl HqpAdapter {
             )
         };
 
-        // State returns actual HQPlayer values, look up by value field (not array index)
-        let filter1x_val = state.filter1x.unwrap_or(state.filter) as i32;
-        let filter_nx_val = state.filter_nx.unwrap_or(state.filter) as i32;
-        let shaper_val = state.shaper as i32;
+        // State returns INDEX for filters and shapers (not value!)
+        // See hqp-control help: --set-filter <index> [index1x]
+        let filter1x_idx = state.filter1x.unwrap_or(state.filter);
+        let filter_nx_idx = state.filter_nx.unwrap_or(state.filter);
+        let shaper_idx = state.shaper;
 
-        let filter1x_obj = filters.iter().find(|f| f.value == filter1x_val);
-        let filter_nx_obj = filters.iter().find(|f| f.value == filter_nx_val);
-        let shaper_obj = shapers.iter().find(|s| s.value == shaper_val);
+        let filter1x_obj = filters.iter().find(|f| f.index == filter1x_idx);
+        let filter_nx_obj = filters.iter().find(|f| f.index == filter_nx_idx);
+        let shaper_obj = shapers.iter().find(|s| s.index == shaper_idx);
 
+        // State.mode and State.active_mode return INDEX, not VALUE.
+        // ModesItem has: index (0,1,2), name, value (-1,0,1)
+        // Reference: onModesItem prints "[index] name value"
         let get_mode_by_index = |idx: u8| -> String {
             modes
                 .iter()
                 .find(|m| m.index == idx as u32)
                 .map(|m| m.name.clone())
-                .unwrap_or_default()
-        };
-
-        // Look up mode by VALUE (not index) - State's active_mode is a VALUE
-        let get_mode_by_value = |val: u8| -> String {
-            // active_mode is stored as u8, but value can be -1 (which wraps to 255 as u8)
-            let val_i32 = if val == 255 { -1i32 } else { val as i32 };
-            modes
-                .iter()
-                .find(|m| m.value == val_i32)
-                .map(|m| m.name.clone())
-                .unwrap_or_else(|| format!("Unknown({})", val_i32))
+                .unwrap_or_else(|| format!("Unknown({})", idx))
         };
 
         let state_str = match state.state {
@@ -1349,9 +1456,11 @@ impl HqpAdapter {
         Ok(PipelineStatus {
             status: PipelineState {
                 state: state_str.to_string(),
+                // State.mode and State.active_mode are INDEX (0,1,2) - look up by ModesItem.index
                 mode: get_mode_by_index(state.mode),
-                // Use State's active_mode (numeric VALUE) - Status's active_mode string is unreliable
-                active_mode: get_mode_by_value(state.active_mode),
+                // Use State's active_mode (INDEX) - Status's active_mode string is unreliable
+                // (shows "[source]" even when actually outputting DSD)
+                active_mode: get_mode_by_index(state.active_mode),
                 active_filter: playback_status.active_filter.clone(),
                 active_shaper: playback_status.active_shaper.clone(),
                 active_rate: state.active_rate,
@@ -1367,65 +1476,72 @@ impl HqpAdapter {
             settings: PipelineSettings {
                 mode: PipelineSetting {
                     selected: SelectedOption {
-                        value: modes
-                            .iter()
-                            .find(|m| m.index == state.mode as u32)
-                            .map(|m| m.value.to_string())
-                            .unwrap_or_else(|| state.mode.to_string()),
+                        // Use name for the value - adapter handles name→value conversion
+                        value: get_mode_by_index(state.mode),
                         label: get_mode_by_index(state.mode),
                     },
                     options: modes
                         .iter()
                         .map(|m| SelectOption {
-                            value: m.value.to_string(),
+                            value: m.name.clone(), // Send NAME, not value
                             label: m.name.clone(),
                         })
                         .collect(),
                 },
                 filter1x: PipelineSetting {
                     selected: SelectedOption {
-                        value: filter1x_obj
-                            .map(|f| f.value.to_string())
-                            .unwrap_or_else(|| filter1x_val.to_string()),
+                        // Use name - adapter handles name→index conversion
+                        value: filter1x_obj.map(|f| f.name.clone()).unwrap_or_default(),
                         label: filter1x_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
                         .iter()
                         .map(|f| SelectOption {
-                            value: f.value.to_string(),
+                            value: f.name.clone(), // Send NAME, not index
                             label: f.name.clone(),
                         })
                         .collect(),
                 },
                 filter_nx: PipelineSetting {
                     selected: SelectedOption {
-                        value: filter_nx_obj
-                            .map(|f| f.value.to_string())
-                            .unwrap_or_else(|| filter_nx_val.to_string()),
+                        // Use name - adapter handles name→index conversion
+                        value: filter_nx_obj.map(|f| f.name.clone()).unwrap_or_default(),
                         label: filter_nx_obj.map(|f| f.name.clone()).unwrap_or_default(),
                     },
                     options: filters
                         .iter()
                         .map(|f| SelectOption {
-                            value: f.value.to_string(),
+                            value: f.name.clone(), // Send NAME, not index
                             label: f.name.clone(),
                         })
                         .collect(),
                 },
                 shaper: PipelineSetting {
                     selected: SelectedOption {
-                        value: shaper_obj
-                            .map(|s| s.value.to_string())
-                            .unwrap_or_else(|| shaper_val.to_string()),
+                        // Use name - adapter handles name→index conversion
+                        value: shaper_obj.map(|s| s.name.clone()).unwrap_or_default(),
                         label: shaper_obj.map(|s| s.name.clone()).unwrap_or_default(),
                     },
                     options: shapers
                         .iter()
                         .map(|s| SelectOption {
-                            value: s.value.to_string(),
+                            value: s.name.clone(), // Send NAME, not index
                             label: s.name.clone(),
                         })
                         .collect(),
+                },
+                // In PCM mode, it's called "Shaper"; in DSD/SDM mode, it's "Modulator"
+                shaper_label: {
+                    let mode_name = get_mode_by_index(state.mode);
+                    // PCM mode → "Shaper", DSD/SDM mode → "Modulator"
+                    // "[source]" mode depends on source material - default to "Shaper"
+                    if mode_name.to_uppercase().contains("SDM")
+                        || mode_name.to_uppercase().contains("DSD")
+                    {
+                        "Modulator".to_string()
+                    } else {
+                        "Shaper".to_string()
+                    }
                 },
                 samplerate: PipelineSetting {
                     selected: SelectedOption {

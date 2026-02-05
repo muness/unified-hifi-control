@@ -425,20 +425,30 @@ jobs:
           restore-keys: |
             wasm-v3-
 
-      # Clear stale WASM outputs when restore-keys provided partial cache
-      # Keeps Rust deps (target/wasm32-unknown-unknown/) but removes old dx output
-      - name: Clear stale WASM outputs
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
-        run: rm -rf target/dx/
+      # Verify cache content is valid - cache-hit can be true but content corrupted
+      # Also handles partial restore from restore-keys (cache-hit=false, stale dx output)
+      - name: Verify cache and determine if build needed
+        id: check-cache
+        run: |
+          if [ -d "target/dx/unified-hifi-control/release/web/public" ] && \
+             [ -f "target/dx/unified-hifi-control/release/web/public/index.html" ]; then
+            echo "WASM cache valid"
+            echo "needs_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "WASM cache invalid or missing - will rebuild"
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+            # Clear stale dx output but keep Rust deps (wasm32-unknown-unknown)
+            rm -rf target/dx/
+          fi
 
       - name: Setup Rust
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
       - name: Cache Rust dependencies
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "wasm-build"
@@ -446,7 +456,7 @@ jobs:
           cache-on-failure: true
 
       - name: Cache Dioxus CLI
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         id: cache-dx
         uses: actions/cache@v5
         with:
@@ -454,11 +464,11 @@ jobs:
           key: dx-cli-0.7.3
 
       - name: Install Dioxus CLI
-        if: steps.cache-wasm.outputs.cache-hit != 'true' && steps.cache-dx.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true' && steps.cache-dx.outputs.cache-hit != 'true'
         run: cargo install dioxus-cli@0.7.3 --locked
 
       - name: Cache generated CSS
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         id: cache-css
         uses: actions/cache@v5
         with:
@@ -466,11 +476,11 @@ jobs:
           key: css-v4.1.18-${{ hashFiles('src/input.css', 'src/app/pages/*.rs', 'src/app/components/*.rs') }}
 
       - name: Build Tailwind CSS
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         run: make css
 
       - name: Build WASM assets (ADR 002)
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         run: |
           # Version is fetched from server at runtime, no need to bake into WASM
           dx build --fullstack --release @client --no-default-features --features web @server --features server
@@ -479,16 +489,16 @@ jobs:
 
       - name: Report cache status
         run: |
-          if [ "${{ steps.cache-wasm.outputs.cache-hit }}" == "true" ]; then
-            echo "::notice::WASM cache hit - skipped build"
+          if [ "${{ steps.check-cache.outputs.needs_build }}" == "false" ]; then
+            echo "::notice::WASM cache valid - skipped build"
           else
-            echo "::notice::WASM cache miss - built from source"
+            echo "::notice::WASM cache invalid/partial - built from source (Rust deps cached)"
           fi
 
       - name: Verify WASM assets exist
         run: |
           if [ ! -d "target/dx/unified-hifi-control" ]; then
-            echo "::error::WASM assets not found in target/dx/ - cache may be corrupted"
+            echo "::error::WASM assets not found in target/dx/ - build failed"
             exit 1
           fi
           echo "WASM assets found:"
@@ -524,17 +534,26 @@ jobs:
           restore-keys: |
             wasm-v3-
 
-      # Clear stale WASM outputs when restore-keys provided partial cache
-      - name: Clear stale WASM outputs
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
-        run: rm -rf target/dx/
+      # Verify cache content is valid - cache-hit can be true but content corrupted
+      - name: Verify cache and determine if build needed
+        id: check-cache
+        run: |
+          if [ -d "target/dx/unified-hifi-control/release/web/public" ] && \
+             [ -f "target/dx/unified-hifi-control/release/web/public/index.html" ]; then
+            echo "WASM cache valid"
+            echo "needs_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "WASM cache invalid or missing - will rebuild"
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+            rm -rf target/dx/
+          fi
 
       - name: Setup Rust
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: "fullstack-build"
@@ -542,7 +561,7 @@ jobs:
           cache-on-failure: true
 
       - name: Cache Dioxus CLI
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         id: cache-dx
         uses: actions/cache@v5
         with:
@@ -550,11 +569,11 @@ jobs:
           key: dx-cli-0.7.3
 
       - name: Install Dioxus CLI
-        if: steps.cache-wasm.outputs.cache-hit != 'true' && steps.cache-dx.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true' && steps.cache-dx.outputs.cache-hit != 'true'
         run: cargo install dioxus-cli@0.7.3 --locked
 
       - name: Cache generated CSS
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         id: cache-css
         uses: actions/cache@v5
         with:
@@ -562,11 +581,11 @@ jobs:
           key: css-v4.1.18-${{ hashFiles('src/input.css', 'src/app/pages/*.rs', 'src/app/components/*.rs') }}
 
       - name: Build Tailwind CSS
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         run: make css
 
       - name: Build fullstack (verify WASM generation)
-        if: steps.cache-wasm.outputs.cache-hit != 'true'
+        if: steps.check-cache.outputs.needs_build == 'true'
         # ADR 002: WASM is generated and will be embedded in the final cargo binary
         run: |
           dx build --fullstack --release @client --no-default-features --features web @server --features server
@@ -575,16 +594,16 @@ jobs:
 
       - name: Report cache status
         run: |
-          if [ "${{ steps.cache-wasm.outputs.cache-hit }}" == "true" ]; then
-            echo "::notice::WASM cache hit - skipped fullstack build"
+          if [ "${{ steps.check-cache.outputs.needs_build }}" == "false" ]; then
+            echo "::notice::WASM cache valid - skipped fullstack build"
           else
-            echo "::notice::WASM cache miss - built from source"
+            echo "::notice::WASM cache invalid/partial - built from source (Rust deps cached)"
           fi
 
       - name: Verify WASM assets exist
         run: |
           if [ ! -d "target/dx/unified-hifi-control" ]; then
-            echo "::error::WASM assets not found - cache may be corrupted"
+            echo "::error::WASM assets not found - build failed"
             exit 1
           fi
           echo "WASM assets verified"
