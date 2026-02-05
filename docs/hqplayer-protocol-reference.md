@@ -28,6 +28,14 @@ Every list item (modes, filters, shapers) has **two identifiers**:
 [19] "poly-sinc-ext" value=15
 ```
 
+**Example modes list showing index ≠ value:**
+
+```text
+[0] "[source]" value=-1   <- index=0, value=-1
+[1] "PCM" value=0         <- index=1, value=0
+[2] "SDM" value=1         <- index=2, value=1
+```
+
 **Exception:** `RatesItem` has no `value` field - only `index` and `rate` (Hz).
 
 ## Command Semantics
@@ -135,7 +143,7 @@ HQPlayer has two query commands with different semantics:
 | Aspect | State | Status |
 |--------|-------|--------|
 | Filter/Shaper | Numeric (INDEX) | String (name) |
-| active_mode | Numeric VALUE - **reliable** | String - **unreliable** |
+| active_mode | Numeric INDEX - **reliable** | String - **unreliable** |
 | Use for | Settings UI, actual state | Display names |
 
 **Warning:** Status's `active_mode` may show `"[source]"` even when outputting DSD. Always use State's numeric `active_mode`.
@@ -172,7 +180,7 @@ When implementing HQPlayer control:
 - Samplerate: `48000`, `96000`, etc. (Hz)
 
 **Adapter handles all HQPlayer-specific conversions:**
-- Mode name → VALUE (-1, 0, 1)
+- Mode name → INDEX (0, 1, 2)
 - Filter name → INDEX
 - Shaper name → INDEX
 - Rate Hz → INDEX
@@ -180,4 +188,4 @@ When implementing HQPlayer control:
 ## Version
 
 - Reference: hqp-control v5.2.30 (2024-03-31)
-- This document: 2026-02-04
+- This document: 2026-02-05
