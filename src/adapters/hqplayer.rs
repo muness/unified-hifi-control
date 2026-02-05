@@ -278,6 +278,8 @@ pub struct PipelineSettings {
     #[serde(rename = "filterNx")]
     pub filter_nx: PipelineSetting,
     pub shaper: PipelineSetting,
+    /// Dynamic label for shaper field: "Modulator" in DSD mode, "Shaper" in PCM mode
+    pub shaper_label: String,
     pub samplerate: PipelineSetting,
 }
 
@@ -1060,10 +1062,15 @@ impl HqpAdapter {
     /// Set mode by name (e.g., "PCM", "DSD", "[source]")
     /// Resolves name to INDEX and sends to HQPlayer.
     /// CLI confirms: `--set-mode <index>`
+    ///
+    /// NOTE: Mode changes affect available filters, shapers, and rates.
+    /// We refresh the cached lists after changing mode.
     pub async fn set_mode(&self, mode_name: &str) -> Result<()> {
         let mode_index = self.resolve_mode_index(mode_name).await?;
         let xml = Self::build_request("SetMode", &[("value", &mode_index.to_string())]);
         self.send_command(&xml).await?;
+        // Mode change affects available filters/shapers/rates - refresh lists
+        self.refresh_lists().await;
         Ok(())
     }
 
@@ -1522,6 +1529,15 @@ impl HqpAdapter {
                             label: s.name.clone(),
                         })
                         .collect(),
+                },
+                // In PCM mode, it's called "Shaper"; in DSD/SDM mode, it's "Modulator"
+                shaper_label: {
+                    let mode_name = get_mode_by_index(state.mode);
+                    if mode_name.to_uppercase().contains("PCM") {
+                        "Shaper".to_string()
+                    } else {
+                        "Modulator".to_string()
+                    }
                 },
                 samplerate: PipelineSetting {
                     selected: SelectedOption {
