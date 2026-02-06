@@ -282,6 +282,8 @@ pub struct KnobConfig {
     pub cpu_freq_scaling_enabled: Option<bool>,
     /// Poll interval when playback stopped (seconds)
     pub sleep_poll_stopped_sec: Option<u32>,
+    /// Volume step override (None/0 = use zone default)
+    pub volume_step_override: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]

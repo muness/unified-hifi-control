@@ -271,8 +271,10 @@ pub async fn knob_now_playing_handler(
     let client_ip = extract_client_ip(&headers, connect_info.ok().map(|c| c.0));
     let mut config_sha = None;
 
+    let mut volume_step_override = None;
     if let Some(ref id) = knob_id {
-        state.knobs.get_or_create(id, knob_version.as_deref()).await;
+        let knob = state.knobs.get_or_create(id, knob_version.as_deref()).await;
+        volume_step_override = knob.config.volume_step_override;
         let battery_level = params.battery_level.filter(|&level| level <= 100);
         let battery_charging = params
             .battery_charging
@@ -388,7 +390,10 @@ pub async fn knob_now_playing_handler(
         volume_type: Some(volume_type),
         volume_min: vc.map(|v| v.min as f64).or(Some(0.0)),
         volume_max: vc.map(|v| v.max as f64).or(Some(0.0)),
-        volume_step: vc.map(|v| v.step as f64).or(Some(1.0)),
+        volume_step: volume_step_override
+            .map(Some)
+            .unwrap_or_else(|| vc.map(|v| v.step as f64))
+            .or(Some(1.0)),
         image_url: Some(image_url),
         image_key: np.and_then(|n| n.image_key.clone()),
         seek_position: np.and_then(|n| n.seek_position.map(|p| p as i64)),

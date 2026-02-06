@@ -27,6 +27,7 @@ pub struct PowerModeConfig {
 
 /// Knob configuration (synced to device via config_sha)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct KnobConfig {
     /// Display rotation when charging (0, 90, 180, 270)
     pub rotation_charging: u16,
@@ -51,6 +52,10 @@ pub struct KnobConfig {
     pub cpu_freq_scaling_enabled: bool,
     /// Poll interval when playback stopped
     pub sleep_poll_stopped_sec: u32,
+
+    /// Volume step override (None = use adapter default)
+    /// When set, substituted in /now_playing response instead of adapter's step
+    pub volume_step_override: Option<f64>,
 }
 
 impl Default for KnobConfig {
@@ -93,6 +98,7 @@ impl Default for KnobConfig {
             wifi_power_save_enabled: false,
             cpu_freq_scaling_enabled: false,
             sleep_poll_stopped_sec: 60,
+            volume_step_override: None,
         }
     }
 }
@@ -296,6 +302,9 @@ impl KnobStore {
         if let Some(v) = updates.sleep_poll_stopped_sec {
             knob.config.sleep_poll_stopped_sec = v;
         }
+        if let Some(v) = updates.volume_step_override {
+            knob.config.volume_step_override = if v > 0.0 { Some(v) } else { None };
+        }
 
         // Recompute config hash
         knob.config_sha = compute_sha(&knob.config, &knob.name);
@@ -361,6 +370,8 @@ pub struct KnobConfigUpdate {
     pub wifi_power_save_enabled: Option<bool>,
     pub cpu_freq_scaling_enabled: Option<bool>,
     pub sleep_poll_stopped_sec: Option<u32>,
+    /// Volume step override (0 or negative = clear override)
+    pub volume_step_override: Option<f64>,
 }
 
 /// Summary for listing knobs
