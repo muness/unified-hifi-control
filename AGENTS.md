@@ -23,6 +23,19 @@ Use GitHub for all task tracking:
 - Describe what changed and how to test
 - Request review from coderabbit and superego
 
+### Merging PRs
+**TEST BEFORE MERGING.** Do not merge PRs without testing.
+
+1. **Wait for CI to pass** - Build must succeed
+2. **Test the change** - Deploy to test environment or run locally
+3. **Get user approval** - Do NOT auto-merge, even after reviews pass
+4. **Only merge when explicitly told** - "merge it", "LGTM", "ship it"
+
+**NEVER:**
+- Merge a PR just because CI passed
+- Merge without verifying the fix works
+- Auto-merge in a "merge party" without explicit approval for each PR
+
 ### Git Workflow
 **DO NOT force push (`git push --force` or `git push -f`)**
 - This project uses squash merges, so commit history cleanup is unnecessary

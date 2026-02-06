@@ -68,6 +68,9 @@ pub fn Knobs() -> Element {
     let mut cpu_freq_scaling = use_signal(|| false);
     let mut sleep_poll_stopped = use_signal(|| 60u32);
 
+    // Volume step override (0.0 = use zone default)
+    let mut volume_step_override = use_signal(|| 0.0f64);
+
     // Firmware fetch state
     let mut fw_fetching = use_signal(|| false);
     let mut fw_message = use_signal(|| None::<(bool, String)>); // (is_error, message)
@@ -155,6 +158,7 @@ pub fn Knobs() -> Element {
                         wifi_power_save.set(cfg.wifi_power_save_enabled.unwrap_or(false));
                         cpu_freq_scaling.set(cfg.cpu_freq_scaling_enabled.unwrap_or(false));
                         sleep_poll_stopped.set(cfg.sleep_poll_stopped_sec.unwrap_or(60));
+                        volume_step_override.set(cfg.volume_step_override.unwrap_or(0.0));
                     } else {
                         config_name.set(String::new());
                         config_rotation_charging.set(180);
@@ -195,6 +199,7 @@ pub fn Knobs() -> Element {
                         wifi_power_save.set(false);
                         cpu_freq_scaling.set(false);
                         sleep_poll_stopped.set(60);
+                        volume_step_override.set(0.0);
                     }
                 }
                 Err(e) => {
@@ -225,6 +230,7 @@ pub fn Knobs() -> Element {
             let wifi_ps = wifi_power_save();
             let cpu_fs = cpu_freq_scaling();
             let poll_stopped = sleep_poll_stopped();
+            let vol_step = volume_step_override();
 
             save_status.set(Some("Saving...".to_string()));
 
@@ -244,6 +250,7 @@ pub fn Knobs() -> Element {
                     wifi_power_save_enabled: Some(wifi_ps),
                     cpu_freq_scaling_enabled: Some(cpu_fs),
                     sleep_poll_stopped_sec: Some(poll_stopped),
+                    volume_step_override: Some(vol_step),
                 };
 
                 let url = format!("/knob/config?knob_id={}", urlencoding::encode(&knob_id));
@@ -409,6 +416,7 @@ pub fn Knobs() -> Element {
                     wifi_power_save: wifi_power_save(),
                     cpu_freq_scaling: cpu_freq_scaling(),
                     sleep_poll_stopped: sleep_poll_stopped(),
+                    volume_step_override: volume_step_override(),
                     save_status: save_status(),
                     on_name_change: move |v| config_name.set(v),
                     on_rotation_charging_change: move |v| config_rotation_charging.set(v),
@@ -427,6 +435,7 @@ pub fn Knobs() -> Element {
                     on_wifi_power_save_change: move |v| wifi_power_save.set(v),
                     on_cpu_freq_scaling_change: move |v| cpu_freq_scaling.set(v),
                     on_sleep_poll_stopped_change: move |v| sleep_poll_stopped.set(v),
+                    on_volume_step_override_change: move |v| volume_step_override.set(v),
                     on_save: save_config,
                     on_close: move |_| modal_open.set(false),
                 }
@@ -696,6 +705,7 @@ fn ConfigModal(
     wifi_power_save: bool,
     cpu_freq_scaling: bool,
     sleep_poll_stopped: u32,
+    volume_step_override: f64,
     save_status: Option<String>,
     on_name_change: EventHandler<String>,
     on_rotation_charging_change: EventHandler<i32>,
@@ -714,9 +724,13 @@ fn ConfigModal(
     on_wifi_power_save_change: EventHandler<bool>,
     on_cpu_freq_scaling_change: EventHandler<bool>,
     on_sleep_poll_stopped_change: EventHandler<u32>,
+    on_volume_step_override_change: EventHandler<f64>,
     on_save: EventHandler<()>,
     on_close: EventHandler<()>,
 ) -> Element {
+    let medium_step_display = format!("{:.1}", volume_step_override * 3.0);
+    let large_step_display = format!("{:.1}", volume_step_override * 5.0);
+
     rsx! {
         div {
             class: "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
@@ -878,6 +892,62 @@ fn ConfigModal(
                                         dim: dim_battery.clone(),
                                         sleep: sleep_battery.clone(),
                                         deep_sleep: deep_sleep_battery.clone(),
+                                    }
+                                }
+                            }
+                        }
+
+                        // Volume Step Override
+                        fieldset { class: "mb-6",
+                            legend { class: "text-sm font-medium mb-2", "Volume Step Override" }
+
+                            div { class: "space-y-3",
+                                div { class: "flex items-center gap-4",
+                                    div { class: "flex-1",
+                                        span { class: "block text-sm font-medium", "Base Step" }
+                                        span { class: "block text-xs text-muted", "0 = use zone default" }
+                                    }
+                                    div { class: "flex items-center gap-2",
+                                        input {
+                                            class: "input w-20 text-center",
+                                            r#type: "number",
+                                            min: "0",
+                                            max: "100",
+                                            step: "0.5",
+                                            value: format!("{volume_step_override}"),
+                                            oninput: move |e| {
+                                                let v = e.value().parse::<f64>().unwrap_or(0.0);
+                                                on_volume_step_override_change.call(if v < 0.0 { 0.0 } else { v });
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if volume_step_override > 0.0 {
+                                    div { class: "bg-elevated rounded-lg p-3 text-sm space-y-1",
+                                        div { class: "flex justify-between",
+                                            span { class: "text-muted", "Slow rotation (1 tick)" }
+                                            span { class: "font-medium", "{volume_step_override:.1}" }
+                                        }
+                                        div { class: "flex justify-between",
+                                            span { class: "text-muted", "Medium rotation (2 ticks)" }
+                                            span { class: "font-medium",
+                                                "{medium_step_display}"
+                                            }
+                                        }
+                                        div { class: "flex justify-between",
+                                            span { class: "text-muted", "Fast rotation (3+ ticks)" }
+                                            span { class: "font-medium",
+                                                "{large_step_display}"
+                                            }
+                                        }
+                                        p { class: "text-xs text-muted mt-2",
+                                            "The knob multiplies your base step by rotation speed. Faster turning = larger volume jumps."
+                                        }
+                                    }
+                                } else {
+                                    div { class: "bg-elevated rounded-lg p-3 text-sm text-muted",
+                                        "Using zone default step size"
                                     }
                                 }
                             }
