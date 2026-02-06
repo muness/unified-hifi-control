@@ -425,17 +425,19 @@ jobs:
           restore-keys: |
             wasm-v3-
 
-      # Verify cache content is valid - cache-hit can be true but content corrupted
-      # Also handles partial restore from restore-keys (cache-hit=false, stale dx output)
+      # Verify cache is an EXACT key match and content is valid.
+      # restore-keys can load stale WASM from a previous build — file existence
+      # alone is not sufficient. Require cache-hit == true (exact key match).
       - name: Verify cache and determine if build needed
         id: check-cache
         run: |
-          if [ -d "target/dx/unified-hifi-control/release/web/public" ] && \
+          if [ "${{ steps.cache-wasm.outputs.cache-hit }}" == "true" ] && \
+             [ -d "target/dx/unified-hifi-control/release/web/public" ] && \
              [ -f "target/dx/unified-hifi-control/release/web/public/index.html" ]; then
-            echo "WASM cache valid"
+            echo "WASM cache valid (exact key match)"
             echo "needs_build=false" >> $GITHUB_OUTPUT
           else
-            echo "WASM cache invalid or missing - will rebuild"
+            echo "WASM cache miss or partial restore — will rebuild"
             echo "needs_build=true" >> $GITHUB_OUTPUT
             # Clear stale dx output but keep Rust deps (wasm32-unknown-unknown)
             rm -rf target/dx/
@@ -534,16 +536,18 @@ jobs:
           restore-keys: |
             wasm-v3-
 
-      # Verify cache content is valid - cache-hit can be true but content corrupted
+      # Verify cache is an EXACT key match and content is valid.
+      # restore-keys can load stale WASM — require exact match to skip build.
       - name: Verify cache and determine if build needed
         id: check-cache
         run: |
-          if [ -d "target/dx/unified-hifi-control/release/web/public" ] && \
+          if [ "${{ steps.cache-wasm.outputs.cache-hit }}" == "true" ] && \
+             [ -d "target/dx/unified-hifi-control/release/web/public" ] && \
              [ -f "target/dx/unified-hifi-control/release/web/public/index.html" ]; then
-            echo "WASM cache valid"
+            echo "WASM cache valid (exact key match)"
             echo "needs_build=false" >> $GITHUB_OUTPUT
           else
-            echo "WASM cache invalid or missing - will rebuild"
+            echo "WASM cache miss or partial restore — will rebuild"
             echo "needs_build=true" >> $GITHUB_OUTPUT
             rm -rf target/dx/
           fi
