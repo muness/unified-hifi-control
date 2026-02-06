@@ -246,7 +246,7 @@ jobs:
           # Step summary - show label → build mapping
           echo "### Build Plan" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Default:** lint, test, fullstack-check, linux-x64" >> $GITHUB_STEP_SUMMARY
+          echo "**Default:** lint, test, linux-x64" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Build optional builds table directly
@@ -514,103 +514,6 @@ jobs:
           path: target/dx/unified-hifi-control/release/web/
           if-no-files-found: error
           retention-days: 1
-
-  # Note: Web assets are now embedded in the binary (ADR 002).
-  # The fullstack-check job validates the fullstack build works correctly.
-  # Uses same cache as build-wasm to avoid duplicate compilation.
-  fullstack-check:
-    name: Fullstack Build Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Cache WASM build output
-        id: cache-wasm
-        uses: actions/cache@v5
-        with:
-          path: |
-            target/dx/
-            target/wasm32-unknown-unknown/
-          # Same cache key as build-wasm job - shares cached artifacts
-          key: wasm-v4-tw4.1.18-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'Dioxus.toml', 'src/**/*.rs', 'assets/**', 'src/input.css', 'public/dx-components-theme.css') }}
-          restore-keys: |
-            wasm-v4-
-
-      # Verify cache is an EXACT key match and content is valid.
-      # restore-keys can load stale WASM — require exact match to skip build.
-      - name: Verify cache and determine if build needed
-        id: check-cache
-        run: |
-          if [ "${{ steps.cache-wasm.outputs.cache-hit }}" == "true" ] && \
-             [ -d "target/dx/unified-hifi-control/release/web/public" ] && \
-             [ -f "target/dx/unified-hifi-control/release/web/public/index.html" ]; then
-            echo "WASM cache valid (exact key match)"
-            echo "needs_build=false" >> $GITHUB_OUTPUT
-          else
-            echo "WASM cache miss or partial restore — will rebuild"
-            echo "needs_build=true" >> $GITHUB_OUTPUT
-            rm -rf target/dx/
-          fi
-
-      - name: Setup Rust
-        if: steps.check-cache.outputs.needs_build == 'true'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        if: steps.check-cache.outputs.needs_build == 'true'
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "fullstack-build"
-          cache-all-crates: true
-          cache-on-failure: true
-
-      - name: Cache Dioxus CLI
-        if: steps.check-cache.outputs.needs_build == 'true'
-        id: cache-dx
-        uses: actions/cache@v5
-        with:
-          path: ~/.cargo/bin/dx
-          key: dx-cli-0.7.3
-
-      - name: Install Dioxus CLI
-        if: steps.check-cache.outputs.needs_build == 'true' && steps.cache-dx.outputs.cache-hit != 'true'
-        run: cargo install dioxus-cli@0.7.3 --locked
-
-      - name: Cache generated CSS
-        if: steps.check-cache.outputs.needs_build == 'true'
-        id: cache-css
-        uses: actions/cache@v5
-        with:
-          path: public/tailwind.css
-          key: css-v4.1.18-${{ hashFiles('src/input.css', 'src/app/pages/*.rs', 'src/app/components/*.rs') }}
-
-      - name: Build Tailwind CSS
-        if: steps.check-cache.outputs.needs_build == 'true'
-        run: make css
-
-      - name: Build fullstack (verify WASM generation)
-        if: steps.check-cache.outputs.needs_build == 'true'
-        # ADR 002: WASM is generated and will be embedded in the final cargo binary
-        run: |
-          dx build --fullstack --release @client --no-default-features --features web @server --features server
-          echo "Verifying WASM assets were generated:"
-          ls -la target/dx/unified-hifi-control/release/web/public/assets/ || true
-
-      - name: Report cache status
-        run: |
-          if [ "${{ steps.check-cache.outputs.needs_build }}" == "false" ]; then
-            echo "::notice::WASM cache valid - skipped fullstack build"
-          else
-            echo "::notice::WASM cache invalid/partial - built from source (Rust deps cached)"
-          fi
-
-      - name: Verify WASM assets exist
-        run: |
-          if [ ! -d "target/dx/unified-hifi-control" ]; then
-            echo "::error::WASM assets not found - build failed"
-            exit 1
-          fi
-          echo "WASM assets verified"
 
   build-linux-x64:
     name: Build Linux x64
@@ -1897,7 +1800,6 @@ jobs:
       - plan
       - lint
       - test
-      - fullstack-check
       - build-wasm
       - build-linux-x64
       - smoke-test
