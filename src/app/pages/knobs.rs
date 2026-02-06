@@ -728,6 +728,9 @@ fn ConfigModal(
     on_save: EventHandler<()>,
     on_close: EventHandler<()>,
 ) -> Element {
+    let medium_step_display = format!("{:.1}", volume_step_override * 3.0);
+    let large_step_display = format!("{:.1}", volume_step_override * 5.0);
+
     rsx! {
         div {
             class: "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
@@ -920,29 +923,29 @@ fn ConfigModal(
                                     }
                                 }
 
-                                if volume_step_override > 0.0 {{
-                                    let medium_step = format!("{:.1}", volume_step_override * 3.0);
-                                    let large_step = format!("{:.1}", volume_step_override * 5.0);
-                                    rsx! {
-                                        div { class: "bg-elevated rounded-lg p-3 text-sm space-y-1",
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "Slow rotation (1 tick)" }
-                                                span { class: "font-medium", "{volume_step_override:.1}" }
-                                            }
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "Medium rotation (2 ticks)" }
-                                                span { class: "font-medium", "{medium_step}" }
-                                            }
-                                            div { class: "flex justify-between",
-                                                span { class: "text-muted", "Fast rotation (3+ ticks)" }
-                                                span { class: "font-medium", "{large_step}" }
-                                            }
-                                            p { class: "text-xs text-muted mt-2",
-                                                "The knob multiplies your base step by rotation speed. Faster turning = larger volume jumps."
+                                if volume_step_override > 0.0 {
+                                    div { class: "bg-elevated rounded-lg p-3 text-sm space-y-1",
+                                        div { class: "flex justify-between",
+                                            span { class: "text-muted", "Slow rotation (1 tick)" }
+                                            span { class: "font-medium", "{volume_step_override:.1}" }
+                                        }
+                                        div { class: "flex justify-between",
+                                            span { class: "text-muted", "Medium rotation (2 ticks)" }
+                                            span { class: "font-medium",
+                                                "{medium_step_display}"
                                             }
                                         }
+                                        div { class: "flex justify-between",
+                                            span { class: "text-muted", "Fast rotation (3+ ticks)" }
+                                            span { class: "font-medium",
+                                                "{large_step_display}"
+                                            }
+                                        }
+                                        p { class: "text-xs text-muted mt-2",
+                                            "The knob multiplies your base step by rotation speed. Faster turning = larger volume jumps."
+                                        }
                                     }
-                                }} else {
+                                } else {
                                     div { class: "bg-elevated rounded-lg p-3 text-sm text-muted",
                                         "Using zone default step size"
                                     }
