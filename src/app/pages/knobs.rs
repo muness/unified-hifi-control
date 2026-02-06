@@ -913,8 +913,8 @@ fn ConfigModal(
                                             r#type: "number",
                                             min: "0",
                                             max: "100",
-                                            step: "0.1",
-                                            value: if volume_step_override > 0.0 { format!("{volume_step_override}") } else { String::new() },
+                                            step: "0.5",
+                                            value: format!("{volume_step_override}"),
                                             oninput: move |e| {
                                                 let v = e.value().parse::<f64>().unwrap_or(0.0);
                                                 on_volume_step_override_change.call(if v < 0.0 { 0.0 } else { v });
