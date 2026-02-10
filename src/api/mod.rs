@@ -1210,11 +1210,16 @@ pub async fn events_handler(
 
     let stream = with_shutdown
         .filter_map(|result| match result {
-            Ok(event) => {
-                // Serialize event to JSON
-                match serde_json::to_string(&event) {
-                    Ok(json) => Some(Ok(Event::default().data(json))),
-                    Err(_) => None,
+            Ok(bus_event) => {
+                // Convert BusEvent to MuseEvent for wire transmission
+                // Internal events (commands, system events) return None and are filtered out
+                if let Some(muse_event) = bus_event.to_muse_event(None) {
+                    match serde_json::to_string(&muse_event) {
+                        Ok(json) => Some(Ok(Event::default().data(json))),
+                        Err(_) => None,
+                    }
+                } else {
+                    None
                 }
             }
             Err(_) => None, // Skip lagged messages

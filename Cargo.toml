@@ -1,3 +1,7 @@
+[workspace]
+members = ["muse-events"]
+resolver = "2"
+
 [package]
 name = "unified-hifi-control"
 version = "0.0.0"  # Injected from git tag at build time
@@ -35,6 +39,9 @@ server = [
 web = ["dioxus/web"]
 
 [dependencies]
+# Shared wire protocol types for Muse ecosystem
+muse-events = { path = "muse-events" }
+
 # Dioxus UI framework (SSR + client hydration + router)
 dioxus = { version = "0.7.3", features = ["fullstack", "router"] }
 
