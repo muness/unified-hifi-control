@@ -6,8 +6,8 @@
 #[cfg(feature = "server")]
 mod server {
     use unified_hifi_control::{
-        adapters, aggregator, api, app, bus, config, coordinator, embedded, firmware, knobs, mcp,
-        mdns,
+        adapters, aggregator, api, app, bus, config, coordinator, embedded, event_reporter,
+        firmware, knobs, mcp, mdns,
     };
 
     // Import Startable trait for adapter lifecycle methods
@@ -244,6 +244,25 @@ mod server {
         // Create shutdown token for graceful SSE termination (fixes #73)
         let shutdown_token = CancellationToken::new();
 
+        // Issue #49: Initialize EventReporter for Memex muse-ingest integration
+        // Uses license from config if present, can also be provisioned via API
+        let event_reporter = Arc::new(event_reporter::EventReporter::new(
+            config.memex_license.clone(),
+            zone_aggregator.clone(),
+            shutdown_token.clone(),
+        ));
+        // Start EventReporter in background
+        let reporter_for_spawn = event_reporter.clone();
+        let bus_for_reporter = bus.clone();
+        tokio::spawn(async move {
+            reporter_for_spawn.run(bus_for_reporter).await;
+        });
+        if config.memex_license.is_some() {
+            tracing::info!("EventReporter started with Memex license");
+        } else {
+            tracing::info!("EventReporter started (no license configured)");
+        }
+
         // Build application state (clone Arcs so we can access adapters for shutdown)
         let state = api::AppState::new(
             roon,
@@ -260,6 +279,7 @@ mod server {
             startable_adapters.clone(),
             Instant::now(),
             shutdown_token.clone(),
+            event_reporter,
         );
 
         // Clone state for shutdown diagnostics
@@ -377,6 +397,10 @@ mod server {
             // App settings API
             .route("/api/settings", get(api::api_settings_get_handler))
             .route("/api/settings", post(api::api_settings_post_handler))
+            // License provisioning API (Issue #49: Memex integration)
+            .route("/api/config/license", post(api::license_handler))
+            .route("/api/config/license", get(api::license_status_handler))
+            .route("/api/config/license", delete(api::license_delete_handler))
             // Event stream (SSE)
             .route("/events", get(api::events_handler))
             // Knob hardware API routes
