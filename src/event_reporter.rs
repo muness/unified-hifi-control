@@ -12,8 +12,8 @@
 
 use crate::aggregator::ZoneAggregator;
 use crate::bus::{BusEvent, SharedBus, Zone};
+use muse_events::ingest::{IngestEvent, IngestRequest};
 use reqwest::Client;
-use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -52,19 +52,7 @@ pub struct EventReporter {
     shutdown: CancellationToken,
 }
 
-/// Event payload sent to the ingest proxy
-#[derive(Debug, Clone, Serialize)]
-pub struct IngestEvent {
-    pub event_type: String,
-    pub timestamp: u64,
-    pub payload: serde_json::Value,
-}
-
-/// Request body for the ingest endpoint
-#[derive(Debug, Serialize)]
-struct IngestRequest {
-    events: Vec<IngestEvent>,
-}
+// IngestEvent and IngestRequest are now imported from muse_events::ingest
 
 impl EventReporter {
     /// Create a new EventReporter
