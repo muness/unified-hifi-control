@@ -9,6 +9,7 @@ use crate::adapters::Startable;
 use crate::aggregator::ZoneAggregator;
 use crate::bus::SharedBus;
 use crate::coordinator::AdapterCoordinator;
+use crate::event_reporter::EventReporter;
 use crate::knobs::KnobStore;
 use axum::{
     extract::{Path, Query, State},
@@ -49,6 +50,8 @@ pub struct AppState {
     pub shutdown: CancellationToken,
     /// Count of active SSE connections (for shutdown diagnostics)
     pub sse_connections: Arc<AtomicUsize>,
+    /// EventReporter for forwarding events to Memex muse-ingest proxy (Issue #49)
+    pub event_reporter: Arc<EventReporter>,
 }
 
 impl AppState {
@@ -68,6 +71,7 @@ impl AppState {
         startable_adapters: Vec<Arc<dyn Startable>>,
         start_time: Instant,
         shutdown: CancellationToken,
+        event_reporter: Arc<EventReporter>,
     ) -> Self {
         Self {
             roon,
@@ -85,6 +89,7 @@ impl AppState {
             start_time,
             shutdown,
             sse_connections: Arc::new(AtomicUsize::new(0)),
+            event_reporter,
         }
     }
 
@@ -2170,6 +2175,67 @@ pub async fn api_settings_post_handler(
             }
         }
     }
+
+    Json(serde_json::json!({"ok": true}))
+}
+
+// =============================================================================
+// License provisioning handlers (Issue #49: Memex integration)
+// =============================================================================
+
+/// License provisioning request body
+#[derive(Deserialize)]
+pub struct LicenseRequest {
+    pub license: String,
+}
+
+/// License provisioning response
+#[derive(Serialize)]
+pub struct LicenseResponse {
+    pub configured: bool,
+}
+
+/// POST /api/config/license - Provision a Memex license
+///
+/// This endpoint allows Memex to push a license JWT on first connect.
+/// The license activates the EventReporter to forward bus events to the
+/// muse-ingest proxy.
+pub async fn license_handler(
+    State(state): State<AppState>,
+    Json(req): Json<LicenseRequest>,
+) -> impl IntoResponse {
+    if req.license.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "License is required".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // Set the license on the EventReporter
+    state
+        .event_reporter
+        .set_license(Some(req.license.clone()))
+        .await;
+
+    tracing::info!("Memex license configured via API");
+
+    (StatusCode::OK, Json(LicenseResponse { configured: true })).into_response()
+}
+
+/// GET /api/config/license - Get license status
+pub async fn license_status_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let configured = state.event_reporter.is_enabled().await;
+    Json(LicenseResponse { configured })
+}
+
+/// DELETE /api/config/license - Remove the Memex license
+pub async fn license_delete_handler(State(state): State<AppState>) -> impl IntoResponse {
+    state.event_reporter.set_license(None).await;
+
+    tracing::info!("Memex license removed via API");
 
     Json(serde_json::json!({"ok": true}))
 }

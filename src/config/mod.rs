@@ -16,6 +16,11 @@ pub struct Config {
 
     #[serde(default)]
     pub lms: Option<LmsConfig>,
+
+    /// Memex license JWT for event forwarding (Issue #49)
+    /// Can also be set via UHC_MEMEX_LICENSE env var
+    #[serde(default)]
+    pub memex_license: Option<String>,
 }
 
 fn default_port() -> u16 {

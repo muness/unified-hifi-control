@@ -13,8 +13,10 @@
 # multi-line closures that the route extractor doesn't detect, and they may change
 # with build configuration.
 
+DELETE /api/config/license
 DELETE /mcp
 GET /admin
+GET /api/config/license
 GET /api/settings
 GET /assets/{*path}
 GET /config/{knob_id}
@@ -59,6 +61,7 @@ GET /status
 GET /upnp/status
 GET /upnp/zones
 GET /zones
+POST /api/config/license
 POST /api/settings
 POST /control
 POST /hqp/detect
