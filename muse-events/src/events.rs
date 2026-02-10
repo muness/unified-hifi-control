@@ -4,7 +4,7 @@
 //! the wire via SSE. Consumers (Memex, etc.) depend on this crate
 //! instead of duplicating types.
 
-use crate::zone::{NowPlaying, VolumeControl, Zone, ZoneState};
+use crate::zone::{NowPlaying, Zone, ZoneState};
 use serde::{Deserialize, Serialize};
 
 /// Events that cross the wire via SSE.
@@ -56,8 +56,10 @@ pub enum MuseEvent {
     VolumeChanged {
         /// Output ID
         output_id: String,
-        /// Volume control state
-        volume: VolumeControl,
+        /// Current volume value
+        value: f32,
+        /// Whether the output is muted
+        is_muted: bool,
     },
 
     // =========================================================================

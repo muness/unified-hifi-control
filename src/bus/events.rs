@@ -588,15 +588,8 @@ impl BusEvent {
                 is_muted,
             } => Some(MuseEvent::VolumeChanged {
                 output_id: output_id.clone(),
-                volume: VolumeControl {
-                    value: *value,
-                    min: 0.0,   // Default, actual values would come from zone
-                    max: 100.0, // Default
-                    step: 1.0,  // Default
-                    is_muted: *is_muted,
-                    scale: VolumeScale::Unknown,
-                    output_id: Some(output_id.clone()),
-                },
+                value: *value,
+                is_muted: *is_muted,
             }),
 
             Self::AdapterConnected { adapter, details } => Some(MuseEvent::AdapterConnected {
