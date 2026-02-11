@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 # Copy actual source
 COPY src/ ./src/
-COPY input.css tailwind.config.js ./
+COPY public/ ./public/
 
 # Build Tailwind CSS (downloads standalone CLI if needed)
 RUN make css
