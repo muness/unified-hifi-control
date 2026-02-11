@@ -43,6 +43,7 @@ COPY muse-events/ ./muse-events/
 COPY public/ ./public/
 
 # Build Tailwind CSS (downloads standalone CLI if needed)
+RUN apt-get update && apt-get install -y make && rm -rf /var/lib/apt/lists/*
 RUN make css
 
 # ADR 002: Build WASM assets first, then build server which embeds them
