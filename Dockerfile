@@ -46,7 +46,13 @@ COPY public/ ./public/
 RUN apt-get update && apt-get install -y make && rm -rf /var/lib/apt/lists/*
 RUN make css
 
+# Version info for compile-time env!() macros
+ARG APP_VERSION=dev
+ENV UHC_VERSION=$APP_VERSION
+ENV UHC_GIT_SHA=docker
+
 # ADR 002: Build WASM assets first, then build server which embeds them
+# Force rebuild to pick up UHC_VERSION/UHC_GIT_SHA env vars
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
