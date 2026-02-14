@@ -536,7 +536,10 @@ impl BusEvent {
     /// NowPlayingChanged events with duration/metadata from zone state.
     /// Currently not used as it would require async lookup.
     #[allow(unused_variables)]
-    pub fn to_muse_event(&self, aggregator: Option<&crate::aggregator::ZoneAggregator>) -> Option<MuseEvent> {
+    pub fn to_muse_event(
+        &self,
+        aggregator: Option<&crate::aggregator::ZoneAggregator>,
+    ) -> Option<MuseEvent> {
         match self {
             Self::ZoneDiscovered { zone } => Some(MuseEvent::ZoneDiscovered { zone: zone.clone() }),
 
