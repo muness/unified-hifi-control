@@ -2,10 +2,10 @@ name: Build
 
 on:
   pull_request:
-    branches: [master, v3]
+    branches: [master, v3, v4]
     types: [opened, synchronize, reopened, labeled]
   push:
-    branches: [v3, 'feature/**']
+    branches: [v3, v4, 'feature/**']
     tags:
       - 'v*'
   release:
@@ -234,6 +234,8 @@ jobs:
           if should_build; then BUILD_DOCKER="true"; fi
           if [[ "$HAS_LABEL_DOCKER" == "true" ]]; then BUILD_DOCKER="true"; fi
           if [[ "$INPUT_DOCKER" == "true" ]]; then BUILD_DOCKER="true"; fi
+          # Auto-enable docker on v4 branch push (edge builds)
+          if [[ "$EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/v4" ]]; then BUILD_DOCKER="true"; fi
           echo "build_docker=$BUILD_DOCKER" >> $GITHUB_OUTPUT
 
           # Linux packages (deb/rpm)
