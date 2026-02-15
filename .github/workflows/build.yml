@@ -1339,28 +1339,52 @@ jobs:
 
   # Note: Web assets are embedded in the binary (ADR 002)
   build-docker-x64:
-    name: Build Docker (x64)
-    needs: [plan, build-linux-x64]
+    name: Build Docker
+    needs: [plan, build-linux-x64, build-linux-arm]
     # Only for PRs/branches - releases use build-docker-release
-    if: needs.plan.outputs.build_docker == 'true' && needs.plan.outputs.is_release != 'true'
+    if: |
+      always() &&
+      needs.plan.outputs.build_docker == 'true' &&
+      needs.plan.outputs.is_release != 'true' &&
+      needs.build-linux-x64.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       packages: write
     steps:
       - uses: actions/checkout@v6
 
-      - name: Download Linux binary
+      - name: Download x64 binary
         uses: actions/download-artifact@v7
         with:
           name: binary-x86_64-unknown-linux-musl
           path: binaries/
 
-      - name: Prepare binary
+      - name: Download arm64 binary
+        if: needs.build-linux-arm.result == 'success'
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: binary-aarch64-unknown-linux-musl
+          path: binaries/
+
+      - name: Prepare binaries and determine platforms
+        id: prep
         run: |
           mv binaries/unified-hifi-linux-x64 binaries/unified-hifi-linux-amd64
+          PLATFORMS="linux/amd64"
+          if [ -f binaries/unified-hifi-linux-arm64 ]; then
+            PLATFORMS="${PLATFORMS},linux/arm64"
+          fi
           chmod +x binaries/*
+          echo "platforms=$PLATFORMS" >> $GITHUB_OUTPUT
+          echo "Docker platforms: $PLATFORMS"
           ls -la binaries/
 
+      - name: Set up QEMU
+        if: contains(steps.prep.outputs.platforms, 'arm64')
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -1386,7 +1410,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.ci
-          platforms: linux/amd64
+          platforms: ${{ steps.prep.outputs.platforms }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
